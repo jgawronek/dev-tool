@@ -69,6 +69,41 @@ class ToolRegistry {
       category: 'Parsers',
     ),
     DevTool(
+      id: 'subdomain_finder',
+      name: 'Subdomain Finder',
+      icon: Icons.travel_explore,
+      builder: (_) => buildSubdomainFinder(),
+      category: 'Network',
+    ),
+    DevTool(
+      id: 'subdomain_takeover',
+      name: 'Subdomain Takeover Check',
+      icon: Icons.domain_verification,
+      builder: (_) => buildSubdomainTakeover(),
+      category: 'Security',
+    ),
+    DevTool(
+      id: 'port_scanner',
+      name: 'Port Scanner',
+      icon: Icons.radar,
+      builder: (_) => buildPortScanner(),
+      category: 'Network',
+    ),
+    DevTool(
+      id: 'network_scanner',
+      name: 'Network Scanner',
+      icon: Icons.lan,
+      builder: (_) => buildNetworkScanner(),
+      category: 'Network',
+    ),
+    DevTool(
+      id: 'firewall_fingerprint',
+      name: 'Firewall Fingerprint',
+      icon: Icons.shield,
+      builder: (_) => buildFirewallFingerprint(),
+      category: 'Security',
+    ),
+    DevTool(
       id: 'html_entity_encode_decode',
       name: 'HTML Entity Encode/Decode',
       icon: Icons.html,
@@ -209,6 +244,13 @@ class ToolRegistry {
       category: 'Security',
     ),
     DevTool(
+      id: 'payload_embedder',
+      name: 'Payload Embed/Extract',
+      icon: Icons.folder_zip,
+      builder: (_) => buildPayloadEmbedder(),
+      category: 'Security',
+    ),
+    DevTool(
       id: 'user_agent_tool',
       name: 'User Agent Generator/Validator',
       icon: Icons.language,
@@ -234,6 +276,13 @@ class ToolRegistry {
       name: 'HTML to JSX',
       icon: Icons.code,
       builder: (_) => buildHtmlToJsx(),
+      category: 'Converters',
+    ),
+    DevTool(
+      id: 'js_to_ts_converter',
+      name: 'JS to TS Converter',
+      icon: Icons.code,
+      builder: (_) => buildJsToTsConverter(),
       category: 'Converters',
     ),
     DevTool(
@@ -349,28 +398,23 @@ class ToolRegistry {
       category: 'Reference',
     ),
     DevTool(
-      id: 'preferences_general',
-      name: 'Preferences: General',
+      id: 'preferences',
+      name: 'Preferences',
       icon: Icons.settings,
-      builder: (_) => buildPreferencesGeneral(),
-      showDemo: false,
-      category: 'Preferences',
-    ),
-    DevTool(
-      id: 'preferences_appearance',
-      name: 'Preferences: Appearance',
-      icon: Icons.palette_outlined,
-      builder: (_) => buildPreferencesAppearance(),
-      showDemo: false,
-      category: 'Preferences',
-    ),
-    DevTool(
-      id: 'preferences_scripting',
-      name: 'Preferences: Scripting',
-      icon: Icons.code,
-      builder: (_) => buildPreferencesScripting(),
+      builder: (_) => buildPreferences(),
       showDemo: false,
       category: 'Preferences',
     ),
   ];
+
+  static DevTool? byId(String id) {
+    for (final tool in tools) {
+      if (tool.id == id) return tool;
+    }
+    return null;
+  }
+
+  static String defaultPanelTitle(String id) {
+    return byId(id)?.name ?? 'Tool';
+  }
 }

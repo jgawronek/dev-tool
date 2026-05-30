@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart' as crypto;
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -34,10 +36,21 @@ import 'package:pointycastle/block/desede_engine.dart';
 import 'package:pointycastle/block/rc2_engine.dart';
 import 'package:pointycastle/api.dart' as pc;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import 'package:yaml/yaml.dart';
 
 import '../data/mime_types.dart';
+import '../services/file_dialog_service.dart';
+import '../services/firewall_fingerprint_service.dart';
+import '../services/hash_lookup_service.dart';
 import '../services/local_llm_service.dart';
+import '../services/network_scanner_service.dart';
+import '../services/payload_embedding_service.dart';
+import '../services/port_scanner_service.dart';
+import '../services/subdomain_lookup_service.dart';
+import '../services/subdomain_takeover_service.dart';
+import '../state/tool_state_scope.dart';
+import 'app_colors.dart';
 import 'widgets.dart';
 
 Widget buildSplitEditors({
@@ -53,14 +66,27 @@ Widget buildSplitEditors({
   ValueChanged<String>? onInputChanged,
   bool horizontal = false,
   VoidCallback? onInputSubmit,
+  ScrollController? inputScrollController,
+  ScrollController? outputScrollController,
+  Set<int> inputMarkedLines = const <int>{},
+  Set<int> outputMarkedLines = const <int>{},
+  bool showInputHeader = false,
+  bool showOutputHeader = false,
+  Widget? inputOverlay,
+  Widget? outputOverlay,
 }) {
+  final liveInputChanged = onInputChanged ?? _goActionChanged(inputActions);
   final input = EditorPane(
     label: inputLabel,
     actions: inputActions,
     placeholder: inputPlaceholder,
     controller: inputController,
-    onChanged: onInputChanged,
+    onChanged: liveInputChanged,
     onSubmit: onInputSubmit,
+    scrollController: inputScrollController,
+    markedLines: inputMarkedLines,
+    showHeader: showInputHeader,
+    overlay: inputOverlay,
   );
   final output = EditorPane(
     label: outputLabel,
@@ -68,24 +94,12 @@ Widget buildSplitEditors({
     placeholder: outputPlaceholder,
     readOnly: outputReadOnly,
     controller: outputController,
+    scrollController: outputScrollController,
+    markedLines: outputMarkedLines,
+    showHeader: showOutputHeader,
+    overlay: outputOverlay,
   );
-  if (horizontal) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(child: input),
-        const SizedBox(width: 16),
-        Expanded(child: output),
-      ],
-    );
-  }
-  return Column(
-    children: [
-      Expanded(child: input),
-      const SizedBox(height: 16),
-      Expanded(child: output),
-    ],
-  );
+  return _ResizableSplit(horizontal: horizontal, first: input, second: output);
 }
 
 Widget buildVerticalEditors({
@@ -99,6 +113,14 @@ Widget buildVerticalEditors({
   TextEditingController? inputController,
   TextEditingController? outputController,
   ValueChanged<String>? onInputChanged,
+  ScrollController? inputScrollController,
+  ScrollController? outputScrollController,
+  Set<int> inputMarkedLines = const <int>{},
+  Set<int> outputMarkedLines = const <int>{},
+  bool showInputHeader = false,
+  bool showOutputHeader = false,
+  Widget? inputOverlay,
+  Widget? outputOverlay,
 }) {
   return buildSplitEditors(
     inputLabel: inputLabel,
@@ -111,8 +133,150 @@ Widget buildVerticalEditors({
     inputController: inputController,
     outputController: outputController,
     onInputChanged: onInputChanged,
+    inputScrollController: inputScrollController,
+    outputScrollController: outputScrollController,
+    inputMarkedLines: inputMarkedLines,
+    outputMarkedLines: outputMarkedLines,
+    showInputHeader: showInputHeader,
+    showOutputHeader: showOutputHeader,
+    inputOverlay: inputOverlay,
+    outputOverlay: outputOverlay,
     horizontal: false,
   );
+}
+
+ValueChanged<String>? _goActionChanged(List<Widget> actions) {
+  for (final action in actions) {
+    if (action is ToolButton && action.label == 'Go') {
+      final onPressed = action.onPressed;
+      if (onPressed != null) return (_) => onPressed();
+    }
+  }
+  return null;
+}
+
+class _ResizableSplit extends StatefulWidget {
+  const _ResizableSplit({
+    required this.horizontal,
+    required this.first,
+    required this.second,
+    this.initialRatio = 0.5,
+    this.minFirstExtent = 120,
+    this.minSecondExtent = 120,
+  });
+
+  final bool horizontal;
+  final Widget first;
+  final Widget second;
+  final double initialRatio;
+  final double minFirstExtent;
+  final double minSecondExtent;
+
+  @override
+  State<_ResizableSplit> createState() => _ResizableSplitState();
+}
+
+class _ResizableSplitState extends State<_ResizableSplit> {
+  late double _firstRatio = widget.initialRatio.clamp(0.2, 0.8).toDouble();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const splitterExtent = 6.0;
+        final maxExtent = widget.horizontal
+            ? constraints.maxWidth
+            : constraints.maxHeight;
+        final available = max(0.0, maxExtent - splitterExtent);
+        final requestedFirst = min(widget.minFirstExtent, available);
+        final requestedSecond = min(widget.minSecondExtent, available);
+        final minTotal = requestedFirst + requestedSecond;
+        final minScale = minTotal > available && minTotal > 0
+            ? available / minTotal
+            : 1.0;
+        final minFirstExtent = requestedFirst * minScale;
+        final minSecondExtent = requestedSecond * minScale;
+        final lowerRatio = available <= 0 ? 0.5 : minFirstExtent / available;
+        final upperRatio = available <= 0
+            ? 0.5
+            : max(lowerRatio, 1 - minSecondExtent / available);
+        final effectiveRatio = _firstRatio
+            .clamp(lowerRatio, upperRatio)
+            .toDouble();
+        final firstExtent = available * effectiveRatio;
+        final secondExtent = max(0.0, available - firstExtent);
+
+        void handleDrag(Offset delta) {
+          if (available <= 0) return;
+          final movement = widget.horizontal ? delta.dx : delta.dy;
+          setState(() {
+            _firstRatio = (_firstRatio + movement / available)
+                .clamp(lowerRatio, upperRatio)
+                .toDouble();
+          });
+        }
+
+        if (widget.horizontal) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(width: firstExtent, child: widget.first),
+              _EditorSplitter(horizontal: true, onDrag: handleDrag),
+              SizedBox(width: secondExtent, child: widget.second),
+            ],
+          );
+        }
+
+        return Column(
+          children: [
+            SizedBox(height: firstExtent, child: widget.first),
+            _EditorSplitter(horizontal: false, onDrag: handleDrag),
+            SizedBox(height: secondExtent, child: widget.second),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _EditorSplitter extends StatelessWidget {
+  const _EditorSplitter({required this.horizontal, required this.onDrag});
+
+  final bool horizontal;
+  final ValueChanged<Offset> onDrag;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return MouseRegion(
+      cursor: horizontal
+          ? SystemMouseCursors.resizeColumn
+          : SystemMouseCursors.resizeRow,
+      child: GestureDetector(
+        key: ValueKey(
+          horizontal
+              ? 'split-editor-horizontal-resize-handle'
+              : 'split-editor-vertical-resize-handle',
+        ),
+        behavior: HitTestBehavior.opaque,
+        onPanUpdate: (details) => onDrag(details.delta),
+        child: SizedBox(
+          width: horizontal ? 6 : double.infinity,
+          height: horizontal ? double.infinity : 6,
+          child: Center(
+            child: Container(
+              width: horizontal ? 2 : 52,
+              height: horizontal ? 52 : 2,
+              decoration: BoxDecoration(
+                color: appColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 String _indentFor(String value) {
@@ -153,8 +317,191 @@ Uint8List _base64UrlDecode(String input) {
   return Uint8List.fromList(base64Url.decode(normalized));
 }
 
+BoxDecoration _toolSurfaceDecoration(
+  BuildContext context, {
+  double radius = 8,
+}) {
+  final appColors = context.appColors;
+  return BoxDecoration(
+    color: appColors.panelElevated,
+    borderRadius: BorderRadius.circular(radius),
+    border: Border.all(color: appColors.border),
+  );
+}
+
+TextStyle _mutedToolTextStyle(BuildContext context, {double? fontSize}) {
+  return TextStyle(fontSize: fontSize, color: context.appColors.mutedText);
+}
+
+TextStyle _errorToolTextStyle(BuildContext context, {double? fontSize}) {
+  return TextStyle(fontSize: fontSize, color: context.appColors.error);
+}
+
+enum JsonCompareMode { raw, normalized }
+
+class JsonToolStatus {
+  const JsonToolStatus({this.summary, this.error});
+
+  final String? summary;
+  final String? error;
+
+  static const empty = JsonToolStatus();
+
+  bool get isValid => summary != null && error == null;
+  bool get hasMessage => summary != null || error != null;
+}
+
+class JsonToolSession {
+  JsonToolSession();
+
+  final TextEditingController input = TextEditingController();
+  final TextEditingController output = TextEditingController();
+  final ScrollController inputScroll = ScrollController();
+  final ScrollController outputScroll = ScrollController();
+  final ValueNotifier<JsonToolStatus> status = ValueNotifier<JsonToolStatus>(
+    JsonToolStatus.empty,
+  );
+
+  String indent = '2 spaces';
+
+  String get inputText => input.text;
+  String get outputText => output.text;
+
+  void format() {
+    final text = input.text.trim();
+    if (text.isEmpty) {
+      output.text = '';
+      status.value = JsonToolStatus.empty;
+      return;
+    }
+    try {
+      final validation = _validateJson(text, strict: true);
+      if (!validation.isValid) {
+        output.text = '';
+        status.value = JsonToolStatus(
+          error: validation.error?.description ?? 'Invalid JSON',
+        );
+        return;
+      }
+      final decoded = jsonDecode(text);
+      final encoder = JsonEncoder.withIndent(_indentFor(indent));
+      output.text = encoder.convert(decoded);
+      status.value = JsonToolStatus(summary: validation.info?.summary);
+    } catch (e) {
+      status.value = JsonToolStatus(error: e.toString());
+    }
+  }
+
+  Future<void> pasteClipboard() async {
+    input.text = await _readClipboardText();
+  }
+
+  void setSample() {
+    input.text = '{"name":"DevUtils","items":[1,2,3],"enabled":true}';
+  }
+
+  void clear() {
+    input.clear();
+    output.clear();
+    status.value = JsonToolStatus.empty;
+  }
+
+  Future<void> copyOutput() async {
+    await Clipboard.setData(ClipboardData(text: output.text));
+  }
+
+  void dispose() {
+    input.dispose();
+    output.dispose();
+    inputScroll.dispose();
+    outputScroll.dispose();
+    status.dispose();
+  }
+}
+
+class JsonCompareSummary {
+  const JsonCompareSummary({
+    required this.mode,
+    required this.differenceCount,
+    required this.leftChangedLines,
+    required this.rightChangedLines,
+  });
+
+  final JsonCompareMode mode;
+  final int differenceCount;
+  final Set<int> leftChangedLines;
+  final Set<int> rightChangedLines;
+
+  String get label {
+    if (differenceCount == 0) return 'No differences';
+    return '$differenceCount ${differenceCount == 1 ? 'difference' : 'differences'}';
+  }
+}
+
+class JsonPanelCompareDetails {
+  const JsonPanelCompareDetails({
+    required this.summary,
+    required this.changedLines,
+    required this.linkedScroll,
+  });
+
+  final JsonCompareSummary summary;
+  final Set<int> changedLines;
+  final bool linkedScroll;
+}
+
+JsonCompareSummary compareJsonSessions(
+  JsonToolSession left,
+  JsonToolSession right,
+  JsonCompareMode mode,
+) {
+  final leftText = mode == JsonCompareMode.normalized
+      ? _normalizedJson(left.inputText)
+      : left.inputText;
+  final rightText = mode == JsonCompareMode.normalized
+      ? _normalizedJson(right.inputText)
+      : right.inputText;
+  final changed = _changedLineSets(leftText, rightText);
+  return JsonCompareSummary(
+    mode: mode,
+    differenceCount: max(changed.$1.length, changed.$2.length),
+    leftChangedLines: changed.$1,
+    rightChangedLines: changed.$2,
+  );
+}
+
+String _normalizedJson(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) return '';
+  try {
+    return const JsonEncoder.withIndent('  ').convert(jsonDecode(trimmed));
+  } catch (_) {
+    return value;
+  }
+}
+
+(Set<int>, Set<int>) _changedLineSets(String left, String right) {
+  final leftLines = const LineSplitter().convert(left);
+  final rightLines = const LineSplitter().convert(right);
+  final count = max(leftLines.length, rightLines.length);
+  final leftChanged = <int>{};
+  final rightChanged = <int>{};
+  for (var i = 0; i < count; i++) {
+    final leftLine = i < leftLines.length ? leftLines[i] : null;
+    final rightLine = i < rightLines.length ? rightLines[i] : null;
+    if (leftLine != rightLine) {
+      if (i < leftLines.length) leftChanged.add(i + 1);
+      if (i < rightLines.length) rightChanged.add(i + 1);
+    }
+  }
+  return (leftChanged, rightChanged);
+}
+
 class _JsonFormatValidateView extends StatefulWidget {
-  const _JsonFormatValidateView();
+  const _JsonFormatValidateView({this.session, this.compare});
+
+  final JsonToolSession? session;
+  final JsonPanelCompareDetails? compare;
 
   @override
   State<_JsonFormatValidateView> createState() =>
@@ -162,128 +509,352 @@ class _JsonFormatValidateView extends StatefulWidget {
 }
 
 class _JsonFormatValidateViewState extends State<_JsonFormatValidateView> {
-  final TextEditingController _input = TextEditingController();
-  final TextEditingController _output = TextEditingController();
-  String _indent = '2 spaces';
-  String? _error;
-  _JsonValidationInfo? _info;
+  late JsonToolSession _session;
+  late bool _ownsSession;
+  double _inputRatio = 0.5;
+
+  @override
+  void initState() {
+    super.initState();
+    _ownsSession = widget.session == null;
+    _session = widget.session ?? JsonToolSession();
+  }
+
+  @override
+  void didUpdateWidget(covariant _JsonFormatValidateView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session != widget.session && widget.session != null) {
+      if (_ownsSession) _session.dispose();
+      _ownsSession = false;
+      _session = widget.session!;
+    }
+  }
 
   @override
   void dispose() {
-    _input.dispose();
-    _output.dispose();
+    if (_ownsSession) _session.dispose();
     super.dispose();
   }
 
-  void _runFormat() {
-    final text = _input.text.trim();
-    if (text.isEmpty) {
-      setState(() {
-        _output.text = '';
-        _error = null;
-        _info = null;
-      });
-      return;
-    }
-    try {
-      final validation = _validateJson(text, strict: true);
-      if (!validation.isValid) {
-        setState(() {
-          _error = validation.error?.description ?? 'Invalid JSON';
-          _info = null;
-        });
-        return;
-      }
-      final decoded = jsonDecode(text);
-      final encoder = JsonEncoder.withIndent(_indentFor(_indent));
-      _output.text = encoder.convert(decoded);
-      setState(() {
-        _error = null;
-        _info = validation.info;
-      });
-    } catch (e) {
-      setState(() => _error = e.toString());
-    }
-  }
-
-  Future<void> _pasteClipboard() async {
-    final text = await _readClipboardText();
+  void _setIndent(String value) {
     setState(() {
-      _input.text = text;
+      _session.indent = value;
+      _session.format();
     });
   }
 
-  void _setSample() {
-    const sample = '{"name":"DevUtils","items":[1,2,3],"enabled":true}';
+  void _formatLive(String _) {
+    _session.format();
+  }
+
+  void _setExample() {
     setState(() {
-      _input.text = sample;
+      _session.setSample();
+      _session.format();
     });
   }
 
-  void _clearInput() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-      _error = null;
-      _info = null;
-    });
-  }
-
-  Future<void> _copyOutput() async {
-    await Clipboard.setData(ClipboardData(text: _output.text));
+  void _clearSource() {
+    setState(() => _session.clear());
   }
 
   @override
   Widget build(BuildContext context) {
+    final compare = widget.compare;
     return Column(
       children: [
+        if (compare != null) ...[
+          _JsonCompareStrip(compare: compare),
+          const SizedBox(height: 8),
+        ],
         Expanded(
-          child: buildSplitEditors(
+          child: _JsonSplitEditors(
+            inputController: _session.input,
+            outputController: _session.output,
+            inputScrollController: _session.inputScroll,
+            outputScrollController: _session.outputScroll,
+            inputMarkedLines: compare?.changedLines ?? const <int>{},
+            inputRatio: _inputRatio,
+            onInputRatioChanged: (value) => setState(() => _inputRatio = value),
+            onInputChanged: _formatLive,
+            horizontal: true,
             inputActions: [
-              ToolButton(label: 'Go', onPressed: _runFormat),
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clearInput),
-              const ToolIconButton(icon: Icons.settings),
-              const SmallDropdown(items: ['JSON'], initialValue: 'JSON'),
+              ToolButton(label: 'Sample', onPressed: _setExample),
+              ToolButton(label: 'Clear', onPressed: _clearSource),
             ],
-            outputActions: [
-              SmallDropdown(
-                items: const ['2 spaces', '4 spaces', 'Tabs'],
-                initialValue: _indent,
-                onChanged: (value) {
-                  setState(() => _indent = value);
-                  _runFormat();
-                },
-              ),
-              ToolButton(label: 'Copy', onPressed: _copyOutput),
-            ],
-            inputController: _input,
-            outputController: _output,
-            inputPlaceholder: 'Paste JSON...',
-            outputPlaceholder: 'Formatted JSON...',
+            outputActions: const [],
+            showInputHeader: false,
+            showOutputHeader: false,
+            outputOverlay: _JsonFormatOutputOverlay(
+              statusListenable: _session.status,
+              indent: _session.indent,
+              onIndentChanged: _setIndent,
+            ),
           ),
         ),
-        if (_error != null) ...[
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              _error!,
-              style: const TextStyle(color: Colors.redAccent),
-            ),
-          ),
-        ] else if (_info != null) ...[
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              _info!.summary,
-              style: const TextStyle(color: Colors.black54),
-            ),
-          ),
-        ],
       ],
+    );
+  }
+}
+
+class _JsonFormatOutputOverlay extends StatelessWidget {
+  const _JsonFormatOutputOverlay({
+    required this.statusListenable,
+    required this.indent,
+    required this.onIndentChanged,
+  });
+
+  final ValueListenable<JsonToolStatus> statusListenable;
+  final String indent;
+  final ValueChanged<String> onIndentChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(child: _JsonStatusPill(statusListenable: statusListenable)),
+        const SizedBox(width: 8),
+        SmallDropdown(
+          items: const ['2 spaces', '4 spaces', 'Tabs'],
+          initialValue: indent,
+          onChanged: onIndentChanged,
+        ),
+      ],
+    );
+  }
+}
+
+class _JsonSplitEditors extends StatelessWidget {
+  const _JsonSplitEditors({
+    required this.inputController,
+    required this.outputController,
+    required this.inputScrollController,
+    required this.outputScrollController,
+    required this.inputMarkedLines,
+    required this.inputRatio,
+    required this.onInputRatioChanged,
+    required this.onInputChanged,
+    required this.inputActions,
+    required this.outputActions,
+    this.inputPlaceholder = 'Paste JSON...',
+    this.outputPlaceholder = 'Formatted JSON...',
+    this.showInputHeader = true,
+    this.showOutputHeader = true,
+    this.inputOverlay,
+    this.outputOverlay,
+    this.horizontal = false,
+  });
+
+  final TextEditingController inputController;
+  final TextEditingController outputController;
+  final ScrollController inputScrollController;
+  final ScrollController outputScrollController;
+  final Set<int> inputMarkedLines;
+  final double inputRatio;
+  final ValueChanged<double> onInputRatioChanged;
+  final ValueChanged<String> onInputChanged;
+  final List<Widget> inputActions;
+  final List<Widget> outputActions;
+  final String inputPlaceholder;
+  final String outputPlaceholder;
+  final bool showInputHeader;
+  final bool showOutputHeader;
+  final Widget? inputOverlay;
+  final Widget? outputOverlay;
+  final bool horizontal;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (horizontal) {
+          const splitterWidth = 6.0;
+          final available = max(0.0, constraints.maxWidth - splitterWidth);
+          final minPane = min(220.0, available / 2);
+          final maxInputWidth = max(minPane, available - minPane);
+          final inputWidth = (available * inputRatio)
+              .clamp(minPane, maxInputWidth)
+              .toDouble();
+          final outputWidth = max(0.0, available - inputWidth);
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: inputWidth,
+                child: EditorPane(
+                  label: 'Input',
+                  actions: inputActions,
+                  placeholder: inputPlaceholder,
+                  controller: inputController,
+                  onChanged: onInputChanged,
+                  scrollController: inputScrollController,
+                  markedLines: inputMarkedLines,
+                  showHeader: showInputHeader,
+                  overlay: inputOverlay,
+                ),
+              ),
+              _EditorSplitter(
+                horizontal: true,
+                onDrag: (delta) {
+                  if (available <= 0) return;
+                  onInputRatioChanged(
+                    (inputRatio + delta.dx / available).clamp(0.2, 0.8),
+                  );
+                },
+              ),
+              SizedBox(
+                width: outputWidth,
+                child: EditorPane(
+                  label: 'Output',
+                  actions: outputActions,
+                  placeholder: outputPlaceholder,
+                  readOnly: true,
+                  controller: outputController,
+                  scrollController: outputScrollController,
+                  showHeader: showOutputHeader,
+                  overlay: outputOverlay,
+                ),
+              ),
+            ],
+          );
+        }
+
+        const splitterHeight = 6.0;
+        final available = max(0.0, constraints.maxHeight - splitterHeight);
+        final minPane = min(160.0, available / 2);
+        final maxInputHeight = max(minPane, available - minPane);
+        final inputHeight = (available * inputRatio)
+            .clamp(minPane, maxInputHeight)
+            .toDouble();
+        final outputHeight = max(0.0, available - inputHeight);
+
+        return Column(
+          children: [
+            SizedBox(
+              height: inputHeight,
+              child: EditorPane(
+                label: 'Input',
+                actions: inputActions,
+                placeholder: inputPlaceholder,
+                controller: inputController,
+                onChanged: onInputChanged,
+                scrollController: inputScrollController,
+                markedLines: inputMarkedLines,
+                showHeader: showInputHeader,
+                overlay: inputOverlay,
+              ),
+            ),
+            _JsonEditorSplitter(
+              onDrag: (delta) {
+                if (available <= 0) return;
+                onInputRatioChanged(
+                  (inputRatio + delta.dy / available).clamp(0.2, 0.8),
+                );
+              },
+            ),
+            SizedBox(
+              height: outputHeight,
+              child: EditorPane(
+                label: 'Output',
+                actions: outputActions,
+                placeholder: outputPlaceholder,
+                readOnly: true,
+                controller: outputController,
+                scrollController: outputScrollController,
+                showHeader: showOutputHeader,
+                overlay: outputOverlay,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _JsonEditorSplitter extends StatelessWidget {
+  const _JsonEditorSplitter({required this.onDrag});
+
+  final ValueChanged<Offset> onDrag;
+
+  @override
+  Widget build(BuildContext context) {
+    return _EditorSplitter(horizontal: false, onDrag: onDrag);
+  }
+}
+
+class _JsonStatusPill extends StatelessWidget {
+  const _JsonStatusPill({required this.statusListenable});
+
+  final ValueListenable<JsonToolStatus> statusListenable;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return ValueListenableBuilder<JsonToolStatus>(
+      valueListenable: statusListenable,
+      builder: (context, status, _) {
+        if (!status.hasMessage) return const SizedBox.shrink();
+        final hasError = status.error != null;
+        return Container(
+          constraints: const BoxConstraints(maxWidth: 300),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: hasError
+                ? appColors.error.withAlpha(28)
+                : appColors.success.withAlpha(24),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: hasError ? appColors.error : appColors.success,
+            ),
+          ),
+          child: Text(
+            status.error ?? status.summary ?? '',
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: hasError ? appColors.error : appColors.success,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _JsonCompareStrip extends StatelessWidget {
+  const _JsonCompareStrip({required this.compare});
+
+  final JsonPanelCompareDetails compare;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    final modeLabel = compare.summary.mode == JsonCompareMode.normalized
+        ? 'Normalized Diff'
+        : 'Raw Diff';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: appColors.accentSoft,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: appColors.border),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.compare_arrows, size: 16, color: appColors.accent),
+          const SizedBox(width: 8),
+          Text(modeLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(width: 10),
+          Text(compare.summary.label),
+          const SizedBox(width: 10),
+          if (compare.linkedScroll)
+            Text('Linked Scroll', style: TextStyle(color: appColors.mutedText)),
+        ],
+      ),
     );
   }
 }
@@ -642,10 +1213,7 @@ class _CsvToJsonViewState extends State<_CsvToJsonView> {
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
-            child: Text(
-              _error!,
-              style: const TextStyle(color: Colors.redAccent),
-            ),
+            child: Text(_error!, style: _errorToolTextStyle(context)),
           ),
         ],
       ],
@@ -806,10 +1374,7 @@ class _HexToAsciiViewState extends State<_HexToAsciiView> {
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
-            child: Text(
-              _error!,
-              style: const TextStyle(color: Colors.redAccent),
-            ),
+            child: Text(_error!, style: _errorToolTextStyle(context)),
           ),
         ],
       ],
@@ -997,10 +1562,7 @@ class _Base64StringViewState extends State<_Base64StringView> {
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
-            child: Text(
-              _error!,
-              style: const TextStyle(color: Colors.redAccent),
-            ),
+            child: Text(_error!, style: _errorToolTextStyle(context)),
           ),
         ],
       ],
@@ -1111,10 +1673,7 @@ class _UrlEncodeDecodeViewState extends State<_UrlEncodeDecodeView> {
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
-            child: Text(
-              _error!,
-              style: const TextStyle(color: Colors.redAccent),
-            ),
+            child: Text(_error!, style: _errorToolTextStyle(context)),
           ),
         ],
       ],
@@ -1375,7 +1934,10 @@ class _SimplePassThroughViewState extends State<_SimplePassThroughView> {
         SmallDropdown(
           items: const ['2 spaces', '4 spaces', 'Tabs'],
           initialValue: _indent,
-          onChanged: (value) => setState(() => _indent = value),
+          onChanged: (value) {
+            setState(() => _indent = value);
+            _run();
+          },
         ),
       );
     }
@@ -1395,6 +1957,215 @@ class _SimplePassThroughViewState extends State<_SimplePassThroughView> {
       outputPlaceholder: 'Output...',
     );
   }
+}
+
+class _StyleBeautifyMinifyView extends StatefulWidget {
+  const _StyleBeautifyMinifyView({required this.language});
+
+  final String language;
+
+  @override
+  State<_StyleBeautifyMinifyView> createState() =>
+      _StyleBeautifyMinifyViewState();
+}
+
+class _StyleBeautifyMinifyViewState extends State<_StyleBeautifyMinifyView> {
+  final TextEditingController _input = TextEditingController();
+  final TextEditingController _output = TextEditingController();
+  String _format = 'Beautify';
+  String _indent = '2 spaces';
+
+  @override
+  void dispose() {
+    _input.dispose();
+    _output.dispose();
+    super.dispose();
+  }
+
+  void _run() {
+    final text = _input.text;
+    _output.text = _format == 'Minify'
+        ? _minifyStyleSheet(text)
+        : _beautifyStyleSheet(text, _indentFor(_indent));
+    setState(() {});
+  }
+
+  void _setSample() {
+    const sample =
+        'body{margin:25px;background-color:rgb(240,240,240);font-size:14px;}'
+        'h1{font-size:35px;font-weight:normal;margin-top:5px;}';
+    setState(() => _input.text = sample);
+    _run();
+  }
+
+  void _clearInput() {
+    setState(() {
+      _input.clear();
+      _output.clear();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controls = _HtmlFormatControls(
+      format: _format,
+      indent: _indent,
+      formats: const ['Beautify', 'Minify'],
+      showIndent: _format == 'Beautify',
+      onFormatChanged: (value) {
+        setState(() => _format = value);
+        _run();
+      },
+      onIndentChanged: (value) {
+        setState(() => _indent = value);
+        _run();
+      },
+    );
+
+    return buildSplitEditors(
+      inputPlaceholder: 'Paste ${widget.language} here...',
+      outputPlaceholder: 'Output...',
+      inputController: _input,
+      outputController: _output,
+      onInputChanged: (_) => _run(),
+      inputActions: [
+        ToolButton(label: 'Sample', onPressed: _setSample),
+        ToolButton(label: 'Clear', onPressed: _clearInput),
+      ],
+      outputActions: const [],
+      outputOverlay: controls,
+      showInputHeader: false,
+      showOutputHeader: false,
+    );
+  }
+}
+
+String _beautifyStyleSheet(String source, String indentString) {
+  final input = source.trim();
+  if (input.isEmpty) return '';
+
+  final lines = <String>[];
+  final buffer = StringBuffer();
+  var indentLevel = 0;
+  String? quote;
+  var inComment = false;
+  var previousWasSpace = false;
+
+  String indent() => List.filled(indentLevel, indentString).join();
+
+  void writeBuffered({bool suffixSemicolon = false}) {
+    final text = buffer.toString().trim();
+    buffer.clear();
+    previousWasSpace = false;
+    if (text.isEmpty) return;
+    lines.add('${indent()}$text${suffixSemicolon ? ';' : ''}');
+  }
+
+  void writeComment(String comment) {
+    final text = comment.trim();
+    if (text.isEmpty) return;
+    final commentLines = text.split('\n');
+    for (final line in commentLines) {
+      final trimmed = line.trimRight();
+      if (trimmed.isNotEmpty) lines.add('${indent()}$trimmed');
+    }
+  }
+
+  for (var i = 0; i < input.length; i++) {
+    final char = input[i];
+    final next = i + 1 < input.length ? input[i + 1] : '';
+
+    if (inComment) {
+      buffer.write(char);
+      if (char == '*' && next == '/') {
+        buffer.write('/');
+        i++;
+        inComment = false;
+        writeComment(buffer.toString());
+        buffer.clear();
+      }
+      continue;
+    }
+
+    if (quote != null) {
+      buffer.write(char);
+      if (char == quote && (i == 0 || input[i - 1] != '\\')) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if ((char == '"' || char == "'")) {
+      quote = char;
+      buffer.write(char);
+      previousWasSpace = false;
+      continue;
+    }
+
+    if (char == '/' && next == '*') {
+      writeBuffered();
+      inComment = true;
+      buffer.write('/*');
+      i++;
+      continue;
+    }
+
+    if (char == '{') {
+      final selector = buffer.toString().trim();
+      buffer.clear();
+      if (selector.isNotEmpty) {
+        lines.add('${indent()}$selector {');
+      } else {
+        lines.add('${indent()}{');
+      }
+      indentLevel += 1;
+      previousWasSpace = false;
+      continue;
+    }
+
+    if (char == '}') {
+      writeBuffered();
+      indentLevel = max(0, indentLevel - 1);
+      lines.add('${indent()}}');
+      previousWasSpace = false;
+      continue;
+    }
+
+    if (char == ';') {
+      writeBuffered(suffixSemicolon: true);
+      continue;
+    }
+
+    if (RegExp(r'\s').hasMatch(char)) {
+      if (!previousWasSpace && buffer.isNotEmpty) {
+        buffer.write(' ');
+        previousWasSpace = true;
+      }
+      continue;
+    }
+
+    buffer.write(char);
+    previousWasSpace = false;
+  }
+
+  if (inComment) {
+    writeComment(buffer.toString());
+  } else {
+    writeBuffered();
+  }
+
+  return lines.join('\n');
+}
+
+String _minifyStyleSheet(String source) {
+  var output = source.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
+  output = output.replaceAll(RegExp(r'\s+'), ' ');
+  output = output.replaceAllMapped(
+    RegExp(r'\s*([{}:;,>+~])\s*'),
+    (match) => match.group(1)!,
+  );
+  output = output.replaceAll(RegExp(r';}'), '}');
+  return output.trim();
 }
 
 class _HtmlBeautifyMinifyView extends StatefulWidget {
@@ -1420,12 +2191,59 @@ class _HtmlBeautifyMinifyViewState extends State<_HtmlBeautifyMinifyView> {
 
   void _run() {
     final text = _input.text;
-    if (_format == 'Minify') {
-      _output.text = _minifyHtml(text);
-    } else {
-      _output.text = text;
+    switch (_format) {
+      case 'Minify':
+        _output.text = _minifyHtml(text);
+        break;
+      case 'Preview':
+        _output.text = '';
+        break;
+      case 'Beautify':
+      default:
+        _output.text = _beautifyHtml(text, _indentFor(_indent));
+        break;
     }
     setState(() {});
+  }
+
+  String _beautifyHtml(String html, String indentString) {
+    if (html.trim().isEmpty) return '';
+    final tokens = RegExp(r'<!--[\s\S]*?-->|<[^>]+>|[^<]+').allMatches(html);
+    final lines = <String>[];
+    var level = 0;
+
+    for (final match in tokens) {
+      final token = match.group(0) ?? '';
+      final trimmed = token.trim();
+      if (trimmed.isEmpty) continue;
+
+      if (trimmed.startsWith('<')) {
+        final tagName = _htmlTagName(trimmed);
+        final closing = trimmed.startsWith('</');
+        final declaration =
+            trimmed.startsWith('<!') || trimmed.startsWith('<?');
+        final selfClosing =
+            declaration ||
+            trimmed.endsWith('/>') ||
+            (tagName != null && _htmlVoidTags.contains(tagName));
+
+        if (closing) level = max(0, level - 1);
+        lines.add('${List.filled(level, indentString).join()}$trimmed');
+        if (!closing &&
+            !selfClosing &&
+            tagName != null &&
+            !_htmlInlineTags.contains(tagName)) {
+          level += 1;
+        }
+      } else {
+        final text = trimmed.replaceAll(RegExp(r'\s+'), ' ');
+        if (text.isNotEmpty) {
+          lines.add('${List.filled(level, indentString).join()}$text');
+        }
+      }
+    }
+
+    return lines.join('\n');
   }
 
   String _minifyHtml(String html) {
@@ -1435,12 +2253,6 @@ class _HtmlBeautifyMinifyViewState extends State<_HtmlBeautifyMinifyView> {
     result = result.replaceAll(RegExp(r'\s{2,}'), ' ');
     result = result.replaceAll(RegExp(r'\s*=\s*'), '=');
     return result.trim();
-  }
-
-  Future<void> _pasteClipboard() async {
-    final text = await _readClipboardText();
-    setState(() => _input.text = text);
-    _run();
   }
 
   void _setSample() {
@@ -1462,50 +2274,1633 @@ class _HtmlBeautifyMinifyViewState extends State<_HtmlBeautifyMinifyView> {
 
   @override
   Widget build(BuildContext context) {
-    return buildSplitEditors(
-      inputActions: [
-        ToolButton(label: 'Go', onPressed: _run),
-        ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-        ToolButton(label: 'Sample', onPressed: _setSample),
-        ToolButton(label: 'Clear', onPressed: _clearInput),
-      ],
-      outputActions: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Format...',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+    final outputControls = _HtmlFormatControls(
+      format: _format,
+      indent: _indent,
+      showIndent: _format == 'Beautify',
+      onFormatChanged: (value) {
+        setState(() => _format = value);
+        _run();
+      },
+      onIndentChanged: (value) {
+        setState(() => _indent = value);
+        _run();
+      },
+    );
+
+    return _ResizableSplit(
+      horizontal: false,
+      first: EditorPane(
+        label: 'Input',
+        actions: [
+          ToolButton(label: 'Sample', onPressed: _setSample),
+          ToolButton(label: 'Clear', onPressed: _clearInput),
+        ],
+        controller: _input,
+        onChanged: (_) => _run(),
+        placeholder: 'Paste HTML here...',
+        showHeader: false,
+      ),
+      second: _format == 'Preview'
+          ? _HtmlRenderedPreview(html: _input.text, overlay: outputControls)
+          : EditorPane(
+              label: 'Output',
+              actions: const [],
+              controller: _output,
+              readOnly: true,
+              placeholder: 'Output...',
+              copyAction: _copyOutput,
+              showHeader: false,
+              overlay: outputControls,
             ),
-            const SizedBox(width: 6),
-            SmallDropdown(
-              items: const ['Beautify', 'Minify'],
-              initialValue: _format,
-              onChanged: (value) {
-                setState(() => _format = value);
-                _run();
-              },
-            ),
-          ],
-        ),
-        if (_format == 'Beautify')
-          SmallDropdown(
-            items: const ['2 spaces', '4 spaces', 'Tabs'],
-            initialValue: _indent,
-            onChanged: (value) {
-              setState(() => _indent = value);
-              _run();
-            },
-          ),
-        ToolButton(label: 'Copy', onPressed: _copyOutput),
-      ],
-      inputController: _input,
-      outputController: _output,
-      inputPlaceholder: 'Paste HTML here...',
-      outputPlaceholder: 'Output...',
     );
   }
 }
+
+class _HtmlToJsxView extends StatefulWidget {
+  const _HtmlToJsxView();
+
+  @override
+  State<_HtmlToJsxView> createState() => _HtmlToJsxViewState();
+}
+
+class _HtmlToJsxViewState extends State<_HtmlToJsxView> {
+  final TextEditingController _input = TextEditingController();
+  final TextEditingController _output = TextEditingController();
+  String? _error;
+
+  @override
+  void dispose() {
+    _input.dispose();
+    _output.dispose();
+    super.dispose();
+  }
+
+  void _convert() {
+    try {
+      final converted = _convertHtmlToJsx(_input.text);
+      setState(() {
+        _error = null;
+        _output.text = converted;
+      });
+    } catch (error) {
+      setState(() {
+        _error = error.toString();
+        _output.clear();
+      });
+    }
+  }
+
+  void _setExample() {
+    _input.text = '''
+<form class="login-form">
+  <label for="email">Email</label>
+  <input type="email" id="email" disabled>
+  <button type="submit" class="btn">Submit</button>
+</form>
+
+<!-- Footer -->
+<footer style="margin-top: 20px; padding: 10px; background-color: #333;">
+  <p>Copyright 2026</p>
+</footer>''';
+    _convert();
+  }
+
+  void _clear() {
+    setState(() {
+      _input.clear();
+      _output.clear();
+      _error = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_error != null) ...[
+          Text(_error!, style: _errorToolTextStyle(context)),
+          const SizedBox(height: 8),
+        ],
+        Expanded(
+          child: buildSplitEditors(
+            inputPlaceholder: 'Paste HTML here...',
+            outputPlaceholder: 'JSX output...',
+            inputController: _input,
+            outputController: _output,
+            onInputChanged: (_) => _convert(),
+            inputActions: [
+              ToolButton(label: 'Sample', onPressed: _setExample),
+              ToolButton(label: 'Clear', onPressed: _clear),
+            ],
+            outputActions: const [],
+            showInputHeader: false,
+            showOutputHeader: false,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _JsToTsConverterView extends StatefulWidget {
+  const _JsToTsConverterView();
+
+  @override
+  State<_JsToTsConverterView> createState() => _JsToTsConverterViewState();
+}
+
+class _JsToTsConverterViewState extends State<_JsToTsConverterView> {
+  final TextEditingController _input = TextEditingController();
+  final TextEditingController _output = TextEditingController();
+
+  bool _addClassFields = true;
+  bool _useJsDoc = true;
+  bool _rewriteCommonJs = true;
+  bool _addAnyFallbacks = true;
+  String? _sourceFileName;
+  String? _error;
+  _JsToTsConversionResult _lastResult = const _JsToTsConversionResult(
+    code: '',
+    notes: [],
+  );
+
+  @override
+  void dispose() {
+    _input.dispose();
+    _output.dispose();
+    super.dispose();
+  }
+
+  void _convert() {
+    try {
+      final result = _convertJavaScriptToTypeScript(
+        _input.text,
+        addClassFields: _addClassFields,
+        useJsDoc: _useJsDoc,
+        rewriteCommonJs: _rewriteCommonJs,
+        addAnyFallbacks: _addAnyFallbacks,
+      );
+      setState(() {
+        _error = null;
+        _lastResult = result;
+        _output.text = result.code;
+      });
+    } catch (error) {
+      setState(() {
+        _error = error.toString();
+        _lastResult = const _JsToTsConversionResult(code: '', notes: []);
+        _output.clear();
+      });
+    }
+  }
+
+  Future<void> _pickSourceFile() async {
+    final path = await FileDialogService.openFile(
+      allowedExtensions: const ['js', 'jsx', 'mjs', 'cjs'],
+    );
+    if (path == null || !mounted) return;
+    await _loadSourceFile(path);
+  }
+
+  Future<void> _loadSourceFile(String path) async {
+    try {
+      final file = File(path);
+      if (!await file.exists()) {
+        throw const FileSystemException('Source file does not exist');
+      }
+      final text = await file.readAsString();
+      if (!mounted) return;
+      setState(() {
+        _sourceFileName = p.basename(path);
+        _error = null;
+        _input.text = text;
+      });
+      _convert();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = _friendlyFileReadError(error));
+    }
+  }
+
+  void _setExample() {
+    _input.text = '''
+const express = require('express');
+
+/**
+ * @param {string} name
+ * @param {number} count
+ * @returns {string}
+ */
+function greet(name, count) {
+  return name.repeat(count);
+}
+
+greet('DevUtils');
+
+class UserCard {
+  constructor(name) {
+    this.name = name;
+    this.createdAt = new Date();
+  }
+}
+
+module.exports = { greet, UserCard };''';
+    setState(() {
+      _sourceFileName = null;
+      _error = null;
+    });
+    _convert();
+  }
+
+  void _clear() {
+    setState(() {
+      _sourceFileName = null;
+      _error = null;
+      _lastResult = const _JsToTsConversionResult(code: '', notes: []);
+      _input.clear();
+      _output.clear();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = _lastResult.notes.isEmpty
+        ? 'Paste JavaScript to generate TypeScript migration output.'
+        : _lastResult.notes.join('  •  ');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_error != null) ...[
+          Text(_error!, style: _errorToolTextStyle(context)),
+          const SizedBox(height: 8),
+        ],
+        Expanded(
+          child: buildSplitEditors(
+            horizontal: true,
+            inputPlaceholder: 'Choose a .js/.jsx file or paste JavaScript...',
+            outputPlaceholder: 'TypeScript output...',
+            inputController: _input,
+            outputController: _output,
+            onInputChanged: (_) {
+              _sourceFileName = null;
+              _convert();
+            },
+            inputActions: [
+              ToolButton(label: 'Sample', onPressed: _setExample),
+              ToolButton(label: 'Clear', onPressed: _clear),
+            ],
+            outputActions: const [],
+            showInputHeader: false,
+            showOutputHeader: false,
+            inputOverlay: _SourceFileControls(
+              onPickFile: _pickSourceFile,
+              fileName: _sourceFileName,
+              tooltip: 'Choose JavaScript file',
+            ),
+            outputOverlay: _JsToTsOptionsOverlay(
+              addClassFields: _addClassFields,
+              useJsDoc: _useJsDoc,
+              rewriteCommonJs: _rewriteCommonJs,
+              addAnyFallbacks: _addAnyFallbacks,
+              onChanged:
+                  ({
+                    bool? addClassFields,
+                    bool? useJsDoc,
+                    bool? rewriteCommonJs,
+                    bool? addAnyFallbacks,
+                  }) {
+                    setState(() {
+                      _addClassFields = addClassFields ?? _addClassFields;
+                      _useJsDoc = useJsDoc ?? _useJsDoc;
+                      _rewriteCommonJs = rewriteCommonJs ?? _rewriteCommonJs;
+                      _addAnyFallbacks = addAnyFallbacks ?? _addAnyFallbacks;
+                    });
+                    _convert();
+                  },
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(summary, style: _mutedToolTextStyle(context, fontSize: 12)),
+      ],
+    );
+  }
+}
+
+typedef _JsToTsOptionsChanged =
+    void Function({
+      bool? addClassFields,
+      bool? useJsDoc,
+      bool? rewriteCommonJs,
+      bool? addAnyFallbacks,
+    });
+
+class _JsToTsOptionsOverlay extends StatelessWidget {
+  const _JsToTsOptionsOverlay({
+    required this.addClassFields,
+    required this.useJsDoc,
+    required this.rewriteCommonJs,
+    required this.addAnyFallbacks,
+    required this.onChanged,
+  });
+
+  final bool addClassFields;
+  final bool useJsDoc;
+  final bool rewriteCommonJs;
+  final bool addAnyFallbacks;
+  final _JsToTsOptionsChanged onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: appColors.panelElevated.withAlpha(236),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: appColors.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _CompactCheck(
+                label: 'class fields',
+                value: addClassFields,
+                onChanged: (value) => onChanged(addClassFields: value),
+              ),
+              _CompactCheck(
+                label: 'JSDoc',
+                value: useJsDoc,
+                onChanged: (value) => onChanged(useJsDoc: value),
+              ),
+              _CompactCheck(
+                label: 'CommonJS',
+                value: rewriteCommonJs,
+                onChanged: (value) => onChanged(rewriteCommonJs: value),
+              ),
+              _CompactCheck(
+                label: ': any',
+                value: addAnyFallbacks,
+                onChanged: (value) => onChanged(addAnyFallbacks: value),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactCheck extends StatelessWidget {
+  const _CompactCheck({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => onChanged(!value),
+      borderRadius: BorderRadius.circular(5),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Checkbox(
+              value: value,
+              onChanged: (next) => onChanged(next ?? value),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+            ),
+            Text(label, style: const TextStyle(fontSize: 11)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+String convertJavaScriptToTypeScriptForPreview(String input) {
+  return _convertJavaScriptToTypeScript(input).code;
+}
+
+class _JsToTsConversionResult {
+  const _JsToTsConversionResult({required this.code, required this.notes});
+
+  final String code;
+  final List<String> notes;
+}
+
+class _JsDocInfo {
+  const _JsDocInfo({required this.params, this.returnType});
+
+  final Map<String, String> params;
+  final String? returnType;
+}
+
+class _JsClassInfo {
+  const _JsClassInfo({
+    required this.name,
+    required this.openBraceIndex,
+    required this.closeBraceIndex,
+    required this.properties,
+    this.extendsName,
+  });
+
+  final String name;
+  final String? extendsName;
+  final int openBraceIndex;
+  final int closeBraceIndex;
+  final Set<String> properties;
+}
+
+_JsToTsConversionResult _convertJavaScriptToTypeScript(
+  String input, {
+  bool addClassFields = true,
+  bool useJsDoc = true,
+  bool rewriteCommonJs = true,
+  bool addAnyFallbacks = true,
+}) {
+  var output = input.replaceAll('\r\n', '\n').trim();
+  if (output.isEmpty) {
+    return const _JsToTsConversionResult(code: '', notes: []);
+  }
+
+  final notes = <String>[];
+  final optionalParams = _findOptionalFunctionParameters(output);
+
+  if (useJsDoc) {
+    final annotated = _applyJsDocTypes(
+      output,
+      optionalParams,
+      addAnyFallbacks: addAnyFallbacks,
+    );
+    output = annotated.$1;
+    if (annotated.$2 > 0) {
+      notes.add('${annotated.$2} function signature(s) annotated');
+    }
+  } else if (addAnyFallbacks || optionalParams.isNotEmpty) {
+    final annotated = _applyAnyFallbacks(output, optionalParams);
+    output = annotated.$1;
+    if (annotated.$2 > 0) {
+      notes.add('${annotated.$2} function signature(s) normalized');
+    }
+  }
+
+  if (addClassFields) {
+    final withFields = _addClassPropertyDeclarations(output);
+    output = withFields.$1;
+    if (withFields.$2 > 0) {
+      notes.add('${withFields.$2} class field declaration(s) added');
+    }
+  }
+
+  if (rewriteCommonJs) {
+    final rewritten = _rewriteCommonJsModuleSyntax(output);
+    output = rewritten.$1;
+    if (rewritten.$2 > 0) {
+      notes.add('${rewritten.$2} CommonJS statement(s) rewritten');
+    }
+  }
+
+  if (optionalParams.isNotEmpty) {
+    notes.add('under-supplied call sites marked with optional parameters');
+  }
+
+  return _JsToTsConversionResult(code: output.trim(), notes: notes);
+}
+
+Map<String, Set<String>> _findOptionalFunctionParameters(String source) {
+  final definitions = <String, List<String>>{};
+  final functionPattern = RegExp(
+    r'\bfunction\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)',
+  );
+  final arrowPattern = RegExp(
+    r'\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>',
+  );
+
+  for (final match in functionPattern.allMatches(source)) {
+    definitions[match.group(1)!] = _parameterNames(match.group(2)!);
+  }
+  for (final match in arrowPattern.allMatches(source)) {
+    definitions[match.group(1)!] = _parameterNames(match.group(2)!);
+  }
+
+  final optional = <String, Set<String>>{};
+  for (final entry in definitions.entries) {
+    final name = entry.key;
+    final params = entry.value;
+    if (params.isEmpty) continue;
+    var minimumCallCount = params.length;
+    var sawUnderSuppliedCall = false;
+    final callPattern = RegExp('\\b${RegExp.escape(name)}\\s*\\(([^)]*)\\)');
+    for (final match in callPattern.allMatches(source)) {
+      if (_isFunctionDefinitionAt(source, match.start, name)) continue;
+      final argCount = _countTopLevelArguments(match.group(1)!);
+      if (argCount < params.length) {
+        sawUnderSuppliedCall = true;
+        minimumCallCount = min(minimumCallCount, argCount);
+      }
+    }
+    if (sawUnderSuppliedCall) {
+      optional[name] = params.skip(minimumCallCount).toSet();
+    }
+  }
+  return optional;
+}
+
+bool _isFunctionDefinitionAt(String source, int start, String name) {
+  final before = source.substring(max(0, start - 32), start);
+  return RegExp('function\\s+$name\\s*\$').hasMatch(before) ||
+      RegExp(
+        '(const|let|var)\\s+$name\\s*=\\s*(async\\s*)?\$',
+      ).hasMatch(before);
+}
+
+List<String> _parameterNames(String rawParams) {
+  return _splitTopLevel(rawParams, ',')
+      .map((param) {
+        var text = param.trim();
+        if (text.startsWith('...')) text = text.substring(3).trim();
+        final equalsIndex = text.indexOf('=');
+        if (equalsIndex >= 0) text = text.substring(0, equalsIndex).trim();
+        final match = RegExp(r'^([A-Za-z_$][\w$]*)').firstMatch(text);
+        return match?.group(1) ?? '';
+      })
+      .where((name) => name.isNotEmpty)
+      .toList();
+}
+
+int _countTopLevelArguments(String rawArgs) {
+  final trimmed = rawArgs.trim();
+  if (trimmed.isEmpty) return 0;
+  return _splitTopLevel(trimmed, ',').length;
+}
+
+(String, int) _applyJsDocTypes(
+  String source,
+  Map<String, Set<String>> optionalParams, {
+  required bool addAnyFallbacks,
+}) {
+  final lines = source.split('\n');
+  final output = <String>[];
+  final docBuffer = <String>[];
+  _JsDocInfo? pendingDoc;
+  var inDoc = false;
+  var changed = 0;
+
+  for (final line in lines) {
+    final trimmed = line.trim();
+    if (trimmed.startsWith('/**')) {
+      inDoc = true;
+      docBuffer
+        ..clear()
+        ..add(line);
+      if (trimmed.contains('*/')) {
+        inDoc = false;
+        pendingDoc = _parseJsDoc(docBuffer.join('\n'));
+      }
+      output.add(line);
+      continue;
+    }
+
+    if (inDoc) {
+      docBuffer.add(line);
+      output.add(line);
+      if (trimmed.contains('*/')) {
+        inDoc = false;
+        pendingDoc = _parseJsDoc(docBuffer.join('\n'));
+      }
+      continue;
+    }
+
+    if (pendingDoc != null && trimmed.isEmpty) {
+      output.add(line);
+      continue;
+    }
+
+    if (pendingDoc != null) {
+      final converted = _applyFunctionTypesToLine(
+        line,
+        pendingDoc,
+        optionalParams,
+        addAnyFallbacks: addAnyFallbacks,
+      );
+      if (converted != null) {
+        output.add(converted);
+        changed += 1;
+        pendingDoc = null;
+        continue;
+      }
+      if (!trimmed.startsWith('*') && trimmed.isNotEmpty) {
+        pendingDoc = null;
+      }
+    }
+
+    output.add(line);
+  }
+
+  return (output.join('\n'), changed);
+}
+
+(String, int) _applyAnyFallbacks(
+  String source,
+  Map<String, Set<String>> optionalParams,
+) {
+  final lines = source.split('\n');
+  var changed = 0;
+  final converted = lines
+      .map((line) {
+        final next = _applyFunctionTypesToLine(
+          line,
+          const _JsDocInfo(params: {}),
+          optionalParams,
+          addAnyFallbacks: true,
+        );
+        if (next != null && next != line) {
+          changed += 1;
+          return next;
+        }
+        return line;
+      })
+      .join('\n');
+  return (converted, changed);
+}
+
+_JsDocInfo _parseJsDoc(String block) {
+  final params = <String, String>{};
+  final paramPattern = RegExp(
+    r'@param\s+\{([^}]+)\}\s+(\[?[A-Za-z_$][\w$]*(?:=[^\]]+)?\]?)',
+  );
+  for (final match in paramPattern.allMatches(block)) {
+    var name = match.group(2)!;
+    if (name.startsWith('[')) name = name.substring(1);
+    if (name.endsWith(']')) name = name.substring(0, name.length - 1);
+    final equals = name.indexOf('=');
+    if (equals >= 0) name = name.substring(0, equals);
+    params[name] = _jsDocTypeToTs(match.group(1)!);
+  }
+  final returnMatch = RegExp(r'@returns?\s+\{([^}]+)\}').firstMatch(block);
+  return _JsDocInfo(
+    params: params,
+    returnType: returnMatch == null
+        ? null
+        : _jsDocTypeToTs(returnMatch.group(1)!),
+  );
+}
+
+String? _applyFunctionTypesToLine(
+  String line,
+  _JsDocInfo doc,
+  Map<String, Set<String>> optionalParams, {
+  required bool addAnyFallbacks,
+}) {
+  const ident = r'[A-Za-z_$][\w$]*';
+  final functionMatch = RegExp(
+    '^(\\s*)((?:export\\s+)?(?:async\\s+)?)function\\s+($ident)\\s*\\(([^)]*)\\)(.*)\$',
+  ).firstMatch(line);
+  if (functionMatch != null) {
+    final name = functionMatch.group(3)!;
+    final params = _annotateParamList(
+      functionMatch.group(4)!,
+      doc.params,
+      optionalParams[name] ?? const <String>{},
+      addAnyFallbacks: addAnyFallbacks,
+    );
+    final returnType = _lineAlreadyHasReturnType(functionMatch.group(5)!)
+        ? ''
+        : _returnTypeSuffix(doc.returnType);
+    return '${functionMatch.group(1)}${functionMatch.group(2)}function $name($params)$returnType${functionMatch.group(5)}';
+  }
+
+  final arrowMatch = RegExp(
+    '^(\\s*)((?:export\\s+)?(?:const|let|var)\\s+($ident)\\s*=\\s*(?:async\\s*)?)\\(([^)]*)\\)(\\s*=>\\s*.*)\$',
+  ).firstMatch(line);
+  if (arrowMatch != null) {
+    final name = arrowMatch.group(3)!;
+    final params = _annotateParamList(
+      arrowMatch.group(4)!,
+      doc.params,
+      optionalParams[name] ?? const <String>{},
+      addAnyFallbacks: addAnyFallbacks,
+    );
+    final returnType = _returnTypeSuffix(doc.returnType);
+    return '${arrowMatch.group(1)}${arrowMatch.group(2)}($params)$returnType${arrowMatch.group(5)}';
+  }
+
+  return null;
+}
+
+bool _lineAlreadyHasReturnType(String suffix) {
+  return suffix.trimLeft().startsWith(':');
+}
+
+String _returnTypeSuffix(String? returnType) {
+  if (returnType == null || returnType.isEmpty) return '';
+  return ': $returnType';
+}
+
+String _annotateParamList(
+  String rawParams,
+  Map<String, String> jsDocTypes,
+  Set<String> optionalNames, {
+  required bool addAnyFallbacks,
+}) {
+  final params = _splitTopLevel(rawParams, ',');
+  return params
+      .map((param) {
+        final original = param.trim();
+        if (original.isEmpty || original.contains(':')) return original;
+        final rest = original.startsWith('...');
+        var working = rest ? original.substring(3).trim() : original;
+        final defaultIndex = working.indexOf('=');
+        final defaultValue = defaultIndex >= 0
+            ? working.substring(defaultIndex).trim()
+            : '';
+        if (defaultIndex >= 0) {
+          working = working.substring(0, defaultIndex).trim();
+        }
+        final nameMatch = RegExp(r'^([A-Za-z_$][\w$]*)$').firstMatch(working);
+        if (nameMatch == null) return original;
+        final name = nameMatch.group(1)!;
+        var type = jsDocTypes[name];
+        if (type == null && addAnyFallbacks) type = 'any';
+        if (type == null) return original;
+        if (rest && !type.endsWith('[]')) type = '$type[]';
+        final optionalMarker =
+            optionalNames.contains(name) && defaultValue.isEmpty ? '?' : '';
+        final prefix = rest ? '...' : '';
+        return '$prefix$name$optionalMarker: $type${defaultValue.isEmpty ? '' : ' $defaultValue'}';
+      })
+      .join(', ');
+}
+
+String _jsDocTypeToTs(String type) {
+  var value = type.trim();
+  var nullable = false;
+  if (value.startsWith('?')) {
+    nullable = true;
+    value = value.substring(1);
+  }
+  value = value
+      .replaceAll('String', 'string')
+      .replaceAll('Number', 'number')
+      .replaceAll('Boolean', 'boolean')
+      .replaceAll('Object', 'Record<string, any>')
+      .replaceAll('*', 'any');
+  value = value.replaceAllMapped(
+    RegExp(r'Array\.<([^>]+)>'),
+    (match) => '${_jsDocTypeToTs(match.group(1)!)}[]',
+  );
+  value = value.replaceAllMapped(
+    RegExp(r'Promise\.<([^>]+)>'),
+    (match) => 'Promise<${_jsDocTypeToTs(match.group(1)!)}>',
+  );
+  value = value.replaceAll('|', ' | ');
+  if (nullable) value = '$value | null';
+  return value;
+}
+
+(String, int) _addClassPropertyDeclarations(String source) {
+  final classes = _findJsClasses(source);
+  if (classes.isEmpty) return (source, 0);
+  final byName = {for (final info in classes) info.name: info};
+  var output = source;
+  var added = 0;
+
+  for (final info in classes.reversed) {
+    final inherited = _inheritedClassProperties(info, byName);
+    final properties =
+        info.properties
+            .where((property) => !inherited.contains(property))
+            .where(
+              (property) =>
+                  !_classAlreadyDeclaresProperty(source, info, property),
+            )
+            .toList()
+          ..sort();
+    if (properties.isEmpty) continue;
+    final indent = _classPropertyIndent(source, info.openBraceIndex);
+    final declarations = properties
+        .map((property) => '$indent public $property: any;')
+        .join('\n');
+    output = output.replaceRange(
+      info.openBraceIndex + 1,
+      info.openBraceIndex + 1,
+      '\n$declarations\n',
+    );
+    added += properties.length;
+  }
+
+  return (output, added);
+}
+
+List<_JsClassInfo> _findJsClasses(String source) {
+  final classes = <_JsClassInfo>[];
+  final classPattern = RegExp(
+    r'\bclass\s+([A-Za-z_$][\w$]*)(?:\s+extends\s+([A-Za-z_$][\w$]*))?\s*\{',
+  );
+  for (final match in classPattern.allMatches(source)) {
+    final openBraceIndex = source.indexOf('{', match.start);
+    final closeBraceIndex = _matchingBraceIndex(source, openBraceIndex);
+    if (openBraceIndex < 0 || closeBraceIndex < 0) continue;
+    final body = source.substring(openBraceIndex + 1, closeBraceIndex);
+    classes.add(
+      _JsClassInfo(
+        name: match.group(1)!,
+        extendsName: match.group(2),
+        openBraceIndex: openBraceIndex,
+        closeBraceIndex: closeBraceIndex,
+        properties: _classPropertiesFromBody(body),
+      ),
+    );
+  }
+  return classes;
+}
+
+Set<String> _classPropertiesFromBody(String body) {
+  final properties = <String>{};
+  for (final match in RegExp(r'\bthis\.([A-Za-z_$][\w$]*)').allMatches(body)) {
+    properties.add(match.group(1)!);
+  }
+  final aliases = RegExp(
+    r'\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*this\b',
+  ).allMatches(body).map((match) => match.group(1)!);
+  for (final alias in aliases) {
+    final aliasPattern = RegExp(
+      r'\b' + RegExp.escape(alias) + r'\.([A-Za-z_$][\w$]*)',
+    );
+    for (final match in aliasPattern.allMatches(body)) {
+      properties.add(match.group(1)!);
+    }
+  }
+  return properties;
+}
+
+Set<String> _inheritedClassProperties(
+  _JsClassInfo info,
+  Map<String, _JsClassInfo> classes,
+) {
+  final inherited = <String>{};
+  var parent = info.extendsName == null ? null : classes[info.extendsName!];
+  while (parent != null) {
+    inherited.addAll(parent.properties);
+    parent = parent.extendsName == null ? null : classes[parent.extendsName!];
+  }
+  return inherited;
+}
+
+bool _classAlreadyDeclaresProperty(
+  String source,
+  _JsClassInfo info,
+  String property,
+) {
+  final body = source.substring(info.openBraceIndex + 1, info.closeBraceIndex);
+  return RegExp(
+    '(^|\\n)\\s*(public\\s+|private\\s+|protected\\s+|readonly\\s+|static\\s+)*${RegExp.escape(property)}\\s*[:=;]',
+  ).hasMatch(body);
+}
+
+String _classPropertyIndent(String source, int openBraceIndex) {
+  final lineStart = source.lastIndexOf('\n', openBraceIndex);
+  final baseIndent = lineStart < 0
+      ? ''
+      : RegExp(r'^\s*')
+                .firstMatch(source.substring(lineStart + 1, openBraceIndex))
+                ?.group(0) ??
+            '';
+  return '$baseIndent  ';
+}
+
+int _matchingBraceIndex(String source, int openBraceIndex) {
+  if (openBraceIndex < 0 || openBraceIndex >= source.length) return -1;
+  var depth = 0;
+  String? quote;
+  var inLineComment = false;
+  var inBlockComment = false;
+  for (var i = openBraceIndex; i < source.length; i++) {
+    final char = source[i];
+    final next = i + 1 < source.length ? source[i + 1] : '';
+    if (inLineComment) {
+      if (char == '\n') inLineComment = false;
+      continue;
+    }
+    if (inBlockComment) {
+      if (char == '*' && next == '/') {
+        inBlockComment = false;
+        i++;
+      }
+      continue;
+    }
+    if (quote != null) {
+      if (char == quote && (i == 0 || source[i - 1] != '\\')) quote = null;
+      continue;
+    }
+    if (char == '/' && next == '/') {
+      inLineComment = true;
+      i++;
+      continue;
+    }
+    if (char == '/' && next == '*') {
+      inBlockComment = true;
+      i++;
+      continue;
+    }
+    if (char == '"' || char == "'" || char == '`') {
+      quote = char;
+      continue;
+    }
+    if (char == '{') depth++;
+    if (char == '}') {
+      depth--;
+      if (depth == 0) return i;
+    }
+  }
+  return -1;
+}
+
+(String, int) _rewriteCommonJsModuleSyntax(String source) {
+  final lines = source.split('\n');
+  var changed = 0;
+  final output = lines
+      .map((line) {
+        final destructured = RegExp(
+          r"""^(\s*)(?:const|let|var)\s+\{([^}]+)\}\s*=\s*require\((['"][^'"]+['"])\);?\s*$""",
+        ).firstMatch(line);
+        if (destructured != null) {
+          changed += 1;
+          final imports = _commonJsDestructuredImports(destructured.group(2)!);
+          return '${destructured.group(1)}import { $imports } from ${destructured.group(3)};';
+        }
+
+        final defaultImport = RegExp(
+          r"""^(\s*)(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*require\((['"][^'"]+['"])\);?\s*$""",
+        ).firstMatch(line);
+        if (defaultImport != null) {
+          changed += 1;
+          return '${defaultImport.group(1)}import ${defaultImport.group(2)} from ${defaultImport.group(3)};';
+        }
+
+        final objectExport = RegExp(
+          r'^(\s*)module\.exports\s*=\s*\{([^}]+)\};?\s*$',
+        ).firstMatch(line);
+        if (objectExport != null) {
+          changed += 1;
+          return '${objectExport.group(1)}export { ${objectExport.group(2)!.trim()} };';
+        }
+
+        final defaultExport = RegExp(
+          r'^(\s*)module\.exports\s*=\s*([A-Za-z_$][\w$]*);?\s*$',
+        ).firstMatch(line);
+        if (defaultExport != null) {
+          changed += 1;
+          return '${defaultExport.group(1)}export default ${defaultExport.group(2)};';
+        }
+
+        final namedExport = RegExp(
+          r'^(\s*)exports\.([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*);?\s*$',
+        ).firstMatch(line);
+        if (namedExport != null) {
+          changed += 1;
+          final name = namedExport.group(2)!;
+          final value = namedExport.group(3)!;
+          if (name == value) return '${namedExport.group(1)}export { $name };';
+          return '${namedExport.group(1)}export const $name = $value;';
+        }
+
+        return line;
+      })
+      .join('\n');
+  return (output, changed);
+}
+
+String _commonJsDestructuredImports(String raw) {
+  return _splitTopLevel(raw, ',')
+      .map((part) {
+        final segments = part.split(':').map((item) => item.trim()).toList();
+        if (segments.length == 2) return '${segments[0]} as ${segments[1]}';
+        return part.trim();
+      })
+      .join(', ');
+}
+
+List<String> _splitTopLevel(String source, String separator) {
+  final parts = <String>[];
+  final buffer = StringBuffer();
+  var square = 0;
+  var curly = 0;
+  var paren = 0;
+  String? quote;
+  for (var i = 0; i < source.length; i++) {
+    final char = source[i];
+    if (quote != null) {
+      buffer.write(char);
+      if (char == quote && (i == 0 || source[i - 1] != '\\')) quote = null;
+      continue;
+    }
+    if (char == '"' || char == "'" || char == '`') {
+      quote = char;
+      buffer.write(char);
+      continue;
+    }
+    if (char == '[') square++;
+    if (char == ']') square = max(0, square - 1);
+    if (char == '{') curly++;
+    if (char == '}') curly = max(0, curly - 1);
+    if (char == '(') paren++;
+    if (char == ')') paren = max(0, paren - 1);
+    if (char == separator && square == 0 && curly == 0 && paren == 0) {
+      parts.add(buffer.toString().trim());
+      buffer.clear();
+      continue;
+    }
+    buffer.write(char);
+  }
+  final finalPart = buffer.toString().trim();
+  if (finalPart.isNotEmpty) parts.add(finalPart);
+  return parts;
+}
+
+String _convertHtmlToJsx(String input) {
+  var output = input.trim();
+  if (output.isEmpty) return '';
+
+  output = output.replaceAll(
+    RegExp(r'<!doctype[^>]*>', caseSensitive: false),
+    '',
+  );
+  output = output.replaceAllMapped(
+    RegExp(r'<!--([\s\S]*?)-->'),
+    (match) => '{/* ${match.group(1)!.trim()} */}',
+  );
+
+  final attrMap = <String, String>{
+    'class': 'className',
+    'for': 'htmlFor',
+    'tabindex': 'tabIndex',
+    'readonly': 'readOnly',
+    'maxlength': 'maxLength',
+    'minlength': 'minLength',
+    'colspan': 'colSpan',
+    'rowspan': 'rowSpan',
+    'autofocus': 'autoFocus',
+    'autocomplete': 'autoComplete',
+    'contenteditable': 'contentEditable',
+    'spellcheck': 'spellCheck',
+    'srcset': 'srcSet',
+    'crossorigin': 'crossOrigin',
+    'enctype': 'encType',
+    'novalidate': 'noValidate',
+    'accept-charset': 'acceptCharset',
+    'http-equiv': 'httpEquiv',
+  };
+
+  for (final entry in attrMap.entries) {
+    output = output.replaceAllMapped(
+      RegExp(
+        '(^|\\s)${RegExp.escape(entry.key)}(?=\\s*=|\\s|>|/)',
+        caseSensitive: false,
+      ),
+      (match) => '${match.group(1)}${entry.value}',
+    );
+  }
+
+  output = output.replaceAllMapped(
+    RegExp(r'style\s*=\s*"([^"]*)"', caseSensitive: false),
+    (match) => 'style={${_cssStyleToJsxObject(match.group(1)!)}}',
+  );
+  output = output.replaceAllMapped(
+    RegExp(r"style\s*=\s*'([^']*)'", caseSensitive: false),
+    (match) => 'style={${_cssStyleToJsxObject(match.group(1)!)}}',
+  );
+
+  const booleanAttributes = {
+    'allowFullScreen',
+    'async',
+    'autoFocus',
+    'autoPlay',
+    'checked',
+    'controls',
+    'default',
+    'defer',
+    'disabled',
+    'formNoValidate',
+    'hidden',
+    'loop',
+    'multiple',
+    'muted',
+    'noValidate',
+    'open',
+    'readOnly',
+    'required',
+    'reversed',
+    'selected',
+  };
+  for (final attr in booleanAttributes) {
+    output = output.replaceAllMapped(
+      RegExp('(\\s)$attr(?=\\s|>|/)(?!\\s*=)', caseSensitive: false),
+      (match) => '${match.group(1)}$attr={true}',
+    );
+  }
+
+  const voidTags = {
+    'area',
+    'base',
+    'br',
+    'col',
+    'embed',
+    'hr',
+    'img',
+    'input',
+    'link',
+    'meta',
+    'param',
+    'source',
+    'track',
+    'wbr',
+  };
+  output = output.replaceAllMapped(RegExp(r'<([a-zA-Z][\w:-]*)([^<>]*?)>'), (
+    match,
+  ) {
+    final tag = match.group(1)!;
+    final attrs = match.group(2)!;
+    if (!voidTags.contains(tag.toLowerCase()) ||
+        attrs.trimRight().endsWith('/')) {
+      return match.group(0)!;
+    }
+    return '<$tag${attrs.trimRight()} />';
+  });
+
+  return _wrapMultipleJsxRoots(output.trim());
+}
+
+String _cssStyleToJsxObject(String style) {
+  final declarations = style
+      .split(';')
+      .map((part) => part.trim())
+      .where((part) => part.isNotEmpty);
+  final entries = <String>[];
+  for (final declaration in declarations) {
+    final separator = declaration.indexOf(':');
+    if (separator <= 0) continue;
+    final property = declaration.substring(0, separator).trim();
+    final value = declaration.substring(separator + 1).trim();
+    if (property.isEmpty || value.isEmpty) continue;
+    entries.add('${_cssPropertyToJsx(property)}: ${_jsxStyleValue(value)}');
+  }
+  return '{ ${entries.join(', ')} }';
+}
+
+String _cssPropertyToJsx(String property) {
+  if (property.startsWith('--')) return "'$property'";
+  final parts = property.toLowerCase().split('-');
+  return [
+    parts.first,
+    for (final part in parts.skip(1))
+      if (part.isNotEmpty) part[0].toUpperCase() + part.substring(1),
+  ].join();
+}
+
+String _jsxStyleValue(String value) {
+  final escaped = value.replaceAll(r'\', r'\\').replaceAll("'", r"\'");
+  return "'$escaped'";
+}
+
+String _wrapMultipleJsxRoots(String output) {
+  if (!_hasMultipleJsxRoots(output)) return output;
+  final indented = output
+      .split('\n')
+      .map((line) => line.trim().isEmpty ? line : '  $line')
+      .join('\n');
+  return '<div>\n$indented\n</div>';
+}
+
+bool _hasMultipleJsxRoots(String output) {
+  var depth = 0;
+  var rootCount = 0;
+  var index = 0;
+
+  while (index < output.length) {
+    final char = output[index];
+    if (char.trim().isEmpty) {
+      index++;
+      continue;
+    }
+
+    if (output.startsWith('{/*', index)) {
+      if (depth == 0) rootCount++;
+      if (rootCount > 1) return true;
+      final end = output.indexOf('*/}', index + 3);
+      index = end == -1 ? output.length : end + 3;
+      continue;
+    }
+
+    if (char == '<') {
+      if (output.startsWith('</', index)) {
+        depth = max(0, depth - 1);
+        final end = output.indexOf('>', index + 2);
+        index = end == -1 ? output.length : end + 1;
+        continue;
+      }
+
+      final end = output.indexOf('>', index + 1);
+      if (end == -1) break;
+      final tag = output.substring(index, end + 1);
+      if (depth == 0) {
+        rootCount++;
+        if (rootCount > 1) return true;
+      }
+      if (!tag.trimRight().endsWith('/>')) {
+        depth++;
+      }
+      index = end + 1;
+      continue;
+    }
+
+    if (depth == 0) {
+      rootCount++;
+      if (rootCount > 1) return true;
+    }
+    while (index < output.length &&
+        output[index] != '<' &&
+        !output.startsWith('{/*', index)) {
+      index++;
+    }
+  }
+
+  return false;
+}
+
+class _HtmlFormatControls extends StatelessWidget {
+  const _HtmlFormatControls({
+    required this.format,
+    required this.indent,
+    required this.showIndent,
+    required this.onFormatChanged,
+    required this.onIndentChanged,
+    this.formats = const ['Beautify', 'Minify', 'Preview'],
+  });
+
+  final String format;
+  final String indent;
+  final bool showIndent;
+  final ValueChanged<String> onFormatChanged;
+  final ValueChanged<String> onIndentChanged;
+  final List<String> formats;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: appColors.panelElevated.withAlpha(236),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: appColors.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Format',
+              style: TextStyle(
+                color: appColors.editorText,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: 6),
+            SmallDropdown(
+              items: formats,
+              initialValue: format,
+              onChanged: onFormatChanged,
+            ),
+            if (showIndent) ...[
+              const SizedBox(width: 6),
+              SmallDropdown(
+                items: const ['2 spaces', '4 spaces', 'Tabs'],
+                initialValue: indent,
+                onChanged: onIndentChanged,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HtmlRenderedPreview extends StatefulWidget {
+  const _HtmlRenderedPreview({required this.html, required this.overlay});
+
+  final String html;
+  final Widget overlay;
+
+  @override
+  State<_HtmlRenderedPreview> createState() => _HtmlRenderedPreviewState();
+}
+
+class _HtmlRenderedPreviewState extends State<_HtmlRenderedPreview> {
+  WebViewController? _controller;
+  Object? _webViewError;
+  Timer? _reloadTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _initWebView();
+  }
+
+  @override
+  void didUpdateWidget(covariant _HtmlRenderedPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.html != widget.html) {
+      _scheduleLoad();
+    }
+  }
+
+  @override
+  void dispose() {
+    _reloadTimer?.cancel();
+    super.dispose();
+  }
+
+  void _initWebView() {
+    try {
+      final controller = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.disabled)
+        ..setBackgroundColor(Colors.transparent);
+      _controller = controller;
+      _loadHtml();
+    } catch (error) {
+      _webViewError = error;
+    }
+  }
+
+  void _scheduleLoad() {
+    _reloadTimer?.cancel();
+    _reloadTimer = Timer(const Duration(milliseconds: 180), _loadHtml);
+  }
+
+  Future<void> _loadHtml() async {
+    final controller = _controller;
+    if (controller == null) return;
+    await controller.loadHtmlString(_previewDocument(widget.html));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Container(
+      key: const ValueKey('html-rendered-preview'),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: appColors.border),
+      ),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: widget.html.trim().isEmpty
+                ? Center(
+                    child: Text(
+                      'Preview rendered HTML here...',
+                      style: TextStyle(color: appColors.mutedText),
+                    ),
+                  )
+                : _controller == null
+                ? _HtmlPreviewFallback(html: widget.html, error: _webViewError)
+                : ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: WebViewWidget(controller: _controller!),
+                  ),
+          ),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: widget.overlay,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HtmlPreviewFallback extends StatelessWidget {
+  const _HtmlPreviewFallback({required this.html, required this.error});
+
+  final String html;
+  final Object? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = _plainTextFromHtml(html);
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+      child: SelectableText(
+        text.isEmpty ? 'Preview unavailable: $error' : text,
+        style: const TextStyle(
+          color: Color(0xFF111827),
+          fontSize: 14,
+          height: 1.45,
+        ),
+      ),
+    );
+  }
+}
+
+String _previewDocument(String html) {
+  final trimmed = html.trim();
+  if (trimmed.isEmpty) return _previewShell('');
+  if (RegExp(r'<html[\s>]', caseSensitive: false).hasMatch(trimmed)) {
+    return trimmed;
+  }
+  return _previewShell(trimmed);
+}
+
+String _previewShell(String body) {
+  return '''
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #ffffff;
+  color: #111827;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+body { padding: 20px; }
+h1, h2, h3, h4, h5, h6 {
+  margin: 1.1em 0 0.45em;
+  line-height: 1.2;
+  font-weight: 700;
+}
+h1:first-child, h2:first-child, h3:first-child { margin-top: 0; }
+h1 { font-size: 2rem; padding-bottom: 0.35em; border-bottom: 1px solid #e5e7eb; }
+h2 { font-size: 1.5rem; padding-bottom: 0.25em; border-bottom: 1px solid #edf0f3; }
+h3 { font-size: 1.18rem; }
+p { margin: 0 0 1em; }
+ul, ol { margin: 0 0 1em 1.35em; padding: 0; }
+li { margin: 0.25em 0; }
+img, video, canvas, svg { max-width: 100%; height: auto; }
+.markdown-table-scroll { overflow-x: auto; margin: 1em 0; }
+table { border-collapse: collapse; width: 100%; min-width: 560px; }
+td, th {
+  border: 1px solid #d1d5db;
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+th { background: #f3f4f6; font-weight: 700; }
+tbody tr:nth-child(even) td { background: #fafafa; }
+pre, code, kbd, samp {
+  font-family: Menlo, Consolas, monospace;
+  background: #f3f4f6;
+  border-radius: 4px;
+}
+code { padding: 2px 4px; }
+pre { padding: 12px; overflow: auto; }
+pre code { padding: 0; background: transparent; }
+blockquote {
+  margin-left: 0;
+  padding-left: 14px;
+  border-left: 3px solid #d1d5db;
+  color: #4b5563;
+}
+a { color: #2563eb; }
+</style>
+</head>
+<body>
+$body
+</body>
+</html>
+''';
+}
+
+String _plainTextFromHtml(String html) {
+  final withoutScripts = html
+      .replaceAll(
+        RegExp(r'<script\b[^>]*>[\s\S]*?</script>', caseSensitive: false),
+        '',
+      )
+      .replaceAll(
+        RegExp(r'<style\b[^>]*>[\s\S]*?</style>', caseSensitive: false),
+        '',
+      );
+  final withBreaks = withoutScripts.replaceAll(
+    RegExp(
+      r'</?(p|div|section|article|h[1-6]|li|br|tr)\b[^>]*>',
+      caseSensitive: false,
+    ),
+    '\n',
+  );
+  return _decodeHtmlEntities(withBreaks.replaceAll(RegExp(r'<[^>]+>'), ' '))
+      .replaceAll(RegExp(r'[ \t]+'), ' ')
+      .replaceAll(RegExp(r'\n\s+'), '\n')
+      .trim();
+}
+
+String? _htmlTagName(String tag) {
+  final match = RegExp(r'^</?\s*([a-zA-Z0-9:-]+)').firstMatch(tag);
+  return match?.group(1)?.toLowerCase();
+}
+
+String _decodeHtmlEntities(String input) {
+  return input.replaceAllMapped(RegExp(r'&(#x?[0-9a-fA-F]+|[a-zA-Z]+);'), (
+    match,
+  ) {
+    final entity = match.group(1) ?? '';
+    if (entity.startsWith('#x') || entity.startsWith('#X')) {
+      final value = int.tryParse(entity.substring(2), radix: 16);
+      return value == null ? match.group(0)! : String.fromCharCode(value);
+    }
+    if (entity.startsWith('#')) {
+      final value = int.tryParse(entity.substring(1));
+      return value == null ? match.group(0)! : String.fromCharCode(value);
+    }
+    return switch (entity) {
+      'amp' => '&',
+      'lt' => '<',
+      'gt' => '>',
+      'quot' => '"',
+      'apos' => "'",
+      'nbsp' => ' ',
+      _ => match.group(0)!,
+    };
+  });
+}
+
+const _htmlVoidTags = {
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr',
+};
+
+const _htmlInlineTags = {
+  'a',
+  'abbr',
+  'b',
+  'bdi',
+  'bdo',
+  'br',
+  'button',
+  'cite',
+  'code',
+  'data',
+  'dfn',
+  'em',
+  'i',
+  'img',
+  'input',
+  'kbd',
+  'label',
+  'mark',
+  'q',
+  's',
+  'samp',
+  'small',
+  'span',
+  'strong',
+  'sub',
+  'sup',
+  'textarea',
+  'time',
+  'u',
+  'var',
+};
 
 class _JsBeautifyMinifyView extends StatefulWidget {
   const _JsBeautifyMinifyView();
@@ -2039,10 +4434,13 @@ class _JsBeautifyMinifyViewState extends State<_JsBeautifyMinifyView> {
   }
 
   String _minifyJs(String text) {
-    var output = text.replaceAll(RegExp(r'/\\*([\\s\\S]*?)\\*/'), '');
+    var output = text.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
     output = output.replaceAll(RegExp(r'//.*'), '');
     output = output.replaceAll(RegExp(r'\s+'), ' ');
-    output = output.replaceAll(RegExp(r'\s*([{}();,:])\s*'), r'$1');
+    output = output.replaceAllMapped(
+      RegExp(r'\s*([{}();,:])\s*'),
+      (match) => match.group(1)!,
+    );
     return output.trim();
   }
 
@@ -2359,6 +4757,8 @@ class _Base64ImageView extends StatefulWidget {
 class _Base64ImageViewState extends State<_Base64ImageView> {
   final TextEditingController _input = TextEditingController();
   String _previewLabel = 'Image preview (base64 only)';
+  Uint8List? _previewBytes;
+  String? _previewError;
 
   @override
   void dispose() {
@@ -2368,17 +4768,22 @@ class _Base64ImageViewState extends State<_Base64ImageView> {
 
   Future<void> _pasteClipboard() async {
     final text = await _readClipboardText();
-    setState(() => _input.text = text);
+    _input.text = text;
+    _updatePreview();
   }
 
   void _setSample() {
-    setState(() => _input.text = 'iVBORw0KGgoAAAANSUhEUgAAAAUA');
+    _input.text =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l5F7cwAAAABJRU5ErkJggg==';
+    _updatePreview();
   }
 
   void _clear() {
     setState(() {
       _input.clear();
       _previewLabel = 'Image preview (base64 only)';
+      _previewBytes = null;
+      _previewError = null;
     });
   }
 
@@ -2390,103 +4795,148 @@ class _Base64ImageViewState extends State<_Base64ImageView> {
     await Clipboard.setData(ClipboardData(text: _input.text));
   }
 
+  void _updatePreview() {
+    final text = _input.text.trim();
+    if (text.isEmpty) {
+      setState(() {
+        _previewLabel = 'Image preview (base64 only)';
+        _previewBytes = null;
+        _previewError = null;
+      });
+      return;
+    }
+    try {
+      final bytes = _decodeBase64Image(text);
+      setState(() {
+        _previewBytes = bytes;
+        _previewLabel = '${bytes.length} bytes';
+        _previewError = null;
+      });
+    } catch (error) {
+      setState(() {
+        _previewBytes = null;
+        _previewLabel = 'Image preview (base64 only)';
+        _previewError = 'Invalid image data';
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: EditorPane(
-            label: 'String',
-            actions: [
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clear),
-              ToolButton(label: 'Copy', onPressed: _copyString),
-            ],
-            controller: _input,
-            onChanged: (_) => setState(() {
-              _previewLabel = _input.text.isEmpty
-                  ? 'Image preview (base64 only)'
-                  : 'Preview ready';
-            }),
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return _ResizableSplit(
+      horizontal: true,
+      first: EditorPane(
+        label: 'String',
+        actions: [
+          ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
+          ToolButton(label: 'Sample', onPressed: _setSample),
+          ToolButton(label: 'Clear', onPressed: _clear),
+          ToolButton(label: 'Copy', onPressed: _copyString),
+        ],
+        controller: _input,
+        onChanged: (_) => _updatePreview(),
+      ),
+      second: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Row(
+              const Text(
+                'Image',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Container(
+              decoration: _toolSurfaceDecoration(context),
+              child: Stack(
                 children: [
-                  const Text(
-                    'Image',
-                    style: TextStyle(fontWeight: FontWeight.w600),
+                  Center(
+                    child: _previewBytes == null
+                        ? Text(
+                            _previewError ?? _previewLabel,
+                            style: _previewError == null
+                                ? _mutedToolTextStyle(context)
+                                : _errorToolTextStyle(context),
+                          )
+                        : Padding(
+                            padding: const EdgeInsets.all(18),
+                            child: Image.memory(
+                              _previewBytes!,
+                              fit: BoxFit.contain,
+                              gaplessPlayback: true,
+                              filterQuality: FilterQuality.medium,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Text(
+                                    'Could not render image',
+                                    style: _errorToolTextStyle(context),
+                                  ),
+                            ),
+                          ),
                   ),
-                  const Spacer(),
-                  ToolIconButton(
-                    icon: Icons.content_paste,
-                    tooltip: 'Clipboard',
-                    onPressed: () {},
-                  ),
-                  ToolIconButton(
-                    icon: Icons.upload_file,
-                    tooltip: 'Load File...',
-                    onPressed: () {},
-                  ),
-                  ToolIconButton(
-                    icon: Icons.clear,
-                    tooltip: 'Clear',
-                    onPressed: () {
-                      setState(
-                        () => _previewLabel = 'Image preview (base64 only)',
-                      );
-                    },
-                  ),
-                  ToolIconButton(
-                    icon: Icons.save_alt,
-                    tooltip: 'Save',
-                    onPressed: () {},
+                  if (_previewBytes != null)
+                    Positioned(
+                      left: 12,
+                      bottom: 10,
+                      child: Text(
+                        _previewLabel,
+                        style: _mutedToolTextStyle(context, fontSize: 11),
+                      ),
+                    ),
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Tooltip(
+                          message: 'Load File...',
+                          child: IconButton(
+                            onPressed: () {},
+                            icon: const Icon(Icons.upload_file, size: 18),
+                            padding: const EdgeInsets.all(4),
+                            constraints: const BoxConstraints(
+                              minWidth: 28,
+                              minHeight: 28,
+                            ),
+                            splashRadius: 16,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        TextButton(
+                          onPressed: _copyImage,
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            minimumSize: const Size(0, 24),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            textStyle: const TextStyle(fontSize: 11),
+                          ),
+                          child: const Text('Copy'),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.black12),
-                  ),
-                  child: Stack(
-                    children: [
-                      Center(
-                        child: Text(
-                          _previewLabel,
-                          style: const TextStyle(color: Colors.black54),
-                        ),
-                      ),
-                      Positioned(
-                        top: 6,
-                        right: 6,
-                        child: IconButton(
-                          onPressed: _copyImage,
-                          icon: const Icon(Icons.copy_all, size: 16),
-                          tooltip: 'Copy',
-                          padding: const EdgeInsets.all(4),
-                          splashRadius: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
+}
+
+Uint8List _decodeBase64Image(String input) {
+  var value = input.trim();
+  final comma = value.indexOf(',');
+  if (value.toLowerCase().startsWith('data:image/') && comma >= 0) {
+    value = value.substring(comma + 1);
+  }
+  value = value.replaceAll(RegExp(r'\s+'), '');
+  if (value.isEmpty) throw const FormatException('No image data.');
+  return Uint8List.fromList(base64Decode(value));
 }
 
 class _UrlParserView extends StatefulWidget {
@@ -2569,64 +5019,3349 @@ class _UrlParserViewState extends State<_UrlParserView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: EditorPane(
-            label: 'Input',
-            actions: [
-              ToolButton(label: 'Go', onPressed: _parse),
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clearInput),
-              const ToolIconButton(icon: Icons.settings),
-            ],
-            controller: _input,
-            onChanged: (_) => _parse(),
+    return _ResizableSplit(
+      horizontal: false,
+      initialRatio: 0.36,
+      minFirstExtent: 180,
+      minSecondExtent: 320,
+      first: EditorPane(
+        label: 'Input',
+        actions: [
+          ToolButton(label: 'Go', onPressed: _parse),
+          ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
+          ToolButton(label: 'Sample', onPressed: _setSample),
+          ToolButton(label: 'Clear', onPressed: _clearInput),
+          const ToolIconButton(icon: Icons.settings),
+        ],
+        controller: _input,
+        onChanged: (_) => _parse(),
+      ),
+      second: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionHeader(title: 'Field'),
+          Container(
+            decoration: _toolSurfaceDecoration(context),
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Protocol: $_protocol'),
+                Text('Host: $_host'),
+                Text('Path: $_path'),
+                Text('File name: $_file'),
+                Text('Query: $_query'),
+              ],
+            ),
           ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: EditorPane(
+              label: 'Query string',
+              actions: [ToolButton(label: 'Copy', onPressed: _copyQuery)],
+              controller: _queryJson,
+              readOnly: true,
+              placeholder: '{ }',
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 6),
+            Text(_error!, style: _errorToolTextStyle(context)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SubdomainFinderView extends StatefulWidget {
+  const _SubdomainFinderView();
+
+  @override
+  State<_SubdomainFinderView> createState() => _SubdomainFinderViewState();
+}
+
+class _SubdomainFinderViewState extends State<_SubdomainFinderView> {
+  final TextEditingController _domain = TextEditingController();
+  final TextEditingController _results = TextEditingController();
+  late final SubdomainLookupService _service = SubdomainLookupService();
+  var _mode = SubdomainLookupMode.domain;
+  var _loading = false;
+  var _status = 'Enter a root domain to find public subdomains.';
+  String? _error;
+  int _requestId = 0;
+
+  @override
+  void dispose() {
+    _requestId++;
+    _service.close();
+    _domain.dispose();
+    _results.dispose();
+    super.dispose();
+  }
+
+  bool get _isDomainMode => _mode == SubdomainLookupMode.domain;
+
+  String get _inputHint => _isDomainMode ? 'example.com' : 'Example Inc';
+
+  String get _emptyStatus => _isDomainMode
+      ? 'Enter a root domain to find public subdomains.'
+      : 'Enter an organization name to find public certificate names.';
+
+  String get _loadingStatus => _isDomainMode
+      ? 'Searching certificate transparency and DNS records...'
+      : 'Searching organization certificates...';
+
+  String get _outputPlaceholder => _isDomainMode
+      ? 'Public subdomains will appear here...'
+      : 'Public certificate names will appear here...';
+
+  Future<void> _findSubdomains() async {
+    final requestId = ++_requestId;
+    final mode = _mode;
+    setState(() {
+      _loading = true;
+      _error = null;
+      _status = _loadingStatus;
+      _results.clear();
+    });
+
+    try {
+      final result = switch (mode) {
+        SubdomainLookupMode.domain => await _service.lookup(_domain.text),
+        SubdomainLookupMode.organization => await _service.lookupOrganization(
+          _domain.text,
         ),
-        const SizedBox(height: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SectionHeader(title: 'Field'),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.black12),
-                ),
-                padding: const EdgeInsets.all(8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      };
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _results.text = result.subdomains.join('\n');
+        final noun = result.mode == SubdomainLookupMode.domain
+            ? 'public subdomains'
+            : 'public certificate names';
+        final target = result.mode == SubdomainLookupMode.domain
+            ? result.domain
+            : '"${result.domain}"';
+        if (result.subdomains.isEmpty) {
+          final fallbackHint =
+              result.mode == SubdomainLookupMode.domain && !result.usedSubfinder
+              ? ' Install subfinder for deeper local discovery.'
+              : '';
+          final warningText = result.usedSubfinder && result.hasWarnings
+              ? ' ${result.warnings.join(' ')}'
+              : '';
+          _status = 'No $noun found for $target.$fallbackHint$warningText';
+        } else {
+          _status = '${result.subdomains.length} $noun found for $target.';
+        }
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _error = e is FormatException ? e.message : e.toString();
+        _status = 'Lookup failed.';
+        _loading = false;
+      });
+    }
+  }
+
+  void _setSample() {
+    _domain.text = _isDomainMode ? 'github.com' : 'GitHub';
+  }
+
+  void _clear() {
+    setState(() {
+      _domain.clear();
+      _results.clear();
+      _error = null;
+      _status = _emptyStatus;
+    });
+  }
+
+  void _changeMode(int index) {
+    final mode = index == 0
+        ? SubdomainLookupMode.domain
+        : SubdomainLookupMode.organization;
+    setState(() {
+      _requestId++;
+      _mode = mode;
+      _domain.clear();
+      _results.clear();
+      _error = null;
+      _loading = false;
+      _status = _emptyStatus;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            decoration: _toolSurfaceDecoration(context),
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Text('Protocol: $_protocol'),
-                    Text('Host: $_host'),
-                    Text('Path: $_path'),
-                    Text('File name: $_file'),
-                    Text('Query: $_query'),
+                    SegmentedToggle(
+                      options: const ['Domain', 'Organization'],
+                      initialIndex: _isDomainMode ? 0 : 1,
+                      onChanged: _changeMode,
+                    ),
+                    Text(
+                      'Target',
+                      style: TextStyle(
+                        color: appColors.editorText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    ToolButton(
+                      label: 'Find known',
+                      onPressed: _loading ? null : _findSubdomains,
+                    ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 12),
+                const SizedBox(height: 10),
+                Container(
+                  decoration: _toolSurfaceDecoration(context, radius: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: TextField(
+                    controller: _domain,
+                    enabled: !_loading,
+                    onSubmitted: (_) => _findSubdomains(),
+                    decoration: InputDecoration(
+                      border: InputBorder.none,
+                      isDense: true,
+                      hintText: _inputHint,
+                      hintStyle: TextStyle(color: appColors.mutedText),
+                    ),
+                    style: TextStyle(
+                      color: appColors.editorText,
+                      fontFamily: 'Menlo',
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              if (_loading) ...[
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+              ],
               Expanded(
-                child: EditorPane(
-                  label: 'Query string',
-                  actions: [ToolButton(label: 'Copy', onPressed: _copyQuery)],
-                  controller: _queryJson,
-                  readOnly: true,
-                  placeholder: '{ }',
+                child: Text(
+                  _error ?? _status,
+                  style: _error == null
+                      ? _mutedToolTextStyle(context)
+                      : _errorToolTextStyle(context),
                 ),
               ),
-              if (_error != null) ...[
-                const SizedBox(height: 6),
-                Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: EditorPane(
+              label: 'Public subdomains',
+              actions: [
+                ToolButton(label: 'Sample', onPressed: _setSample),
+                ToolButton(label: 'Clear', onPressed: _clear),
+              ],
+              controller: _results,
+              readOnly: true,
+              placeholder: _outputPlaceholder,
+              showHeader: false,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SubdomainTakeoverView extends StatefulWidget {
+  const _SubdomainTakeoverView();
+
+  @override
+  State<_SubdomainTakeoverView> createState() => _SubdomainTakeoverViewState();
+}
+
+class _SubdomainTakeoverViewState extends State<_SubdomainTakeoverView> {
+  final TextEditingController _targets = TextEditingController();
+  final TextEditingController _timeout = TextEditingController(text: '8');
+  final TextEditingController _concurrency = TextEditingController(text: '8');
+  final TextEditingController _details = TextEditingController();
+  late final SubdomainTakeoverService _service = SubdomainTakeoverService();
+
+  var _scanning = false;
+  var _status = 'Enter subdomains to check for dangling provider mappings.';
+  var _reportMode = 'Details';
+  String? _error;
+  TakeoverScanProgress? _progress;
+  TakeoverScanSummary? _summary;
+  TakeoverScanResult? _selected;
+  int _requestId = 0;
+
+  @override
+  void dispose() {
+    _requestId++;
+    _service.close();
+    _targets.dispose();
+    _timeout.dispose();
+    _concurrency.dispose();
+    _details.dispose();
+    super.dispose();
+  }
+
+  Future<void> _scan() async {
+    if (_scanning) return;
+
+    final requestId = ++_requestId;
+    setState(() {
+      _scanning = true;
+      _error = null;
+      _summary = null;
+      _selected = null;
+      _progress = null;
+      _details.clear();
+      _status = 'Checking DNS and provider fingerprints...';
+    });
+
+    try {
+      final timeoutSeconds = double.tryParse(_timeout.text.trim()) ?? 8;
+      final concurrency = int.tryParse(_concurrency.text.trim()) ?? 8;
+      final summary = await _service.scanText(
+        _targets.text,
+        timeout: Duration(milliseconds: (timeoutSeconds * 1000).round()),
+        concurrency: concurrency,
+        onProgress: (progress) {
+          if (!mounted || requestId != _requestId) return;
+          setState(() {
+            _progress = progress;
+            _status =
+                'Checked ${progress.scanned}/${progress.total}, ${progress.potentialCount} potential.';
+          });
+        },
+      );
+
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _summary = summary;
+        _selected = summary.results.isEmpty ? null : summary.results.first;
+        _scanning = false;
+        _progress = TakeoverScanProgress(
+          scanned: summary.results.length,
+          total: summary.results.length,
+          potentialCount: summary.potentialCount,
+        );
+        _status = summary.potentialCount == 0
+            ? 'No takeover fingerprints matched across ${summary.results.length} hosts.'
+            : '${summary.potentialCount} potential takeover match(es) across ${summary.results.length} hosts.';
+        _refreshDetails();
+      });
+    } catch (error) {
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _error = error is FormatException ? error.message : error.toString();
+        _status = 'Scan failed.';
+        _scanning = false;
+      });
+    }
+  }
+
+  void _refreshDetails() {
+    final summary = _summary;
+    if (_reportMode == 'JSON') {
+      _details.text = summary?.toJsonReport() ?? '';
+      return;
+    }
+    if (_reportMode == 'CSV') {
+      _details.text = summary?.toCsvReport() ?? '';
+      return;
+    }
+    final selected = _selected;
+    _details.text = selected == null ? '' : _formatTakeoverDetails(selected);
+  }
+
+  void _selectResult(TakeoverScanResult result) {
+    setState(() {
+      _selected = result;
+      _reportMode = 'Details';
+      _refreshDetails();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    final progress = _progress;
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildTakeoverControls(context),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              if (_scanning) ...[
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                child: Text(
+                  _error ?? _status,
+                  style: _error == null
+                      ? _mutedToolTextStyle(context)
+                      : _errorToolTextStyle(context),
+                ),
+              ),
+              if (progress != null && progress.total > 0) ...[
+                SizedBox(
+                  width: 160,
+                  child: LinearProgressIndicator(value: progress.ratio),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '${(progress.ratio * 100).toStringAsFixed(0)}%',
+                  style: TextStyle(
+                    color: appColors.mutedText,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
               ],
             ],
           ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: _ResizableSplit(
+              horizontal: true,
+              initialRatio: 0.5,
+              minFirstExtent: 360,
+              minSecondExtent: 360,
+              first: _buildTakeoverResults(context),
+              second: _buildTakeoverDetails(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTakeoverControls(BuildContext context) {
+    final appColors = context.appColors;
+    return Container(
+      decoration: _toolSurfaceDecoration(context),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Targets',
+                style: TextStyle(
+                  color: appColors.editorText,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: 12),
+              _takeoverOptionField(
+                context,
+                'Timeout',
+                controller: _timeout,
+                width: 72,
+                suffix: 's',
+              ),
+              const SizedBox(width: 10),
+              _takeoverOptionField(
+                context,
+                'Concurrency',
+                controller: _concurrency,
+                width: 72,
+              ),
+              const Spacer(),
+              ToolButton(label: 'Scan', onPressed: _scanning ? null : _scan),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            decoration: _toolSurfaceDecoration(context, radius: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            child: TextField(
+              key: const ValueKey('subdomain-takeover-targets'),
+              controller: _targets,
+              enabled: !_scanning,
+              minLines: 2,
+              maxLines: 4,
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                isDense: true,
+                hintText: 'docs.example.com\nhelp.example.com',
+                hintStyle: TextStyle(color: appColors.mutedText),
+              ),
+              style: TextStyle(
+                color: appColors.editorText,
+                fontFamily: 'Menlo',
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTakeoverResults(BuildContext context) {
+    final results = _summary?.results ?? const <TakeoverScanResult>[];
+    return Container(
+      decoration: _toolSurfaceDecoration(context),
+      child: results.isEmpty
+          ? Center(
+              child: Text(
+                _scanning
+                    ? 'Scanning targets...'
+                    : 'Potential takeover matches will appear here',
+                style: _mutedToolTextStyle(context),
+              ),
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.all(10),
+              itemCount: results.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final result = results[index];
+                return _takeoverResultTile(context, result);
+              },
+            ),
+    );
+  }
+
+  Widget _takeoverResultTile(BuildContext context, TakeoverScanResult result) {
+    final appColors = context.appColors;
+    final selected = identical(_selected, result);
+    return InkWell(
+      onTap: () => _selectResult(result),
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        decoration: BoxDecoration(
+          color: selected ? appColors.accent.withAlpha(24) : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: selected ? appColors.accent : appColors.border,
+          ),
+        ),
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    result.host,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: appColors.editorText,
+                      fontFamily: 'Menlo',
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                _takeoverConfidenceChip(context, result.confidence),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              result.service,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: appColors.editorText,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              result.evidence,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: _mutedToolTextStyle(context, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTakeoverDetails(BuildContext context) {
+    return Container(
+      decoration: _toolSurfaceDecoration(context),
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              SegmentedToggle(
+                key: ValueKey('takeover-report-$_reportMode'),
+                options: const ['Details', 'JSON', 'CSV'],
+                initialIndex: switch (_reportMode) {
+                  'JSON' => 1,
+                  'CSV' => 2,
+                  _ => 0,
+                },
+                onChanged: (index) {
+                  setState(() {
+                    _reportMode = switch (index) {
+                      1 => 'JSON',
+                      2 => 'CSV',
+                      _ => 'Details',
+                    };
+                    _refreshDetails();
+                  });
+                },
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  _selected?.host ?? 'Result details',
+                  overflow: TextOverflow.ellipsis,
+                  style: _mutedToolTextStyle(context),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: EditorPane(
+              label: 'Takeover details',
+              actions: const [],
+              controller: _details,
+              readOnly: true,
+              placeholder: 'Select a scan result to inspect evidence...',
+              showHeader: false,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _takeoverOptionField(
+    BuildContext context,
+    String label, {
+    required TextEditingController controller,
+    required double width,
+    String? suffix,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: _mutedToolTextStyle(context)),
+        const SizedBox(width: 6),
+        SizedBox(
+          width: width,
+          child: Container(
+            decoration: _toolSurfaceDecoration(context, radius: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: TextField(
+              controller: controller,
+              enabled: !_scanning,
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                isDense: true,
+              ),
+              style: TextStyle(
+                color: context.appColors.editorText,
+                fontFamily: 'Menlo',
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ),
+        if (suffix != null) ...[
+          const SizedBox(width: 4),
+          Text(suffix, style: _mutedToolTextStyle(context)),
+        ],
+      ],
+    );
+  }
+
+  Widget _takeoverConfidenceChip(
+    BuildContext context,
+    TakeoverConfidence confidence,
+  ) {
+    final appColors = context.appColors;
+    final color = switch (confidence) {
+      TakeoverConfidence.high => appColors.error,
+      TakeoverConfidence.medium => appColors.warning,
+      TakeoverConfidence.low => appColors.accent,
+      TakeoverConfidence.safe => appColors.success,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withAlpha(36),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withAlpha(160)),
+      ),
+      child: Text(
+        confidence.label,
+        style: TextStyle(
+          color: color,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+String _formatTakeoverDetails(TakeoverScanResult result) {
+  final buffer = StringBuffer()
+    ..writeln('Host: ${result.host}')
+    ..writeln('Service: ${result.service}')
+    ..writeln('Confidence: ${result.confidence.label}')
+    ..writeln('Evidence: ${result.evidence}');
+
+  if (result.matchedCnameIndicator != null) {
+    buffer.writeln('Matched CNAME indicator: ${result.matchedCnameIndicator}');
+  }
+  if (result.matchedBodyIndicator != null) {
+    buffer.writeln('Matched page indicator: ${result.matchedBodyIndicator}');
+  }
+  if (result.cnameChain.isNotEmpty) {
+    buffer
+      ..writeln()
+      ..writeln('CNAME chain:')
+      ..writeln(result.cnameChain.map((cname) => '  $cname').join('\n'));
+  }
+  if (result.probes.isNotEmpty) {
+    buffer
+      ..writeln()
+      ..writeln('HTTP probes:');
+    for (final probe in result.probes) {
+      final status = probe.statusCode?.toString() ?? 'no response';
+      final error = probe.error == null ? '' : ' (${probe.error})';
+      buffer.writeln('  ${probe.url} - $status$error');
+    }
+  }
+
+  buffer
+    ..writeln()
+    ..writeln(
+      'Note: Treat this as a triage signal. Verify provider ownership before taking action.',
+    );
+  return buffer.toString();
+}
+
+class _PortScannerView extends StatefulWidget {
+  const _PortScannerView();
+
+  @override
+  State<_PortScannerView> createState() => _PortScannerViewState();
+}
+
+class _PortScannerViewState extends State<_PortScannerView> {
+  final TextEditingController _target = TextEditingController(
+    text: '127.0.0.1',
+  );
+  final TextEditingController _ports = TextEditingController();
+  final TextEditingController _timeout = TextEditingController();
+  final TextEditingController _concurrency = TextEditingController();
+  final TextEditingController _report = TextEditingController();
+  late final PortScannerService _service = PortScannerService();
+  late final StreamSubscription<ScanProgress> _progressSubscription;
+
+  var _profileName = 'Quick Scan';
+  var _reportMode = 'JSON';
+  var _detailsIndex = 0;
+  var _grabBanners = true;
+  var _tlsDetails = true;
+  var _httpProbe = true;
+  var _scanning = false;
+  var _reconLoading = false;
+  var _status = 'Ready.';
+  String? _error;
+  ScanProgress? _progress;
+  PortScanSummary? _summary;
+  HostReconResult? _recon;
+  final List<PortScanSummary> _history = [];
+  int _requestId = 0;
+
+  static const _customProfileName = 'Custom Ports';
+
+  bool get _isCustomProfile => _profileName == _customProfileName;
+
+  List<String> get _profileNames => [
+    ...PortScannerService.profiles.map((profile) => profile.name),
+    _customProfileName,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _syncProfileFields();
+    _progressSubscription = _service.progress.listen((progress) {
+      if (!mounted) return;
+      setState(() {
+        _progress = progress;
+        if (progress.active) {
+          _status =
+              'Scanning ${progress.scanned}/${progress.total} ports, ${progress.openCount} open.';
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _requestId++;
+    _progressSubscription.cancel();
+    _service.close();
+    _target.dispose();
+    _ports.dispose();
+    _timeout.dispose();
+    _concurrency.dispose();
+    _report.dispose();
+    super.dispose();
+  }
+
+  void _syncProfileFields() {
+    if (_isCustomProfile) {
+      if (_ports.text.trim().isEmpty) {
+        _ports.text = '22,80,443,8080,8443';
+      }
+      _timeout.text = '1.0';
+      _concurrency.text = '50';
+      return;
+    }
+
+    final profile = PortScannerService.profileByName(_profileName);
+    _ports.text = _describePorts(profile);
+    _timeout.text = _secondsLabel(profile.timeout);
+    _concurrency.text = profile.concurrency.toString();
+  }
+
+  Future<void> _startScan() async {
+    if (_scanning) return;
+
+    final requestId = ++_requestId;
+    late final PortScanProfile profile;
+    late final List<int>? customPorts;
+    late final Duration timeout;
+    late final int concurrency;
+
+    try {
+      timeout = _parseTimeout();
+      concurrency = _parseConcurrency();
+      if (_isCustomProfile) {
+        customPorts = PortScannerService.parsePorts(_ports.text);
+        profile = PortScanProfile(
+          name: _customProfileName,
+          description: 'Custom port list',
+          timeout: timeout,
+          concurrency: concurrency,
+          ports: customPorts,
+        );
+      } else {
+        customPorts = null;
+        profile = PortScannerService.profileByName(_profileName);
+      }
+      PortScannerService.normalizeTarget(_target.text);
+    } catch (e) {
+      setState(() {
+        _error = e is FormatException ? e.message : e.toString();
+      });
+      return;
+    }
+
+    setState(() {
+      _scanning = true;
+      _error = null;
+      _progress = const ScanProgress(
+        scanned: 0,
+        total: 0,
+        active: true,
+        openCount: 0,
+      );
+      _status = 'Resolving target...';
+      _summary = null;
+      _report.clear();
+    });
+
+    try {
+      final summary = await _service.scan(
+        target: _target.text,
+        profile: profile,
+        ports: customPorts,
+        timeout: timeout,
+        concurrency: concurrency,
+        grabBanners: _grabBanners,
+        tlsDetails: _tlsDetails,
+        httpProbe: _httpProbe,
+      );
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _summary = summary;
+        _history.insert(0, summary);
+        if (_history.length > 20) _history.removeLast();
+        _status =
+            '${summary.results.length} open of ${summary.totalPorts} ports. Grade ${summary.securityScore.grade}.';
+        _scanning = false;
+      });
+      _refreshReport();
+    } catch (e) {
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _error = e is FormatException ? e.message : e.toString();
+        _status = 'Scan failed.';
+        _scanning = false;
+      });
+    }
+  }
+
+  Future<void> _runRecon() async {
+    if (_reconLoading) return;
+    final requestId = ++_requestId;
+    try {
+      PortScannerService.normalizeTarget(_target.text);
+    } catch (e) {
+      setState(() {
+        _error = e is FormatException ? e.message : e.toString();
+      });
+      return;
+    }
+
+    setState(() {
+      _reconLoading = true;
+      _error = null;
+      _status = 'Collecting host details...';
+      _detailsIndex = 1;
+    });
+
+    try {
+      final recon = await _service.reconnaissance(_target.text);
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _recon = recon;
+        _status = 'Recon complete for ${recon.target}.';
+        _reconLoading = false;
+      });
+      _refreshReport();
+    } catch (e) {
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _error = e.toString();
+        _status = 'Recon failed.';
+        _reconLoading = false;
+      });
+    }
+  }
+
+  void _stopScan() {
+    _service.cancel();
+    setState(() {
+      _requestId++;
+      _scanning = false;
+      _status = 'Stopping scan...';
+    });
+  }
+
+  void _setSample() {
+    setState(() {
+      _target.text = 'scanme.nmap.org';
+      _profileName = 'Web Ports';
+      _syncProfileFields();
+    });
+  }
+
+  Duration _parseTimeout() {
+    final seconds = double.tryParse(_timeout.text.trim());
+    if (seconds == null || seconds <= 0 || seconds > 30) {
+      throw const FormatException(
+        'Timeout must be between 0.1 and 30 seconds.',
+      );
+    }
+    return Duration(milliseconds: (seconds * 1000).round());
+  }
+
+  int _parseConcurrency() {
+    final value = int.tryParse(_concurrency.text.trim());
+    if (value == null || value < 1 || value > 100) {
+      throw const FormatException('Concurrency must be between 1 and 100.');
+    }
+    return value;
+  }
+
+  void _refreshReport() {
+    final summary = _summary;
+    final recon = _recon;
+    if (_reportMode == 'CSV') {
+      _report.text = summary?.toCsvReport() ?? '';
+      return;
+    }
+    final payload = <String, Object?>{
+      if (summary != null) 'scan': summary.toJson(),
+      if (recon != null) 'recon': recon.toJson(),
+    };
+    _report.text = payload.isEmpty
+        ? ''
+        : const JsonEncoder.withIndent('  ').convert(payload);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    final progress = _progress;
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildControls(context),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              if (_scanning || _reconLoading) ...[
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                child: Text(
+                  _error ?? _status,
+                  style: _error == null
+                      ? _mutedToolTextStyle(context)
+                      : _errorToolTextStyle(context),
+                ),
+              ),
+              if (progress != null && progress.total > 0) ...[
+                SizedBox(
+                  width: 180,
+                  child: LinearProgressIndicator(value: progress.ratio),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '${(progress.ratio * 100).toStringAsFixed(0)}%',
+                  style: TextStyle(
+                    color: appColors.mutedText,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: _ResizableSplit(
+              horizontal: true,
+              initialRatio: 0.56,
+              minFirstExtent: 360,
+              minSecondExtent: 320,
+              first: _buildPortsPanel(context),
+              second: _buildDetailsPanel(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildControls(BuildContext context) {
+    final appColors = context.appColors;
+    return Container(
+      decoration: _toolSurfaceDecoration(context),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                'Target',
+                style: TextStyle(
+                  color: appColors.editorText,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              SizedBox(
+                width: 280,
+                child: _compactTextField(
+                  key: const ValueKey('port-scanner-target'),
+                  controller: _target,
+                  hint: 'example.com or 192.0.2.10',
+                  enabled: !_scanning,
+                  onSubmitted: (_) => _startScan(),
+                ),
+              ),
+              SmallDropdown(
+                key: ValueKey('port-profile-$_profileName'),
+                items: _profileNames,
+                initialValue: _profileName,
+                width: 180,
+                onChanged: (value) {
+                  setState(() {
+                    _profileName = value;
+                    _syncProfileFields();
+                  });
+                },
+              ),
+              SizedBox(
+                width: 250,
+                child: _compactTextField(
+                  controller: _ports,
+                  hint: '22,80,443 or 8000-8010',
+                  enabled: _isCustomProfile && !_scanning,
+                ),
+              ),
+              ToolButton(
+                label: 'Sample',
+                onPressed: _scanning ? null : _setSample,
+              ),
+              ToolButton(
+                label: 'Scan',
+                onPressed: _scanning ? null : _startScan,
+              ),
+              ToolButton(
+                label: 'Recon',
+                onPressed: _reconLoading ? null : _runRecon,
+              ),
+              ToolButton(
+                label: 'Stop',
+                onPressed: _scanning ? _stopScan : null,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _miniLabeledField(
+                context,
+                'Timeout',
+                width: 84,
+                controller: _timeout,
+                suffix: 's',
+                enabled: !_scanning,
+              ),
+              _miniLabeledField(
+                context,
+                'Concurrency',
+                width: 76,
+                controller: _concurrency,
+                enabled: !_scanning,
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Checkbox(
+                    value: _grabBanners,
+                    onChanged: _scanning
+                        ? null
+                        : (value) {
+                            setState(() => _grabBanners = value ?? true);
+                          },
+                  ),
+                  Text(
+                    'Banners',
+                    style: TextStyle(color: appColors.editorText),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Checkbox(
+                    value: _tlsDetails,
+                    onChanged: _scanning
+                        ? null
+                        : (value) {
+                            setState(() => _tlsDetails = value ?? true);
+                          },
+                  ),
+                  Text(
+                    'TLS details',
+                    style: TextStyle(color: appColors.editorText),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Checkbox(
+                    value: _httpProbe,
+                    onChanged: _scanning
+                        ? null
+                        : (value) {
+                            setState(() => _httpProbe = value ?? true);
+                          },
+                  ),
+                  Text(
+                    'HTTP HEAD',
+                    style: TextStyle(color: appColors.editorText),
+                  ),
+                ],
+              ),
+              Text(
+                _isCustomProfile
+                    ? 'Custom list'
+                    : PortScannerService.profileByName(
+                        _profileName,
+                      ).description,
+                style: _mutedToolTextStyle(context),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPortsPanel(BuildContext context) {
+    final summary = _summary;
+    final results = summary?.results ?? const <PortScanResult>[];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final showStats = constraints.maxHeight >= 120;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (showStats) ...[
+              _buildScanStats(context, summary),
+              const SizedBox(height: 8),
+            ],
+            Expanded(
+              child: Container(
+                decoration: _toolSurfaceDecoration(context),
+                child: results.isEmpty
+                    ? Center(
+                        child: Text(
+                          _scanning
+                              ? 'Scanning...'
+                              : 'Open ports will appear here',
+                          style: _mutedToolTextStyle(context),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.all(10),
+                        itemCount: results.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          return _portResultRow(context, results[index]);
+                        },
+                      ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildScanStats(BuildContext context, PortScanSummary? summary) {
+    final open = summary?.results.length ?? 0;
+    final total = summary?.totalPorts ?? _progress?.total ?? 0;
+    final highRisk = summary?.highRiskPorts ?? 0;
+    final score = summary?.securityScore.score ?? 100;
+    final grade = summary?.securityScore.grade ?? 'A';
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _statPill(context, 'Open', '$open'),
+        _statPill(context, 'Scanned', '$total'),
+        _statPill(context, 'High risk', '$highRisk'),
+        _statPill(context, 'Score', '$score / $grade'),
+      ],
+    );
+  }
+
+  Widget _statPill(BuildContext context, String label, String value) {
+    final appColors = context.appColors;
+    return Container(
+      decoration: _toolSurfaceDecoration(context, radius: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: _mutedToolTextStyle(context, fontSize: 12)),
+          const SizedBox(width: 8),
+          Text(
+            value,
+            style: TextStyle(
+              color: appColors.editorText,
+              fontWeight: FontWeight.w700,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _portResultRow(BuildContext context, PortScanResult result) {
+    final appColors = context.appColors;
+    return Container(
+      decoration: _toolSurfaceDecoration(context, radius: 6),
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: 70,
+                child: Text(
+                  result.port.toString(),
+                  style: TextStyle(
+                    color: appColors.editorText,
+                    fontWeight: FontWeight.w800,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  '${result.service} · ${result.protocol} · ${result.confidence}',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: appColors.editorText),
+                ),
+              ),
+              _riskChip(context, result.riskLevel),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            result.riskReason,
+            style: _mutedToolTextStyle(context, fontSize: 12),
+          ),
+          if (result.httpStatus != null ||
+              (result.tls?.connected ?? false)) ...[
+            const SizedBox(height: 6),
+            Text(
+              [
+                if (result.httpStatus != null) result.httpStatus,
+                if (result.tls?.connected ?? false)
+                  'TLS ${result.tls?.daysUntilExpiry == null ? 'ok' : '${result.tls!.daysUntilExpiry}d left'}',
+              ].join(' · '),
+              style: TextStyle(
+                color: appColors.accent,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          if (result.banner.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              result.banner,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: appColors.mutedText,
+                fontFamily: 'Menlo',
+                fontSize: 11,
+              ),
+            ),
+          ],
+          if (result.vulnerabilities.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              '${result.vulnerabilities.length} known CVE/reference checks',
+              style: TextStyle(
+                color: appColors.warning,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _riskChip(BuildContext context, String riskLevel) {
+    final appColors = context.appColors;
+    final color = switch (riskLevel) {
+      'CRITICAL' => appColors.error,
+      'HIGH' => appColors.warning,
+      'MEDIUM' => appColors.accent,
+      _ => appColors.success,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withAlpha(36),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withAlpha(160)),
+      ),
+      child: Text(
+        riskLevel,
+        style: TextStyle(
+          color: color,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailsPanel(BuildContext context) {
+    return Container(
+      decoration: _toolSurfaceDecoration(context),
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                SegmentedToggle(
+                  options: const ['Details', 'Recon', 'Report', 'History'],
+                  initialIndex: _detailsIndex,
+                  onChanged: (index) => setState(() => _detailsIndex = index),
+                ),
+                if (_detailsIndex == 2) ...[
+                  const SizedBox(width: 10),
+                  SmallDropdown(
+                    key: ValueKey('port-report-$_reportMode'),
+                    items: const ['JSON', 'CSV'],
+                    initialValue: _reportMode,
+                    width: 90,
+                    onChanged: (value) {
+                      setState(() => _reportMode = value);
+                      _refreshReport();
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: switch (_detailsIndex) {
+              0 => _buildScoreDetails(context),
+              1 => _buildReconDetails(context),
+              2 => _buildReportPanel(context),
+              _ => _buildHistoryPanel(context),
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScoreDetails(BuildContext context) {
+    final summary = _summary;
+    if (summary == null) {
+      return Center(
+        child: Text(
+          'Scan details will appear here',
+          style: _mutedToolTextStyle(context),
+        ),
+      );
+    }
+    final score = summary.securityScore;
+    return ListView(
+      children: [
+        _detailRow(
+          context,
+          'Target',
+          '${summary.target} (${summary.resolvedIp})',
+        ),
+        _detailRow(context, 'Profile', summary.profile),
+        _detailRow(
+          context,
+          'Duration',
+          '${summary.duration.inMilliseconds} ms',
+        ),
+        _detailRow(
+          context,
+          'Security grade',
+          '${score.grade} (${score.score}/100)',
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'Penalty breakdown',
+          style: TextStyle(
+            color: context.appColors.editorText,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 6),
+        for (final entry in score.breakdown.entries)
+          _detailRow(
+            context,
+            _sentenceLabel(entry.key),
+            entry.value.toString(),
+          ),
+        const SizedBox(height: 10),
+        Text(
+          'Recommendations',
+          style: TextStyle(
+            color: context.appColors.editorText,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 6),
+        if (score.recommendations.isEmpty)
+          Text(
+            'No high-priority recommendations.',
+            style: _mutedToolTextStyle(context),
+          )
+        else
+          for (final recommendation in score.recommendations)
+            _recommendationTile(context, recommendation),
+        if (summary.results.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            'Service evidence',
+            style: TextStyle(
+              color: context.appColors.editorText,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          for (final result in summary.results)
+            _portEvidenceTile(context, result),
+        ],
+      ],
+    );
+  }
+
+  Widget _portEvidenceTile(BuildContext context, PortScanResult result) {
+    final appColors = context.appColors;
+    final tls = result.tls;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: _toolSurfaceDecoration(context, radius: 6),
+      padding: const EdgeInsets.all(8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${result.port} · ${result.service} · ${result.confidence}',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: appColors.editorText,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              _riskChip(context, result.riskLevel),
+            ],
+          ),
+          if (result.httpStatus != null)
+            _detailRow(context, 'HTTP status', result.httpStatus!),
+          if (tls != null) ...[
+            _detailRow(context, 'TLS', tls.connected ? 'Connected' : 'Failed'),
+            if (tls.protocol != null)
+              _detailRow(context, 'Protocol', tls.protocol!),
+            if (tls.subject != null)
+              _detailRow(context, 'Subject', tls.subject!),
+            if (tls.issuer != null) _detailRow(context, 'Issuer', tls.issuer!),
+            if (tls.daysUntilExpiry != null)
+              _detailRow(context, 'Days left', '${tls.daysUntilExpiry}'),
+            if (tls.error != null) _detailRow(context, 'TLS error', tls.error!),
+          ],
+          if (result.banner.isNotEmpty)
+            _detailRow(context, 'Banner', result.banner),
+          for (final observation in result.observations)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '- $observation',
+                style: _mutedToolTextStyle(context, fontSize: 12),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReconDetails(BuildContext context) {
+    final recon = _recon;
+    if (_reconLoading) {
+      return Center(
+        child: Text('Collecting recon...', style: _mutedToolTextStyle(context)),
+      );
+    }
+    if (recon == null) {
+      return Center(
+        child: Text(
+          'Run recon to collect host details',
+          style: _mutedToolTextStyle(context),
+        ),
+      );
+    }
+
+    return ListView(
+      children: [
+        _detailRow(context, 'Target', recon.target),
+        if (recon.resolvedIp != null)
+          _detailRow(context, 'Resolved IP', recon.resolvedIp!),
+        if (recon.hostname != null)
+          _detailRow(context, 'Hostname', recon.hostname!),
+        _sectionBlock(context, 'Geolocation', recon.geolocation),
+        _sectionBlock(context, 'Whois', recon.whois),
+        _dnsBlock(context, recon.dnsRecords),
+        _sectionBlock(context, 'SSL/TLS', recon.sslAnalysis),
+        _sectionBlock(context, 'Security headers', recon.securityHeaders),
+        _technologiesBlock(context, recon.technologies),
+        _sectionBlock(context, 'Shodan', recon.shodan),
+      ],
+    );
+  }
+
+  Widget _buildReportPanel(BuildContext context) {
+    return EditorPane(
+      label: 'Report',
+      actions: const [],
+      controller: _report,
+      readOnly: true,
+      placeholder: 'Run a scan or recon to generate a report...',
+      showHeader: false,
+    );
+  }
+
+  Widget _buildHistoryPanel(BuildContext context) {
+    if (_history.isEmpty) {
+      return Center(
+        child: Text(
+          'Recent scans will appear here',
+          style: _mutedToolTextStyle(context),
+        ),
+      );
+    }
+    return ListView.separated(
+      itemCount: _history.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final item = _history[index];
+        return Container(
+          decoration: _toolSurfaceDecoration(context, radius: 6),
+          padding: const EdgeInsets.all(10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  item.target,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.appColors.editorText,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                '${item.results.length}/${item.totalPorts} open',
+                style: _mutedToolTextStyle(context),
+              ),
+              const SizedBox(width: 10),
+              _riskChip(
+                context,
+                item.securityScore.grade == 'F' ? 'HIGH' : 'LOW',
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _sectionBlock(
+    BuildContext context,
+    String title,
+    Map<String, Object?> values,
+  ) {
+    if (values.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              color: context.appColors.editorText,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            decoration: _toolSurfaceDecoration(context, radius: 6),
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final entry in values.entries)
+                  _detailRow(
+                    context,
+                    _sentenceLabel(entry.key),
+                    '${entry.value}',
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dnsBlock(BuildContext context, Map<String, List<String>> records) {
+    if (records.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'DNS records',
+            style: TextStyle(
+              color: context.appColors.editorText,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            decoration: _toolSurfaceDecoration(context, radius: 6),
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final entry in records.entries)
+                  _detailRow(context, entry.key, entry.value.join('\n')),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _technologiesBlock(
+    BuildContext context,
+    List<Map<String, Object?>> technologies,
+  ) {
+    if (technologies.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Technologies',
+            style: TextStyle(
+              color: context.appColors.editorText,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            decoration: _toolSurfaceDecoration(context, radius: 6),
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final tech in technologies)
+                  _detailRow(
+                    context,
+                    '${tech['name'] ?? 'Technology'}',
+                    [
+                      if (tech['value'] != null) tech['value'],
+                      if (tech['category'] != null) tech['category'],
+                    ].join(' · '),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _recommendationTile(
+    BuildContext context,
+    SecurityRecommendation recommendation,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: _toolSurfaceDecoration(context, radius: 6),
+      padding: const EdgeInsets.all(8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _riskChip(context, recommendation.priority),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  recommendation.title,
+                  style: TextStyle(
+                    color: context.appColors.editorText,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            recommendation.description,
+            style: _mutedToolTextStyle(context, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailRow(BuildContext context, String label, String value) {
+    final appColors = context.appColors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 124,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: appColors.mutedText,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: SelectableText(
+              value,
+              style: TextStyle(
+                color: appColors.editorText,
+                fontFamily: value.length > 24 ? 'Menlo' : null,
+                fontSize: value.length > 24 ? 11.5 : null,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniLabeledField(
+    BuildContext context,
+    String label, {
+    required double width,
+    required TextEditingController controller,
+    String? suffix,
+    required bool enabled,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: _mutedToolTextStyle(context)),
+        const SizedBox(width: 6),
+        SizedBox(
+          width: width,
+          child: _compactTextField(
+            controller: controller,
+            hint: '',
+            enabled: enabled,
+          ),
+        ),
+        if (suffix != null) ...[
+          const SizedBox(width: 4),
+          Text(suffix, style: _mutedToolTextStyle(context)),
+        ],
+      ],
+    );
+  }
+
+  Widget _compactTextField({
+    Key? key,
+    required TextEditingController controller,
+    required String hint,
+    bool enabled = true,
+    ValueChanged<String>? onSubmitted,
+  }) {
+    final appColors = context.appColors;
+    return Container(
+      decoration: _toolSurfaceDecoration(context, radius: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: TextField(
+        key: key,
+        controller: controller,
+        enabled: enabled,
+        onSubmitted: onSubmitted,
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          isDense: true,
+          hintText: hint,
+          hintStyle: TextStyle(color: appColors.mutedText),
+        ),
+        style: TextStyle(
+          color: appColors.editorText,
+          fontFamily: 'Menlo',
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+
+  String _describePorts(PortScanProfile profile) {
+    final ports = profile.ports;
+    if (ports != null) return ports.join(',');
+    return '${profile.startPort}-${profile.endPort}';
+  }
+
+  String _secondsLabel(Duration duration) {
+    final seconds = duration.inMilliseconds / 1000;
+    return seconds == seconds.roundToDouble()
+        ? seconds.toStringAsFixed(0)
+        : seconds.toStringAsFixed(1);
+  }
+
+  String _sentenceLabel(String key) {
+    final normalized = key.replaceAll('_', ' ');
+    return normalized.isEmpty
+        ? normalized
+        : normalized[0].toUpperCase() + normalized.substring(1);
+  }
+}
+
+class _NetworkScannerView extends StatefulWidget {
+  const _NetworkScannerView();
+
+  @override
+  State<_NetworkScannerView> createState() => _NetworkScannerViewState();
+}
+
+class _NetworkScannerViewState extends State<_NetworkScannerView> {
+  final TextEditingController _targets = TextEditingController(
+    text: '192.168.1.0/24',
+  );
+  final TextEditingController _ports = TextEditingController();
+  final TextEditingController _timeout = TextEditingController();
+  final TextEditingController _concurrency = TextEditingController();
+  final TextEditingController _report = TextEditingController();
+  late final NetworkScannerService _service = NetworkScannerService();
+  late final StreamSubscription<NetworkScanProgress> _progressSubscription;
+
+  var _profileName = 'Quick LAN';
+  var _reportMode = 'JSON';
+  var _detailsIndex = 0;
+  var _ping = true;
+  var _tcpProbe = true;
+  var _scanning = false;
+  var _status = 'Ready. Enter a CIDR range or detect the current LAN.';
+  String? _error;
+  NetworkScanProgress? _progress;
+  NetworkScanSummary? _summary;
+  NetworkDeviceResult? _selected;
+  List<LocalNetworkCandidate> _localNetworks = const [];
+  int _requestId = 0;
+
+  static const _customProfileName = 'Custom Ports';
+
+  bool get _isCustomProfile => _profileName == _customProfileName;
+
+  List<String> get _profileNames => [
+    ...NetworkScannerService.profiles.map((profile) => profile.name),
+    _customProfileName,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _syncProfileFields();
+    _loadLocalNetworks();
+    _progressSubscription = _service.progress.listen((progress) {
+      if (!mounted) return;
+      setState(() {
+        _progress = progress;
+        if (progress.active) {
+          _status =
+              'Scanned ${progress.scanned}/${progress.total} hosts, ${progress.deviceCount} device(s) found.';
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _requestId++;
+    _progressSubscription.cancel();
+    _service.close();
+    _targets.dispose();
+    _ports.dispose();
+    _timeout.dispose();
+    _concurrency.dispose();
+    _report.dispose();
+    super.dispose();
+  }
+
+  void _syncProfileFields() {
+    if (_isCustomProfile) {
+      if (_ports.text.trim().isEmpty) {
+        _ports.text = '22,80,443,8080,8443';
+      }
+      _timeout.text = '1.0';
+      _concurrency.text = '48';
+      return;
+    }
+
+    final profile = NetworkScannerService.profileByName(_profileName);
+    _ports.text = profile.ports.join(',');
+    _timeout.text = _secondsLabel(profile.timeout);
+    _concurrency.text = profile.concurrency.toString();
+  }
+
+  Future<void> _loadLocalNetworks() async {
+    final networks = await NetworkScannerService.localNetworks();
+    if (!mounted) return;
+    setState(() {
+      _localNetworks = networks;
+      if (networks.isNotEmpty && _targets.text == '192.168.1.0/24') {
+        _targets.text = networks.first.cidr;
+      }
+    });
+  }
+
+  Future<void> _startScan() async {
+    if (_scanning) return;
+
+    final requestId = ++_requestId;
+    late final NetworkScanProfile profile;
+    late final List<int>? customPorts;
+    late final Duration timeout;
+    late final int concurrency;
+
+    try {
+      timeout = _parseTimeout();
+      concurrency = _parseConcurrency();
+      NetworkScannerService.parseNetwork(_targets.text);
+      if (_isCustomProfile) {
+        customPorts = NetworkScannerService.parsePorts(_ports.text);
+        profile = NetworkScanProfile(
+          name: _customProfileName,
+          description: 'Custom LAN discovery ports',
+          ports: customPorts,
+          timeout: timeout,
+          concurrency: concurrency,
+          maxHosts: 512,
+        );
+      } else {
+        customPorts = null;
+        profile = NetworkScannerService.profileByName(_profileName);
+      }
+    } catch (error) {
+      setState(() {
+        _error = error is FormatException ? error.message : error.toString();
+      });
+      return;
+    }
+
+    setState(() {
+      _scanning = true;
+      _error = null;
+      _status = 'Scanning network...';
+      _progress = const NetworkScanProgress(
+        scanned: 0,
+        total: 0,
+        active: true,
+        deviceCount: 0,
+      );
+      _summary = null;
+      _selected = null;
+      _report.clear();
+    });
+
+    try {
+      final summary = await _service.scan(
+        networkText: _targets.text,
+        profile: profile,
+        ports: customPorts,
+        timeout: timeout,
+        concurrency: concurrency,
+        ping: _ping,
+        tcpProbe: _tcpProbe,
+      );
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _summary = summary;
+        _selected = summary.results.isEmpty ? null : summary.results.first;
+        _status =
+            '${summary.results.length} device(s) found across ${summary.totalHosts} host(s).';
+        if (summary.warnings.isNotEmpty) {
+          _status = 'Completed with ${summary.warnings.length} warning(s).';
+        }
+        _scanning = false;
+      });
+      _refreshReport();
+    } catch (error) {
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _error = error is FormatException ? error.message : error.toString();
+        _status = 'Scan failed.';
+        _scanning = false;
+      });
+    }
+  }
+
+  void _stopScan() {
+    _service.cancel();
+    setState(() {
+      _requestId++;
+      _scanning = false;
+      _status = 'Stopping scan...';
+    });
+  }
+
+  Duration _parseTimeout() {
+    final seconds = double.tryParse(_timeout.text.trim());
+    if (seconds == null || seconds <= 0 || seconds > 30) {
+      throw const FormatException(
+        'Timeout must be between 0.1 and 30 seconds.',
+      );
+    }
+    return Duration(milliseconds: (seconds * 1000).round());
+  }
+
+  int _parseConcurrency() {
+    final value = int.tryParse(_concurrency.text.trim());
+    if (value == null || value < 1 || value > 96) {
+      throw const FormatException('Concurrency must be between 1 and 96.');
+    }
+    return value;
+  }
+
+  void _selectResult(NetworkDeviceResult result) {
+    setState(() {
+      _selected = result;
+      _detailsIndex = 0;
+    });
+  }
+
+  void _refreshReport() {
+    final summary = _summary;
+    if (summary == null) {
+      _report.clear();
+      return;
+    }
+    _report.text = _reportMode == 'CSV'
+        ? summary.toCsvReport()
+        : summary.toJsonReport();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    final progress = _progress;
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildControls(context),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              if (_scanning) ...[
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                child: Text(
+                  _error ?? _status,
+                  style: _error == null
+                      ? _mutedToolTextStyle(context)
+                      : _errorToolTextStyle(context),
+                ),
+              ),
+              if (progress != null && progress.total > 0) ...[
+                SizedBox(
+                  width: 180,
+                  child: LinearProgressIndicator(value: progress.ratio),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '${(progress.ratio * 100).toStringAsFixed(0)}%',
+                  style: TextStyle(
+                    color: appColors.mutedText,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: _ResizableSplit(
+              horizontal: true,
+              initialRatio: 0.54,
+              minFirstExtent: 360,
+              minSecondExtent: 320,
+              first: _buildResultsPanel(context),
+              second: _buildDetailsPanel(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildControls(BuildContext context) {
+    final appColors = context.appColors;
+    return Container(
+      decoration: _toolSurfaceDecoration(context),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                'Network',
+                style: TextStyle(
+                  color: appColors.editorText,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              SizedBox(
+                width: 320,
+                child: _networkTextField(
+                  key: const ValueKey('network-scanner-targets'),
+                  controller: _targets,
+                  hint: '192.168.1.0/24',
+                  enabled: !_scanning,
+                  onSubmitted: (_) => _startScan(),
+                ),
+              ),
+              ToolButton(
+                label: 'Detect LAN',
+                onPressed: _scanning || _localNetworks.isEmpty
+                    ? null
+                    : () {
+                        setState(
+                          () => _targets.text = _localNetworks.first.cidr,
+                        );
+                      },
+              ),
+              SmallDropdown(
+                key: ValueKey('network-profile-$_profileName'),
+                items: _profileNames,
+                initialValue: _profileName,
+                width: 180,
+                onChanged: (value) {
+                  setState(() {
+                    _profileName = value;
+                    _syncProfileFields();
+                  });
+                },
+              ),
+              SizedBox(
+                width: 260,
+                child: _networkTextField(
+                  controller: _ports,
+                  hint: '22,80,443 or 8000-8010',
+                  enabled: _isCustomProfile && !_scanning && _tcpProbe,
+                ),
+              ),
+              ToolButton(
+                label: 'Scan',
+                onPressed: _scanning ? null : _startScan,
+              ),
+              ToolButton(
+                label: 'Stop',
+                onPressed: _scanning ? _stopScan : null,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _networkMiniField(
+                context,
+                'Timeout',
+                controller: _timeout,
+                width: 74,
+                suffix: 's',
+                enabled: !_scanning,
+              ),
+              _networkMiniField(
+                context,
+                'Concurrency',
+                controller: _concurrency,
+                width: 70,
+                enabled: !_scanning,
+              ),
+              _networkCheckbox(
+                context,
+                label: 'Ping',
+                value: _ping,
+                onChanged: _scanning
+                    ? null
+                    : (value) => setState(() => _ping = value ?? true),
+              ),
+              _networkCheckbox(
+                context,
+                label: 'TCP ports',
+                value: _tcpProbe,
+                onChanged: _scanning
+                    ? null
+                    : (value) => setState(() => _tcpProbe = value ?? true),
+              ),
+              Text(
+                _isCustomProfile
+                    ? 'Custom device discovery'
+                    : NetworkScannerService.profileByName(
+                        _profileName,
+                      ).description,
+                style: _mutedToolTextStyle(context),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResultsPanel(BuildContext context) {
+    final summary = _summary;
+    final results = summary?.results ?? const <NetworkDeviceResult>[];
+    return Container(
+      decoration: _toolSurfaceDecoration(context),
+      child: results.isEmpty && (summary?.warnings.isEmpty ?? true)
+          ? Center(
+              child: Text(
+                _scanning
+                    ? 'Scanning network...'
+                    : 'Responsive devices will appear here',
+                style: _mutedToolTextStyle(context),
+              ),
+            )
+          : ListView(
+              padding: const EdgeInsets.all(10),
+              children: [
+                _buildNetworkStats(context, summary),
+                if (summary != null && summary.warnings.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  for (final warning in summary.warnings)
+                    _networkWarningTile(context, warning),
+                ],
+                const SizedBox(height: 8),
+                for (final result in results)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _networkResultTile(context, result),
+                  ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildNetworkStats(BuildContext context, NetworkScanSummary? summary) {
+    final total = summary?.totalHosts ?? _progress?.total ?? 0;
+    final open = summary?.results.length ?? 0;
+    final ping = summary?.pingCount ?? 0;
+    final ports = summary?.openPortCount ?? 0;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _networkPill(context, 'Devices', '$open'),
+        _networkPill(context, 'Hosts', '$total'),
+        _networkPill(context, 'Ping', '$ping'),
+        _networkPill(context, 'Ports', '$ports'),
+      ],
+    );
+  }
+
+  Widget _networkResultTile(BuildContext context, NetworkDeviceResult result) {
+    final appColors = context.appColors;
+    final selected = identical(_selected, result);
+    return InkWell(
+      borderRadius: BorderRadius.circular(6),
+      onTap: () => _selectResult(result),
+      child: Container(
+        decoration: BoxDecoration(
+          color: appColors.panelElevated,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: selected ? appColors.accent : appColors.border,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    result.displayName,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: appColors.editorText,
+                      fontWeight: FontWeight.w800,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
+                Text(
+                  result.evidenceLabel,
+                  style: _mutedToolTextStyle(context, fontSize: 12),
+                ),
+              ],
+            ),
+            const SizedBox(height: 5),
+            Text(
+              result.openPorts.isEmpty
+                  ? 'No probed TCP ports open'
+                  : result.openPorts
+                        .map((port) => '${port.port}/${port.service}')
+                        .join('  '),
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: appColors.editorText),
+            ),
+            if (result.latencyMs != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                '${result.latencyMs} ms ping response',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: appColors.mutedText,
+                  fontFamily: 'Menlo',
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _networkWarningTile(BuildContext context, String warning) {
+    final appColors = context.appColors;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: appColors.warning.withAlpha(24),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: appColors.warning.withAlpha(120)),
+      ),
+      padding: const EdgeInsets.all(10),
+      child: Text(
+        warning,
+        style: TextStyle(color: appColors.editorText, fontSize: 12),
+      ),
+    );
+  }
+
+  Widget _buildDetailsPanel(BuildContext context) {
+    return Container(
+      decoration: _toolSurfaceDecoration(context),
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                SegmentedToggle(
+                  options: const ['Evidence', 'Report'],
+                  initialIndex: _detailsIndex,
+                  onChanged: (index) => setState(() => _detailsIndex = index),
+                ),
+                if (_detailsIndex == 1) ...[
+                  const SizedBox(width: 10),
+                  SmallDropdown(
+                    key: ValueKey('network-report-$_reportMode'),
+                    items: const ['JSON', 'CSV'],
+                    initialValue: _reportMode,
+                    width: 90,
+                    onChanged: (value) {
+                      setState(() => _reportMode = value);
+                      _refreshReport();
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: _detailsIndex == 0
+                ? _buildEvidencePanel(context)
+                : EditorPane(
+                    label: 'Report',
+                    actions: const [],
+                    controller: _report,
+                    readOnly: true,
+                    placeholder: 'Run a network scan to generate a report...',
+                    showHeader: false,
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEvidencePanel(BuildContext context) {
+    final selected = _selected;
+    if (selected == null) {
+      return Center(
+        child: Text(
+          'Select a device to inspect discovery evidence',
+          style: _mutedToolTextStyle(context),
+        ),
+      );
+    }
+
+    return ListView(
+      children: [
+        _networkDetailRow(context, 'IP address', selected.ip),
+        if (selected.hostname != null)
+          _networkDetailRow(context, 'Hostname', selected.hostname!),
+        _networkDetailRow(
+          context,
+          'Ping',
+          selected.pingResponded ? 'Responded' : 'No response',
+        ),
+        if (selected.latencyMs != null)
+          _networkDetailRow(context, 'Latency', '${selected.latencyMs} ms'),
+        _networkDetailRow(
+          context,
+          'Open ports',
+          selected.openPorts.isEmpty
+              ? 'None found in the selected probe set'
+              : selected.openPorts.map((port) => port.port).join(', '),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Services',
+          style: TextStyle(
+            color: context.appColors.editorText,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 6),
+        if (selected.openPorts.isEmpty)
+          Text(
+            'The device responded to ping but did not expose any probed TCP ports.',
+            style: _mutedToolTextStyle(context),
+          )
+        else
+          for (final port in selected.openPorts)
+            _networkServiceRow(context, port),
+        if (_summary?.warnings.isNotEmpty ?? false) ...[
+          const SizedBox(height: 12),
+          Text(
+            'Warnings',
+            style: TextStyle(
+              color: context.appColors.editorText,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          for (final warning in _summary!.warnings)
+            _networkBullet(context, warning),
+        ],
+      ],
+    );
+  }
+
+  Widget _networkServiceRow(BuildContext context, NetworkDevicePort port) {
+    final appColors = context.appColors;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: _toolSurfaceDecoration(context, radius: 6),
+      padding: const EdgeInsets.all(8),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 64,
+            child: Text(
+              port.port.toString(),
+              style: TextStyle(
+                color: appColors.editorText,
+                fontWeight: FontWeight.w800,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              '${port.service} · ${port.protocol} · ${port.category}',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: appColors.editorText),
+            ),
+          ),
+          if (port.encrypted)
+            Text(
+              'encrypted',
+              style: TextStyle(
+                color: appColors.accent,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _networkPill(BuildContext context, String label, String value) {
+    return Container(
+      decoration: _toolSurfaceDecoration(context, radius: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: _mutedToolTextStyle(context, fontSize: 12)),
+          const SizedBox(width: 8),
+          Text(
+            value,
+            style: TextStyle(
+              color: context.appColors.editorText,
+              fontWeight: FontWeight.w700,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _networkDetailRow(BuildContext context, String label, String value) {
+    final appColors = context.appColors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 118,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: appColors.mutedText,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: SelectableText(
+              value,
+              style: TextStyle(
+                color: appColors.editorText,
+                fontFamily: value.length > 22 ? 'Menlo' : null,
+                fontSize: value.length > 22 ? 11.5 : null,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _networkBullet(BuildContext context, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('- ', style: TextStyle(color: context.appColors.mutedText)),
+          Expanded(
+            child: Text(
+              text,
+              style: _mutedToolTextStyle(context, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _networkCheckbox(
+    BuildContext context, {
+    required String label,
+    required bool value,
+    required ValueChanged<bool?>? onChanged,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Checkbox(value: value, onChanged: onChanged),
+        Text(label, style: TextStyle(color: context.appColors.editorText)),
+      ],
+    );
+  }
+
+  Widget _networkMiniField(
+    BuildContext context,
+    String label, {
+    required TextEditingController controller,
+    required double width,
+    String? suffix,
+    required bool enabled,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: _mutedToolTextStyle(context)),
+        const SizedBox(width: 6),
+        SizedBox(
+          width: width,
+          child: _networkTextField(
+            controller: controller,
+            hint: '',
+            enabled: enabled,
+          ),
+        ),
+        if (suffix != null) ...[
+          const SizedBox(width: 4),
+          Text(suffix, style: _mutedToolTextStyle(context)),
+        ],
+      ],
+    );
+  }
+
+  Widget _networkTextField({
+    Key? key,
+    required TextEditingController controller,
+    required String hint,
+    bool enabled = true,
+    ValueChanged<String>? onSubmitted,
+  }) {
+    final appColors = context.appColors;
+    return Container(
+      decoration: _toolSurfaceDecoration(context, radius: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: TextField(
+        key: key,
+        controller: controller,
+        enabled: enabled,
+        onSubmitted: onSubmitted,
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          isDense: true,
+          hintText: hint,
+          hintStyle: TextStyle(color: appColors.mutedText),
+        ),
+        style: TextStyle(
+          color: appColors.editorText,
+          fontFamily: 'Menlo',
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+
+  String _secondsLabel(Duration duration) {
+    final seconds = duration.inMilliseconds / 1000;
+    return seconds == seconds.roundToDouble()
+        ? seconds.toStringAsFixed(0)
+        : seconds.toStringAsFixed(1);
+  }
+}
+
+class _FirewallFingerprintView extends StatefulWidget {
+  const _FirewallFingerprintView();
+
+  @override
+  State<_FirewallFingerprintView> createState() =>
+      _FirewallFingerprintViewState();
+}
+
+class _FirewallFingerprintViewState extends State<_FirewallFingerprintView> {
+  final TextEditingController _target = TextEditingController();
+  final TextEditingController _timeout = TextEditingController(text: '7');
+  final TextEditingController _report = TextEditingController();
+  late final FirewallFingerprintService _service = FirewallFingerprintService();
+
+  var _findAll = true;
+  var _followRedirects = true;
+  var _loading = false;
+  var _detailsIndex = 0;
+  var _reportMode = 'JSON';
+  var _status = 'Ready.';
+  String? _error;
+  FirewallFingerprintResult? _result;
+  int _requestId = 0;
+
+  @override
+  void dispose() {
+    _requestId++;
+    _service.close();
+    _target.dispose();
+    _timeout.dispose();
+    _report.dispose();
+    super.dispose();
+  }
+
+  Future<void> _scan() async {
+    if (_loading) return;
+    final requestId = ++_requestId;
+    late final Duration timeout;
+    try {
+      FirewallFingerprintService.normalizeUrl(_target.text);
+      final seconds = int.tryParse(_timeout.text.trim());
+      if (seconds == null || seconds < 1 || seconds > 30) {
+        throw const FormatException(
+          'Timeout must be between 1 and 30 seconds.',
+        );
+      }
+      timeout = Duration(seconds: seconds);
+    } catch (e) {
+      setState(() {
+        _error = e is FormatException ? e.message : e.toString();
+      });
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+      _status = 'Fingerprinting target...';
+      _result = null;
+      _report.clear();
+    });
+
+    try {
+      final result = await _service.scan(
+        target: _target.text,
+        findAll: _findAll,
+        followRedirects: _followRedirects,
+        timeout: timeout,
+      );
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _result = result;
+        _status = result.detected
+            ? '${result.detections.length} signature match${result.detections.length == 1 ? '' : 'es'} found.'
+            : 'No firewall signature detected.';
+        _loading = false;
+      });
+      _refreshFirewallReport();
+    } catch (e) {
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _error = e.toString();
+        _status = 'Fingerprint failed.';
+        _loading = false;
+      });
+    }
+  }
+
+  void _setSample() {
+    _target.text = 'https://www.cloudflare.com/';
+  }
+
+  void _refreshFirewallReport() {
+    final result = _result;
+    if (result == null) {
+      _report.clear();
+      return;
+    }
+    _report.text = _reportMode == 'JSON'
+        ? result.toJsonReport()
+        : result.toTextReport();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildFirewallControls(context),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              if (_loading) ...[
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                child: Text(
+                  _error ?? _status,
+                  style: _error == null
+                      ? _mutedToolTextStyle(context)
+                      : _errorToolTextStyle(context),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: _ResizableSplit(
+              horizontal: true,
+              initialRatio: 0.52,
+              minFirstExtent: 340,
+              minSecondExtent: 320,
+              first: _buildFirewallResults(context),
+              second: _buildFirewallDetails(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFirewallControls(BuildContext context) {
+    final appColors = context.appColors;
+    return Container(
+      decoration: _toolSurfaceDecoration(context),
+      padding: const EdgeInsets.all(12),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text(
+            'Target',
+            style: TextStyle(
+              color: appColors.editorText,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          SizedBox(
+            width: 330,
+            child: _firewallTextField(
+              key: const ValueKey('firewall-fingerprint-target'),
+              controller: _target,
+              hint: 'https://example.com/',
+              onSubmitted: (_) => _scan(),
+            ),
+          ),
+          _firewallMiniField(
+            context,
+            'Timeout',
+            _timeout,
+            width: 64,
+            suffix: 's',
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Checkbox(
+                value: _findAll,
+                onChanged: _loading
+                    ? null
+                    : (value) => setState(() => _findAll = value ?? true),
+              ),
+              Text('Find all', style: TextStyle(color: appColors.editorText)),
+            ],
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Checkbox(
+                value: _followRedirects,
+                onChanged: _loading
+                    ? null
+                    : (value) {
+                        setState(() => _followRedirects = value ?? true);
+                      },
+              ),
+              Text('Redirects', style: TextStyle(color: appColors.editorText)),
+            ],
+          ),
+          ToolButton(label: 'Sample', onPressed: _loading ? null : _setSample),
+          ToolButton(label: 'Fingerprint', onPressed: _loading ? null : _scan),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFirewallResults(BuildContext context) {
+    final result = _result;
+    final detections = result?.detections ?? const <FirewallDetection>[];
+    return Container(
+      decoration: _toolSurfaceDecoration(context),
+      child: result == null
+          ? Center(
+              child: Text(
+                _loading
+                    ? 'Running probes...'
+                    : 'Firewall matches will appear here',
+                style: _mutedToolTextStyle(context),
+              ),
+            )
+          : ListView(
+              padding: const EdgeInsets.all(10),
+              children: [
+                _firewallSummary(context, result),
+                const SizedBox(height: 10),
+                if (detections.isEmpty && result.genericDetected)
+                  _genericFirewallTile(context, result.genericReason)
+                else if (detections.isEmpty)
+                  Text(
+                    'No WAF detected by signature or generic probes.',
+                    style: _mutedToolTextStyle(context),
+                  )
+                else
+                  for (final detection in detections)
+                    _firewallDetectionTile(context, detection),
+              ],
+            ),
+    );
+  }
+
+  Widget _firewallSummary(
+    BuildContext context,
+    FirewallFingerprintResult result,
+  ) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _firewallPill(context, 'Detected', result.detected ? 'Yes' : 'No'),
+        _firewallPill(context, 'Matches', '${result.detections.length}'),
+        _firewallPill(context, 'Requests', '${result.requestCount}'),
+        _firewallPill(
+          context,
+          'Generic',
+          result.genericDetected ? 'Yes' : 'No',
         ),
       ],
+    );
+  }
+
+  Widget _firewallDetectionTile(
+    BuildContext context,
+    FirewallDetection detection,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: _toolSurfaceDecoration(context, radius: 6),
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  detection.firewall,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.appColors.editorText,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              _firewallConfidence(context, detection.confidence),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            detection.manufacturer,
+            style: _mutedToolTextStyle(context, fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          for (final evidence in detection.evidence.take(6))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Text(
+                evidence,
+                style: TextStyle(
+                  color: context.appColors.mutedText,
+                  fontFamily: 'Menlo',
+                  fontSize: 11,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _genericFirewallTile(BuildContext context, String reason) {
+    return Container(
+      decoration: _toolSurfaceDecoration(context, radius: 6),
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Generic firewall behavior',
+            style: TextStyle(
+              color: context.appColors.editorText,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(reason, style: _mutedToolTextStyle(context)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFirewallDetails(BuildContext context) {
+    return Container(
+      decoration: _toolSurfaceDecoration(context),
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                SegmentedToggle(
+                  options: const ['Probes', 'Report'],
+                  initialIndex: _detailsIndex,
+                  onChanged: (index) => setState(() => _detailsIndex = index),
+                ),
+                if (_detailsIndex == 1) ...[
+                  const SizedBox(width: 10),
+                  SmallDropdown(
+                    key: ValueKey('firewall-report-$_reportMode'),
+                    items: const ['JSON', 'Text'],
+                    initialValue: _reportMode,
+                    width: 90,
+                    onChanged: (value) {
+                      setState(() => _reportMode = value);
+                      _refreshFirewallReport();
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: _detailsIndex == 0
+                ? _buildProbeList(context)
+                : EditorPane(
+                    label: 'Report',
+                    actions: const [],
+                    controller: _report,
+                    readOnly: true,
+                    placeholder:
+                        'Run a fingerprint scan to generate a report...',
+                    showHeader: false,
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProbeList(BuildContext context) {
+    final probes = _result?.probes ?? const <FirewallProbeResponse>[];
+    if (probes.isEmpty) {
+      return Center(
+        child: Text(
+          'Probe results will appear here',
+          style: _mutedToolTextStyle(context),
+        ),
+      );
+    }
+    return ListView.separated(
+      itemCount: probes.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final probe = probes[index];
+        return Container(
+          decoration: _toolSurfaceDecoration(context, radius: 6),
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      probe.name,
+                      style: TextStyle(
+                        color: context.appColors.editorText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'HTTP ${probe.statusCode}',
+                    style: TextStyle(
+                      color: context.appColors.editorText,
+                      fontFamily: 'Menlo',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                probe.url.toString(),
+                overflow: TextOverflow.ellipsis,
+                style: _mutedToolTextStyle(context, fontSize: 11),
+              ),
+              if (probe.bodySnippet.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  probe.bodySnippet.replaceAll(RegExp(r'\s+'), ' '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.appColors.mutedText,
+                    fontFamily: 'Menlo',
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _firewallPill(BuildContext context, String label, String value) {
+    return Container(
+      decoration: _toolSurfaceDecoration(context, radius: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: _mutedToolTextStyle(context, fontSize: 12)),
+          const SizedBox(width: 8),
+          Text(
+            value,
+            style: TextStyle(
+              color: context.appColors.editorText,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _firewallConfidence(BuildContext context, int confidence) {
+    final appColors = context.appColors;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: appColors.accent.withAlpha(36),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: appColors.accent.withAlpha(150)),
+      ),
+      child: Text(
+        '$confidence%',
+        style: TextStyle(
+          color: appColors.accent,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  Widget _firewallMiniField(
+    BuildContext context,
+    String label,
+    TextEditingController controller, {
+    required double width,
+    String? suffix,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: _mutedToolTextStyle(context)),
+        const SizedBox(width: 6),
+        SizedBox(
+          width: width,
+          child: _firewallTextField(controller: controller, hint: ''),
+        ),
+        if (suffix != null) ...[
+          const SizedBox(width: 4),
+          Text(suffix, style: _mutedToolTextStyle(context)),
+        ],
+      ],
+    );
+  }
+
+  Widget _firewallTextField({
+    Key? key,
+    required TextEditingController controller,
+    required String hint,
+    ValueChanged<String>? onSubmitted,
+  }) {
+    final appColors = context.appColors;
+    return Container(
+      decoration: _toolSurfaceDecoration(context, radius: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: TextField(
+        key: key,
+        controller: controller,
+        enabled: !_loading,
+        onSubmitted: onSubmitted,
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          isDense: true,
+          hintText: hint,
+          hintStyle: TextStyle(color: appColors.mutedText),
+        ),
+        style: TextStyle(
+          color: appColors.editorText,
+          fontFamily: 'Menlo',
+          fontSize: 13,
+        ),
+      ),
     );
   }
 }
@@ -2651,6 +8386,7 @@ class _UuidUlidViewState extends State<_UuidUlidView> {
   final TextEditingController _generated = TextEditingController();
   String _type = 'UUID v4';
   bool _lowercase = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -2670,27 +8406,116 @@ class _UuidUlidViewState extends State<_UuidUlidView> {
   void _decode() {
     final text = _input.text.trim();
     if (text.isEmpty) {
-      _standard.clear();
-      _raw.clear();
-      _version.clear();
-      _variant.clear();
-      _time.clear();
-      _clock.clear();
-      _node.clear();
-      setState(() {});
+      _clearDecodedFields();
+      setState(() => _error = null);
       return;
     }
-    final normalized = text.toLowerCase();
-    _standard.text = normalized;
-    _raw.text = normalized.replaceAll('-', '');
-    if (normalized.contains('-')) {
-      final parts = normalized.split('-');
-      if (parts.length >= 3) {
-        _version.text = parts[2].isNotEmpty ? parts[2][0] : '';
-      }
+
+    final uuid = _normalizeUuid(text);
+    if (uuid != null) {
+      _applyUuid(uuid);
+      setState(() => _error = null);
+      return;
     }
-    _variant.text = normalized.isNotEmpty ? normalized[0] : '';
-    setState(() {});
+
+    final ulid = _normalizeUlid(text);
+    if (ulid != null) {
+      _applyUlid(ulid);
+      setState(() => _error = null);
+      return;
+    }
+
+    _clearDecodedFields();
+    setState(() => _error = 'Not a valid UUID or ULID.');
+  }
+
+  void _clearDecodedFields() {
+    _standard.clear();
+    _raw.clear();
+    _version.clear();
+    _variant.clear();
+    _time.clear();
+    _clock.clear();
+    _node.clear();
+  }
+
+  String? _normalizeUuid(String text) {
+    final compact = text.replaceAll('-', '').toLowerCase();
+    if (!RegExp(r'^[0-9a-f]{32}$').hasMatch(compact)) return null;
+    return '${compact.substring(0, 8)}-${compact.substring(8, 12)}-'
+        '${compact.substring(12, 16)}-${compact.substring(16, 20)}-'
+        '${compact.substring(20)}';
+  }
+
+  String? _normalizeUlid(String text) {
+    final normalized = text.trim().toUpperCase();
+    if (RegExp(r'^[0-9A-HJKMNP-TV-Z]{26}$').hasMatch(normalized)) {
+      return normalized;
+    }
+    return null;
+  }
+
+  void _applyUuid(String uuid) {
+    final raw = uuid.replaceAll('-', '');
+    final version = raw[12];
+    final variantNibble = int.parse(raw[16], radix: 16);
+    _standard.text = uuid;
+    _raw.text = raw;
+    _version.text = 'UUID v$version';
+    _variant.text = variantNibble >= 8 && variantNibble <= 11
+        ? 'RFC 4122'
+        : 'Reserved';
+
+    if (version == '1') {
+      final timeLow = int.parse(raw.substring(0, 8), radix: 16);
+      final timeMid = int.parse(raw.substring(8, 12), radix: 16);
+      final timeHigh = int.parse(raw.substring(12, 16), radix: 16) & 0x0fff;
+      final timestamp = (timeHigh << 48) | (timeMid << 32) | timeLow;
+      const uuidEpochOffset = 0x01B21DD213814000;
+      final microsSinceUnix = (timestamp - uuidEpochOffset) ~/ 10;
+      _time.text = DateTime.fromMicrosecondsSinceEpoch(
+        microsSinceUnix,
+        isUtc: true,
+      ).toIso8601String();
+      final clockSequence =
+          int.parse(raw.substring(16, 20), radix: 16) & 0x3fff;
+      _clock.text = clockSequence.toRadixString(16).padLeft(4, '0');
+      _node.text = raw
+          .substring(20)
+          .replaceAllMapped(RegExp(r'.{2}'), (match) => '${match.group(0)}:')
+          .replaceFirst(RegExp(r':$'), '');
+    } else {
+      _time.text = version == '7' ? 'Embedded timestamp' : 'Not time based';
+      _clock.clear();
+      _node.clear();
+    }
+  }
+
+  void _applyUlid(String ulid) {
+    _standard.text = ulid;
+    _raw.text = ulid;
+    _version.text = 'ULID';
+    _variant.text = 'Crockford Base32';
+    final timestamp = _decodeUlidTimestamp(ulid);
+    _time.text = timestamp == null
+        ? ''
+        : DateTime.fromMillisecondsSinceEpoch(
+            timestamp,
+            isUtc: true,
+          ).toIso8601String();
+    _clock.clear();
+    _node.clear();
+  }
+
+  int? _decodeUlidTimestamp(String ulid) {
+    const alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+    var value = 0;
+    for (final codeUnit in ulid.substring(0, 10).codeUnits) {
+      final index = alphabet.indexOf(String.fromCharCode(codeUnit));
+      if (index < 0) return null;
+      value = value * 32 + index;
+    }
+    return value;
   }
 
   String _uuidV4() {
@@ -2702,15 +8527,64 @@ class _UuidUlidViewState extends State<_UuidUlidView> {
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 
+  String _uuidV1() {
+    final rand = Random.secure();
+    final now = DateTime.now().toUtc();
+    const uuidEpochOffset = 0x01B21DD213814000;
+    final timestamp = now.microsecondsSinceEpoch * 10 + uuidEpochOffset;
+    final timeLow = timestamp & 0xffffffff;
+    final timeMid = (timestamp >> 32) & 0xffff;
+    final timeHigh = ((timestamp >> 48) & 0x0fff) | 0x1000;
+    final clockSeq = rand.nextInt(0x4000);
+    final clockHi = ((clockSeq >> 8) & 0x3f) | 0x80;
+    final clockLow = clockSeq & 0xff;
+    final node = List<int>.generate(6, (_) => rand.nextInt(256));
+    node[0] = node[0] | 0x01;
+    final nodeHex = _bytesToHex(node, lower: true);
+    return '${timeLow.toRadixString(16).padLeft(8, '0')}-'
+        '${timeMid.toRadixString(16).padLeft(4, '0')}-'
+        '${timeHigh.toRadixString(16).padLeft(4, '0')}-'
+        '${clockHi.toRadixString(16).padLeft(2, '0')}'
+        '${clockLow.toRadixString(16).padLeft(2, '0')}-$nodeHex';
+  }
+
+  String _ulid() {
+    const alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+    final rand = Random.secure();
+    var timestamp = DateTime.now().millisecondsSinceEpoch;
+    final buffer = StringBuffer();
+    final timeChars = List<String>.filled(10, '0');
+    for (var i = 9; i >= 0; i--) {
+      timeChars[i] = alphabet[timestamp & 0x1f];
+      timestamp >>= 5;
+    }
+    buffer.writeAll(timeChars);
+    for (var i = 0; i < 16; i++) {
+      buffer.write(alphabet[rand.nextInt(32)]);
+    }
+    return buffer.toString();
+  }
+
   void _generate() {
-    final count = int.tryParse(_count.text) ?? 1;
+    final count = (int.tryParse(_count.text) ?? 1).clamp(1, 100).toInt();
     final values = <String>[];
     for (var i = 0; i < count; i++) {
-      values.add(_uuidV4());
+      switch (_type) {
+        case 'UUID v1':
+          values.add(_uuidV1());
+          break;
+        case 'ULID':
+          values.add(_ulid());
+          break;
+        default:
+          values.add(_uuidV4());
+      }
     }
     var output = values.join('\n');
-    if (!_lowercase) {
+    if (!_lowercase && !_type.startsWith('ULID')) {
       output = output.toUpperCase();
+    } else if (_lowercase) {
+      output = output.toLowerCase();
     }
     setState(() => _generated.text = output);
   }
@@ -2725,11 +8599,16 @@ class _UuidUlidViewState extends State<_UuidUlidView> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
+    return _ResizableSplit(
+      horizontal: true,
+      initialRatio: 0.5,
+      minFirstExtent: 360,
+      minSecondExtent: 380,
+      first: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               EditorPane(
                 label: 'Input',
@@ -2756,132 +8635,172 @@ class _UuidUlidViewState extends State<_UuidUlidView> {
                       _decode();
                     },
                   ),
-                  const ToolIconButton(icon: Icons.settings),
                 ],
                 controller: _input,
                 onChanged: (_) => _decode(),
                 placeholder: '00000000-0000-0000-0000-000000000000',
                 expand: false,
-                fixedHeight: 120,
+                fixedHeight: 104,
               ),
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                Text(_error!, style: _errorToolTextStyle(context)),
+              ],
               const SizedBox(height: 12),
-              LabeledField(
-                label: 'Standard String Format',
-                trailing: ToolIconButton(
-                  icon: Icons.copy,
-                  onPressed: () =>
-                      Clipboard.setData(ClipboardData(text: _standard.text)),
-                ),
-                controller: _standard,
-                readOnly: true,
-              ),
-              LabeledField(
-                label: 'Raw Contents',
-                trailing: ToolIconButton(
-                  icon: Icons.copy,
-                  onPressed: () =>
-                      Clipboard.setData(ClipboardData(text: _raw.text)),
-                ),
-                controller: _raw,
-                readOnly: true,
-              ),
-              LabeledField(
-                label: 'Version',
-                trailing: ToolIconButton(
-                  icon: Icons.copy,
-                  onPressed: () =>
-                      Clipboard.setData(ClipboardData(text: _version.text)),
-                ),
-                controller: _version,
-                readOnly: true,
-              ),
-              LabeledField(
-                label: 'Variant',
-                trailing: ToolIconButton(
-                  icon: Icons.copy,
-                  onPressed: () =>
-                      Clipboard.setData(ClipboardData(text: _variant.text)),
-                ),
-                controller: _variant,
-                readOnly: true,
-              ),
-              LabeledField(
-                label: 'Contents - Time',
-                trailing: ToolIconButton(icon: Icons.copy, onPressed: () {}),
-                controller: _time,
-                readOnly: true,
-              ),
-              LabeledField(
-                label: 'Contents - Clock ID',
-                trailing: ToolIconButton(icon: Icons.copy, onPressed: () {}),
-                controller: _clock,
-                readOnly: true,
-              ),
-              LabeledField(
-                label: 'Contents - Node',
-                trailing: ToolIconButton(icon: Icons.copy, onPressed: () {}),
-                controller: _node,
-                readOnly: true,
+              _IdDetailsPanel(
+                rows: [
+                  _IdDetailRowData('Standard', _standard.text),
+                  _IdDetailRowData('Raw', _raw.text),
+                  _IdDetailRowData('Type', _version.text),
+                  _IdDetailRowData('Variant', _variant.text),
+                  _IdDetailRowData('Time', _time.text),
+                  _IdDetailRowData('Clock ID', _clock.text),
+                  _IdDetailRowData('Node', _node.text),
+                ],
               ),
             ],
           ),
         ),
-        const SizedBox(width: 16),
-        SizedBox(
-          width: 320,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      ),
+      second: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            decoration: _toolSurfaceDecoration(context, radius: 8),
+            padding: const EdgeInsets.all(10),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Text(
+                  'Generate',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                SmallDropdown(
+                  items: const ['UUID v4', 'UUID v1', 'ULID'],
+                  initialValue: _type,
+                  width: 128,
+                  onChanged: (value) => setState(() => _type = value),
+                ),
+                _InlineTextField(width: 56, hintText: '1', controller: _count),
+                ToolButton(label: 'Generate', onPressed: _generate),
+                Checkbox(
+                  value: _lowercase,
+                  onChanged: (value) =>
+                      setState(() => _lowercase = value ?? false),
+                ),
+                const Text('lowercase'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
             children: [
-              Row(
-                children: [
-                  const Text(
-                    'Generate new IDs',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const Spacer(),
-                  SmallDropdown(
-                    items: const ['UUID v4', 'UUID v1', 'ULID'],
-                    initialValue: _type,
-                    onChanged: (value) => setState(() => _type = value),
-                  ),
-                  const SizedBox(width: 8),
-                  _InlineTextField(
-                    width: 48,
-                    hintText: '1',
-                    controller: _count,
-                  ),
-                ],
+              const Text(
+                'Generated IDs',
+                style: TextStyle(fontWeight: FontWeight.w600),
               ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  ToolButton(label: 'Generate', onPressed: _generate),
-                  const SizedBox(width: 8),
-                  ToolButton(label: 'Clear', onPressed: _clearGenerated),
-                  const Spacer(),
-                  Checkbox(
-                    value: _lowercase,
-                    onChanged: (value) =>
-                        setState(() => _lowercase = value ?? false),
-                  ),
-                  const Text('lowercased'),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: EditorPane(
-                  label: '',
-                  actions: const [],
-                  controller: _generated,
-                  readOnly: true,
-                  placeholder: '- Right click -> Save to file...',
-                  copyAction: _copyGenerated,
-                ),
-              ),
+              const Spacer(),
+              ToolButton(label: 'Reset output', onPressed: _clearGenerated),
             ],
           ),
-        ),
-      ],
+          const SizedBox(height: 8),
+          Expanded(
+            child: EditorPane(
+              label: '',
+              actions: const [],
+              controller: _generated,
+              readOnly: true,
+              placeholder: 'Generated IDs...',
+              copyAction: _copyGenerated,
+              showHeader: false,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IdDetailRowData {
+  const _IdDetailRowData(this.label, this.value);
+
+  final String label;
+  final String value;
+}
+
+class _IdDetailsPanel extends StatelessWidget {
+  const _IdDetailsPanel({required this.rows});
+
+  final List<_IdDetailRowData> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    final hasData = rows.any((row) => row.value.isNotEmpty);
+    return Container(
+      width: double.infinity,
+      decoration: _toolSurfaceDecoration(context, radius: 8),
+      padding: const EdgeInsets.all(12),
+      child: hasData
+          ? Column(
+              children: [
+                for (final row in rows)
+                  _IdDetailRow(label: row.label, value: row.value),
+              ],
+            )
+          : Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              child: Center(
+                child: Text(
+                  'Paste a UUID or ULID to decode it.',
+                  style: TextStyle(color: appColors.mutedText),
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+class _IdDetailRow extends StatelessWidget {
+  const _IdDetailRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 86,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: appColors.mutedText,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: SelectableText(
+              value.isEmpty ? '-' : value,
+              style: TextStyle(
+                color: appColors.editorText,
+                fontFamily: 'Menlo',
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2895,74 +8814,57 @@ class _HtmlPreviewView extends StatefulWidget {
 
 class _HtmlPreviewViewState extends State<_HtmlPreviewView> {
   final TextEditingController _input = TextEditingController();
-  final TextEditingController _preview = TextEditingController();
 
   @override
   void dispose() {
     _input.dispose();
-    _preview.dispose();
     super.dispose();
   }
 
   Future<void> _pasteClipboard() async {
     final text = await _readClipboardText();
-    setState(() {
-      _input.text = text;
-      _preview.text = text;
-    });
+    setState(() => _input.text = text);
   }
 
   void _setSample() {
-    const sample = '<h1>Hello from DevUtils.app!</h1>';
-    setState(() {
-      _input.text = sample;
-      _preview.text = sample;
-    });
+    const sample = '''
+<!doctype html>
+<html>
+<body>
+  <h1>Hello from DevUtils</h1>
+  <p>This is a rendered HTML preview.</p>
+</body>
+</html>''';
+    setState(() => _input.text = sample);
   }
 
   void _clear() {
-    setState(() {
-      _input.clear();
-      _preview.clear();
-    });
+    setState(() => _input.clear());
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: EditorPane(
-            label: 'Input',
-            actions: [
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clear),
-              const ToolIconButton(icon: Icons.settings),
-              const SmallDropdown(
-                items: ['Format...'],
-                initialValue: 'Format...',
-              ),
-            ],
-            controller: _input,
-            onChanged: (value) => setState(() => _preview.text = value),
-            placeholder: '<html>...</html>',
-          ),
-        ),
-        const SizedBox(height: 16),
-        Expanded(
-          child: EditorPane(
-            label: 'Preview',
-            actions: const [
-              ToolButton(label: 'Open in Browser'),
-              ToolButton(label: 'Reload'),
-            ],
-            readOnly: true,
-            placeholder: '',
-            controller: _preview,
-          ),
-        ),
-      ],
+    return _ResizableSplit(
+      horizontal: false,
+      initialRatio: 0.42,
+      minFirstExtent: 110,
+      minSecondExtent: 120,
+      first: EditorPane(
+        label: 'Input',
+        actions: [
+          ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
+          ToolButton(label: 'Sample', onPressed: _setSample),
+          ToolButton(label: 'Clear', onPressed: _clear),
+        ],
+        controller: _input,
+        onChanged: (_) => setState(() {}),
+        placeholder: '<html>...</html>',
+      ),
+      second: _RenderedPreviewPane(
+        label: 'Preview',
+        html: _input.text,
+        badge: 'Rendered HTML',
+      ),
     );
   }
 }
@@ -3028,73 +8930,64 @@ class _TextDiffViewState extends State<_TextDiffView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: EditorPane(
-                  label: 'Input 1',
-                  actions: [
-                    ToolButton(
-                      label: 'Clipboard',
-                      onPressed: () async {
-                        final text = await _readClipboardText();
-                        setState(() => _left.text = text);
-                        _run();
-                      },
-                    ),
-                    ToolButton(
-                      label: 'Sample',
-                      onPressed: () {
-                        setState(() => _left.text = 'Line one\nLine two');
-                        _run();
-                      },
-                    ),
-                    ToolButton(
-                      label: 'Clear',
-                      onPressed: () {
-                        setState(() => _left.clear());
-                        _run();
-                      },
-                    ),
-                  ],
-                  controller: _left,
-                  onChanged: (_) => _run(),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: EditorPane(
-                  label: 'Input 2',
-                  actions: [
-                    ToolButton(
-                      label: 'Clipboard',
-                      onPressed: () async {
-                        final text = await _readClipboardText();
-                        setState(() => _right.text = text);
-                        _run();
-                      },
-                    ),
-                    ToolButton(
-                      label: 'Clear',
-                      onPressed: () {
-                        setState(() => _right.clear());
-                        _run();
-                      },
-                    ),
-                    ToolButton(label: 'Swap Inputs', onPressed: _swap),
-                  ],
-                  controller: _right,
-                  onChanged: (_) => _run(),
-                ),
-              ),
-            ],
+    final inputComparison = _ResizableSplit(
+      horizontal: true,
+      first: EditorPane(
+        label: 'Input 1',
+        actions: [
+          ToolButton(
+            label: 'Clipboard',
+            onPressed: () async {
+              final text = await _readClipboardText();
+              setState(() => _left.text = text);
+              _run();
+            },
           ),
-        ),
-        const SizedBox(height: 12),
+          ToolButton(
+            label: 'Sample',
+            onPressed: () {
+              setState(() => _left.text = 'Line one\nLine two');
+              _run();
+            },
+          ),
+          ToolButton(
+            label: 'Clear',
+            onPressed: () {
+              setState(() => _left.clear());
+              _run();
+            },
+          ),
+        ],
+        controller: _left,
+        onChanged: (_) => _run(),
+      ),
+      second: EditorPane(
+        label: 'Input 2',
+        actions: [
+          ToolButton(
+            label: 'Clipboard',
+            onPressed: () async {
+              final text = await _readClipboardText();
+              setState(() => _right.text = text);
+              _run();
+            },
+          ),
+          ToolButton(
+            label: 'Clear',
+            onPressed: () {
+              setState(() => _right.clear());
+              _run();
+            },
+          ),
+          ToolButton(label: 'Swap Inputs', onPressed: _swap),
+        ],
+        controller: _right,
+        onChanged: (_) => _run(),
+      ),
+    );
+
+    final outputPane = Column(
+      children: [
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -3131,8 +9024,7 @@ class _TextDiffViewState extends State<_TextDiffView> {
           ],
         ),
         const SizedBox(height: 8),
-        SizedBox(
-          height: 120,
+        Expanded(
           child: EditorPane(
             label: '',
             actions: [
@@ -3149,6 +9041,13 @@ class _TextDiffViewState extends State<_TextDiffView> {
         ),
       ],
     );
+
+    return _ResizableSplit(
+      horizontal: false,
+      initialRatio: 0.66,
+      first: inputComparison,
+      second: outputPane,
+    );
   }
 }
 
@@ -3161,91 +9060,607 @@ class _NumberBaseConverterView extends StatefulWidget {
 }
 
 class _NumberBaseConverterViewState extends State<_NumberBaseConverterView> {
-  final TextEditingController _base2 = TextEditingController();
-  final TextEditingController _base8 = TextEditingController();
-  final TextEditingController _base10 = TextEditingController();
-  final TextEditingController _base16 = TextEditingController();
-  final TextEditingController _custom = TextEditingController();
+  final TextEditingController _input = TextEditingController(
+    text: '0xDEADBEEF',
+  );
   String _customBase = '36';
-  bool _updating = false;
+  String _inputBase = 'Auto';
+  String _width = '32';
+  String _interpretation = 'Unsigned';
 
   @override
   void dispose() {
-    _base2.dispose();
-    _base8.dispose();
-    _base10.dispose();
-    _base16.dispose();
-    _custom.dispose();
+    _input.dispose();
     super.dispose();
   }
 
-  void _updateFrom(int base, String text) {
-    if (_updating) return;
-    _updating = true;
+  _ParsedNumber? _parseCurrent() {
     try {
-      final value = int.parse(text, radix: base);
-      _base2.text = value.toRadixString(2);
-      _base8.text = value.toRadixString(8);
-      _base10.text = value.toRadixString(10);
-      _base16.text = value.toRadixString(16);
-      final customBase = int.tryParse(_customBase) ?? 10;
-      _custom.text = value.toRadixString(customBase);
-    } catch (_) {}
-    _updating = false;
+      return _parseBigIntInput(
+        _input.text,
+        selectedBase: _inputBase,
+        customBase: int.tryParse(_customBase) ?? 10,
+      );
+    } on FormatException {
+      return null;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
+    final parsed = _parseCurrent();
+    final customBase = int.tryParse(_customBase) ?? 36;
+    final outputs = parsed == null
+        ? const <_BaseConversionOutput>[]
+        : _buildBaseOutputs(parsed.value, customBase);
+    final widthBits = int.tryParse(_width);
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildNumberInput(context),
+          const SizedBox(height: 10),
+          if (parsed == null)
+            Text(
+              'Enter a valid value for the selected base.',
+              style: _errorToolTextStyle(context),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _numberPill(context, 'Detected', 'Base ${parsed.detectedBase}'),
+                _numberPill(
+                  context,
+                  'Digits',
+                  _digitCount(parsed.value).toString(),
+                ),
+                _numberPill(
+                  context,
+                  'Bits',
+                  _bitLength(parsed.value).toString(),
+                ),
+                _numberPill(
+                  context,
+                  'Bytes',
+                  _byteLength(parsed.value).toString(),
+                ),
+              ],
+            ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _ResizableSplit(
+              horizontal: true,
+              initialRatio: 0.62,
+              minFirstExtent: 420,
+              minSecondExtent: 300,
+              first: Container(
+                decoration: _toolSurfaceDecoration(context),
+                child: parsed == null
+                    ? Center(
+                        child: Text(
+                          'Converted bases will appear here',
+                          style: _mutedToolTextStyle(context),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.all(10),
+                        itemCount: outputs.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          return _BaseOutputRow(output: outputs[index]);
+                        },
+                      ),
+              ),
+              second: Container(
+                decoration: _toolSurfaceDecoration(context),
+                padding: const EdgeInsets.all(12),
+                child: parsed == null
+                    ? Center(
+                        child: Text(
+                          'Inspector details will appear here',
+                          style: _mutedToolTextStyle(context),
+                        ),
+                      )
+                    : _NumberInspector(
+                        value: parsed.value,
+                        widthBits: widthBits,
+                        interpretation: _interpretation,
+                      ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNumberInput(BuildContext context) {
+    final appColors = context.appColors;
+    final baseOptions = const [
+      'Auto',
+      'Binary',
+      'Octal',
+      'Decimal',
+      'Hex',
+      'Custom',
+    ];
+    final customBaseOptions = List<String>.generate(
+      35,
+      (index) => (index + 2).toString(),
+    );
+    return Container(
+      decoration: _toolSurfaceDecoration(context),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                'Input',
+                style: TextStyle(
+                  color: appColors.editorText,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              SmallDropdown(
+                key: ValueKey('number-input-base-$_inputBase'),
+                items: baseOptions,
+                initialValue: _inputBase,
+                width: 120,
+                onChanged: (value) => setState(() => _inputBase = value),
+              ),
+              if (_inputBase == 'Custom')
+                SmallDropdown(
+                  key: ValueKey('number-custom-base-$_customBase'),
+                  items: customBaseOptions,
+                  initialValue: _customBase,
+                  width: 82,
+                  onChanged: (value) => setState(() => _customBase = value),
+                ),
+              SmallDropdown(
+                key: ValueKey('number-width-$_width'),
+                items: const ['Auto', '8', '16', '32', '64', '128', '256'],
+                initialValue: _width,
+                width: 104,
+                onChanged: (value) => setState(() => _width = value),
+              ),
+              SmallDropdown(
+                key: ValueKey('number-interpretation-$_interpretation'),
+                items: const ['Unsigned', 'Signed'],
+                initialValue: _interpretation,
+                width: 118,
+                onChanged: (value) => setState(() => _interpretation = value),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            decoration: _toolSurfaceDecoration(context, radius: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: TextField(
+              key: const ValueKey('number-base-input'),
+              controller: _input,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                isDense: true,
+                hintText: '0b1010, 0o755, 123456, 0xDEADBEEF',
+                hintStyle: TextStyle(color: appColors.mutedText),
+              ),
+              style: TextStyle(
+                color: appColors.editorText,
+                fontFamily: 'Menlo',
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _numberPill(BuildContext context, String label, String value) {
+    return Container(
+      decoration: _toolSurfaceDecoration(context, radius: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: _mutedToolTextStyle(context, fontSize: 12)),
+          const SizedBox(width: 8),
+          Text(
+            value,
+            style: TextStyle(
+              color: context.appColors.editorText,
+              fontWeight: FontWeight.w700,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BaseConversionOutput {
+  const _BaseConversionOutput({
+    required this.label,
+    required this.base,
+    required this.prefix,
+    required this.value,
+    required this.groupedValue,
+  });
+
+  final String label;
+  final int base;
+  final String prefix;
+  final String value;
+  final String groupedValue;
+}
+
+class _ParsedNumber {
+  const _ParsedNumber({required this.value, required this.detectedBase});
+
+  final BigInt value;
+  final int detectedBase;
+}
+
+class _BaseOutputRow extends StatelessWidget {
+  const _BaseOutputRow({required this.output});
+
+  final _BaseConversionOutput output;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    final prefixed = '${output.prefix}${output.value}';
+    return Listener(
+      onPointerDown: (event) {
+        if ((event.buttons & kSecondaryMouseButton) != 0) {
+          _showBaseValueMenu(context, event.position, output);
+        }
+      },
+      child: Container(
+        decoration: _toolSurfaceDecoration(context, radius: 6),
+        padding: const EdgeInsets.all(10),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Enter your number in any of the text field. The other text fields will automatically calculated.',
-            ),
-            const SizedBox(height: 12),
-            _BaseRow(
-              label: 'Base 2 (Binary)',
-              controller: _base2,
-              onChanged: (value) => _updateFrom(2, value),
-            ),
-            _BaseRow(
-              label: 'Base 8 (Octal)',
-              controller: _base8,
-              onChanged: (value) => _updateFrom(8, value),
-            ),
-            _BaseRow(
-              label: 'Base 10 (Decimal)',
-              controller: _base10,
-              onChanged: (value) => _updateFrom(10, value),
-            ),
-            _BaseRow(
-              label: 'Base 16 (Hex)',
-              controller: _base16,
-              onChanged: (value) => _updateFrom(16, value),
-            ),
-            _BaseRow(
-              label: 'Select base:',
-              trailing: SmallDropdown(
-                items: const ['36', '32', '16', '10'],
-                initialValue: _customBase,
-                onChanged: (value) {
-                  setState(() => _customBase = value);
-                  _updateFrom(int.tryParse(_customBase) ?? 10, _custom.text);
-                },
+            SizedBox(
+              width: 110,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    output.label,
+                    style: TextStyle(
+                      color: appColors.editorText,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'base ${output.base}',
+                    style: _mutedToolTextStyle(context, fontSize: 11),
+                  ),
+                ],
               ),
-              actions: const ['Clipboard', 'Sample', 'Clear'],
-              controller: _custom,
-              onChanged: (value) =>
-                  _updateFrom(int.tryParse(_customBase) ?? 10, value),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SelectableText(
+                      prefixed,
+                      style: TextStyle(
+                        color: appColors.editorText,
+                        fontFamily: 'Menlo',
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ),
+                  if (output.groupedValue != output.value) ...[
+                    const SizedBox(height: 5),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SelectableText(
+                        output.groupedValue,
+                        style: TextStyle(
+                          color: appColors.mutedText,
+                          fontFamily: 'Menlo',
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ],
         ),
       ),
     );
   }
+
+  Future<void> _showBaseValueMenu(
+    BuildContext context,
+    Offset position,
+    _BaseConversionOutput output,
+  ) async {
+    final selected = await showMenu<String>(
+      context: context,
+      color: context.appColors.panelElevated,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx,
+        position.dy,
+      ),
+      items: const [
+        PopupMenuItem(value: 'value', child: Text('Copy value')),
+        PopupMenuItem(value: 'prefix', child: Text('Copy with prefix')),
+        PopupMenuItem(value: 'grouped', child: Text('Copy grouped')),
+      ],
+    );
+    switch (selected) {
+      case 'value':
+        await Clipboard.setData(ClipboardData(text: output.value));
+        break;
+      case 'prefix':
+        await Clipboard.setData(
+          ClipboardData(text: '${output.prefix}${output.value}'),
+        );
+        break;
+      case 'grouped':
+        await Clipboard.setData(ClipboardData(text: output.groupedValue));
+        break;
+    }
+  }
+}
+
+class _NumberInspector extends StatelessWidget {
+  const _NumberInspector({
+    required this.value,
+    required this.widthBits,
+    required this.interpretation,
+  });
+
+  final BigInt value;
+  final int? widthBits;
+  final String interpretation;
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveWidth = widthBits ?? _minimumByteAlignedBits(value);
+    final unsigned = _unsignedWithinWidth(value, effectiveWidth);
+    final signed = _signedWithinWidth(unsigned, effectiveWidth);
+    final hex = unsigned.toRadixString(16).padLeft(effectiveWidth ~/ 4, '0');
+    final bytes = _hexToBytePairs(hex);
+    final ascii = _asciiPreview(unsigned, effectiveWidth);
+
+    return ListView(
+      children: [
+        _inspectorRow(context, 'Mode', interpretation),
+        _inspectorRow(context, 'Width', '$effectiveWidth bits'),
+        _inspectorRow(context, 'Bit length', _bitLength(value).toString()),
+        _inspectorRow(context, 'Byte length', _byteLength(value).toString()),
+        _inspectorRow(context, 'Unsigned', unsigned.toString()),
+        _inspectorRow(context, 'Signed', signed.toString()),
+        _inspectorRow(context, 'Two\'s complement', '0x$hex'),
+        _inspectorRow(context, 'Big endian bytes', bytes.join(' ')),
+        _inspectorRow(context, 'Little endian bytes', bytes.reversed.join(' ')),
+        _inspectorRow(
+          context,
+          'ASCII',
+          ascii.isEmpty ? 'Not printable' : ascii,
+        ),
+      ],
+    );
+  }
+
+  Widget _inspectorRow(BuildContext context, String label, String value) {
+    final appColors = context.appColors;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: _toolSurfaceDecoration(context, radius: 6),
+      padding: const EdgeInsets.all(10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 130,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: appColors.mutedText,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: SelectableText(
+              value,
+              style: TextStyle(
+                color: appColors.editorText,
+                fontFamily: value.length > 18 ? 'Menlo' : null,
+                fontSize: value.length > 18 ? 11.5 : null,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+_ParsedNumber _parseBigIntInput(
+  String raw, {
+  required String selectedBase,
+  required int customBase,
+}) {
+  var text = raw.trim();
+  if (text.isEmpty) throw const FormatException('Enter a number.');
+  var negative = false;
+  if (text.startsWith('-')) {
+    negative = true;
+    text = text.substring(1).trimLeft();
+  } else if (text.startsWith('+')) {
+    text = text.substring(1).trimLeft();
+  }
+
+  var base = switch (selectedBase) {
+    'Binary' => 2,
+    'Octal' => 8,
+    'Decimal' => 10,
+    'Hex' => 16,
+    'Custom' => customBase,
+    _ => 0,
+  };
+
+  final lower = text.toLowerCase();
+  if (lower.startsWith('0b')) {
+    base = base == 0 ? 2 : base;
+    text = text.substring(2);
+  } else if (lower.startsWith('0o')) {
+    base = base == 0 ? 8 : base;
+    text = text.substring(2);
+  } else if (lower.startsWith('0x')) {
+    base = base == 0 ? 16 : base;
+    text = text.substring(2);
+  } else if (base == 0) {
+    base = RegExp(r'[a-z]', caseSensitive: false).hasMatch(text) ? 16 : 10;
+  }
+
+  if (base < 2 || base > 36) {
+    throw const FormatException('Base must be between 2 and 36.');
+  }
+
+  final normalized = text.replaceAll(RegExp(r'[\s_]+'), '');
+  if (normalized.isEmpty) throw const FormatException('Enter a number.');
+  final validChars = '0123456789abcdefghijklmnopqrstuvwxyz'.substring(0, base);
+  for (final codeUnit in normalized.toLowerCase().codeUnits) {
+    if (!validChars.contains(String.fromCharCode(codeUnit))) {
+      throw FormatException('Invalid digit for base $base.');
+    }
+  }
+
+  var value = BigInt.parse(normalized, radix: base);
+  if (negative) value = -value;
+  return _ParsedNumber(value: value, detectedBase: base);
+}
+
+List<_BaseConversionOutput> _buildBaseOutputs(BigInt value, int customBase) {
+  final rows = <_BaseConversionOutput>[
+    _baseOutput('Binary', 2, '0b', value),
+    _baseOutput('Octal', 8, '0o', value),
+    _baseOutput('Decimal', 10, '', value),
+    _baseOutput('Hex', 16, '0x', value),
+    _baseOutput('Base 32', 32, '', value),
+    _baseOutput('Base 36', 36, '', value),
+  ];
+  if (!const {2, 8, 10, 16, 32, 36}.contains(customBase)) {
+    rows.add(_baseOutput('Custom', customBase, '', value));
+  }
+  return rows;
+}
+
+_BaseConversionOutput _baseOutput(
+  String label,
+  int base,
+  String prefix,
+  BigInt value,
+) {
+  final raw = value.toRadixString(base).toUpperCase();
+  return _BaseConversionOutput(
+    label: label,
+    base: base,
+    prefix: value.isNegative && prefix.isNotEmpty ? '-$prefix' : prefix,
+    value: value.isNegative && prefix.isNotEmpty ? raw.substring(1) : raw,
+    groupedValue: _groupBaseValue(raw, base),
+  );
+}
+
+String _groupBaseValue(String value, int base) {
+  final negative = value.startsWith('-');
+  final body = negative ? value.substring(1) : value;
+  final size = switch (base) {
+    2 => 4,
+    8 => 3,
+    10 => 3,
+    16 => 2,
+    _ => 4,
+  };
+  final groups = <String>[];
+  for (var index = body.length; index > 0; index -= size) {
+    final start = max(0, index - size);
+    groups.insert(0, body.substring(start, index));
+  }
+  final grouped = groups.join(' ');
+  return negative ? '-$grouped' : grouped;
+}
+
+int _bitLength(BigInt value) {
+  if (value == BigInt.zero) return 0;
+  return value.abs().bitLength;
+}
+
+int _byteLength(BigInt value) {
+  final bits = _bitLength(value);
+  return bits == 0 ? 0 : ((bits + 7) ~/ 8);
+}
+
+int _digitCount(BigInt value) {
+  final text = value.abs().toString();
+  return text == '0' ? 1 : text.length;
+}
+
+int _minimumByteAlignedBits(BigInt value) {
+  final bits = max(1, _bitLength(value));
+  return ((bits + 7) ~/ 8) * 8;
+}
+
+BigInt _unsignedWithinWidth(BigInt value, int widthBits) {
+  final modulus = BigInt.one << widthBits;
+  final remainder = value % modulus;
+  return remainder.isNegative ? remainder + modulus : remainder;
+}
+
+BigInt _signedWithinWidth(BigInt unsigned, int widthBits) {
+  final signBit = BigInt.one << (widthBits - 1);
+  final modulus = BigInt.one << widthBits;
+  return unsigned >= signBit ? unsigned - modulus : unsigned;
+}
+
+List<String> _hexToBytePairs(String hex) {
+  final padded = hex.length.isOdd ? '0$hex' : hex;
+  final bytes = <String>[];
+  for (var index = 0; index < padded.length; index += 2) {
+    bytes.add(padded.substring(index, index + 2).toUpperCase());
+  }
+  return bytes;
+}
+
+String _asciiPreview(BigInt value, int widthBits) {
+  final unsigned = _unsignedWithinWidth(value, widthBits);
+  final hex = unsigned.toRadixString(16).padLeft(widthBits ~/ 4, '0');
+  final buffer = StringBuffer();
+  for (final pair in _hexToBytePairs(hex)) {
+    final byte = int.parse(pair, radix: 16);
+    if (byte < 32 || byte > 126) return '';
+    buffer.writeCharCode(byte);
+  }
+  return buffer.toString();
 }
 
 class _LoremIpsumView extends StatefulWidget {
@@ -3258,7 +9673,7 @@ class _LoremIpsumView extends StatefulWidget {
 class _LoremIpsumViewState extends State<_LoremIpsumView> {
   final TextEditingController _output = TextEditingController();
   String _count = 'x1';
-  String _mode = 'Append';
+  String _mode = 'Replace';
 
   @override
   void dispose() {
@@ -3283,103 +9698,220 @@ class _LoremIpsumViewState extends State<_LoremIpsumView> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(
-          width: 180,
+    return _ResizableSplit(
+      horizontal: true,
+      initialRatio: 0.34,
+      minFirstExtent: 300,
+      minSecondExtent: 420,
+      first: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ToolButton(
-                label: 'Paragraph',
-                onPressed: () => _addText(_paragraph()),
-              ),
-              ToolButton(
-                label: 'Sentence',
-                onPressed: () => _addText('Lorem ipsum dolor sit amet.'),
-              ),
-              ToolButton(label: 'Word', onPressed: () => _addText('Lorem')),
-              ToolButton(
-                label: 'Title',
-                onPressed: () => _addText('Lorem Ipsum Title'),
-              ),
-              ToolButton(
-                label: 'First name',
-                onPressed: () => _addText('Alex'),
-              ),
-              ToolButton(
-                label: 'Last name',
-                onPressed: () => _addText('Johnson'),
-              ),
-              ToolButton(
-                label: 'Full name',
-                onPressed: () => _addText('Alex Johnson'),
-              ),
-              ToolButton(
-                label: 'Email',
-                onPressed: () => _addText('hello@example.com'),
-              ),
-              ToolButton(
-                label: 'URL',
-                onPressed: () => _addText('https://example.com'),
-              ),
-              ToolButton(
-                label: 'Short tweet',
-                onPressed: () => _addText('Building tools offline.'),
-              ),
-              ToolButton(
-                label: 'Long tweet',
-                onPressed: () => _addText(
-                  'DevUtils helps you with daily tasks, offline and fast.',
+              _LoremControlRow(
+                label: 'Count',
+                child: SmallDropdown(
+                  items: const ['x1', 'x5', 'x10'],
+                  initialValue: _count,
+                  width: 104,
+                  onChanged: (value) => setState(() => _count = value),
                 ),
               ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            children: [
-              Row(
+              const SizedBox(height: 8),
+              _LoremControlRow(
+                label: 'Mode',
+                child: SmallDropdown(
+                  items: const ['Replace', 'Append'],
+                  initialValue: _mode,
+                  width: 124,
+                  onChanged: (value) => setState(() => _mode = value),
+                ),
+              ),
+              const SizedBox(height: 18),
+              _LoremSection(
+                title: 'Text',
                 children: [
-                  const Spacer(),
-                  SmallDropdown(
-                    items: const ['x1', 'x5', 'x10'],
-                    initialValue: _count,
-                    onChanged: (value) => setState(() => _count = value),
+                  _LoremActionButton(
+                    label: 'Paragraph',
+                    onPressed: () => _addText(_paragraph()),
                   ),
-                  const SizedBox(width: 8),
-                  SmallDropdown(
-                    items: const ['Append', 'Replace'],
-                    initialValue: _mode,
-                    onChanged: (value) => setState(() => _mode = value),
+                  _LoremActionButton(
+                    label: 'Sentence',
+                    onPressed: () => _addText('Lorem ipsum dolor sit amet.'),
                   ),
-                  const SizedBox(width: 8),
-                  ToolButton(
-                    label: 'Clear',
-                    onPressed: () => setState(() => _output.clear()),
+                  _LoremActionButton(
+                    label: 'Word',
+                    onPressed: () => _addText('Lorem'),
+                  ),
+                  _LoremActionButton(
+                    label: 'Title',
+                    onPressed: () => _addText('Lorem Ipsum Title'),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: EditorPane(
-                  label: '',
-                  actions: const [],
-                  controller: _output,
-                  placeholder: 'Lorem ipsum...',
-                  copyAction: _copyOutput,
-                ),
+              const SizedBox(height: 16),
+              _LoremSection(
+                title: 'Identity',
+                children: [
+                  _LoremActionButton(
+                    label: 'First name',
+                    onPressed: () => _addText('Alex'),
+                  ),
+                  _LoremActionButton(
+                    label: 'Last name',
+                    onPressed: () => _addText('Johnson'),
+                  ),
+                  _LoremActionButton(
+                    label: 'Full name',
+                    onPressed: () => _addText('Alex Johnson'),
+                  ),
+                  _LoremActionButton(
+                    label: 'Email',
+                    onPressed: () => _addText('hello@example.com'),
+                  ),
+                  _LoremActionButton(
+                    label: 'URL',
+                    onPressed: () => _addText('https://example.com'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _LoremSection(
+                title: 'Social',
+                children: [
+                  _LoremActionButton(
+                    label: 'Short tweet',
+                    onPressed: () => _addText('Building tools offline.'),
+                  ),
+                  _LoremActionButton(
+                    label: 'Long tweet',
+                    onPressed: () => _addText(
+                      'DevUtils helps you with daily tasks, offline and fast.',
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
-      ],
+      ),
+      second: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                'Output',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const Spacer(),
+              ToolButton(
+                label: 'Reset output',
+                onPressed: () => setState(() => _output.clear()),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: EditorPane(
+              label: '',
+              actions: const [],
+              controller: _output,
+              placeholder: 'Generated text...',
+              copyAction: _copyOutput,
+              showHeader: false,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   String _paragraph() {
     return 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.';
+  }
+}
+
+class _LoremControlRow extends StatelessWidget {
+  const _LoremControlRow({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 72,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: context.appColors.mutedText,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        child,
+      ],
+    );
+  }
+}
+
+class _LoremSection extends StatelessWidget {
+  const _LoremSection({required this.title, required this.children});
+
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            color: context.appColors.editorText,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, runSpacing: 8, children: children),
+      ],
+    );
+  }
+}
+
+class _LoremActionButton extends StatelessWidget {
+  const _LoremActionButton({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return SizedBox(
+      width: 132,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          minimumSize: const Size(0, 34),
+          side: BorderSide(color: appColors.border),
+          backgroundColor: appColors.panelElevated,
+          foregroundColor: appColors.editorText,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+          textStyle: const TextStyle(fontSize: 12.5),
+        ),
+        child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ),
+    );
   }
 }
 
@@ -3393,6 +9925,7 @@ class _QrCodeView extends StatefulWidget {
 class _QrCodeViewState extends State<_QrCodeView> {
   final TextEditingController _content = TextEditingController();
   String _preview = 'QR Preview';
+  String _template = 'Plain text';
 
   @override
   void dispose() {
@@ -3408,120 +9941,120 @@ class _QrCodeViewState extends State<_QrCodeView> {
     });
   }
 
+  void _applyTemplate(String value) {
+    final content = switch (value) {
+      'vCard' =>
+        'BEGIN:VCARD\nVERSION:3.0\nFN:Alex Johnson\nORG:DevUtils\nEMAIL:alex@example.com\nTEL:+15551234567\nEND:VCARD',
+      'Wi-Fi' => 'WIFI:T:WPA;S:Example-Network;P:correct-horse-battery;;',
+      'URL' => 'https://example.com',
+      'Email' => 'mailto:alex@example.com?subject=Hello&body=Message',
+      'SMS' => 'SMSTO:+15551234567:Hello from DevUtils',
+      _ => 'Hello from DevUtils',
+    };
+    setState(() {
+      _template = value;
+      _content.text = content;
+    });
+    _updatePreview();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: EditorPane(
-            label: 'Content',
-            actions: [
-              ToolButton(
-                label: 'Clipboard',
-                onPressed: () async {
-                  final text = await _readClipboardText();
-                  setState(() => _content.text = text);
-                  _updatePreview();
-                },
-              ),
-              ToolButton(
-                label: 'Sample',
-                onPressed: () {
-                  setState(
-                    () => _content.text = 'BEGIN:VCARD\nFN:DevUtils\nEND:VCARD',
-                  );
-                  _updatePreview();
-                },
-              ),
-              ToolButton(
-                label: 'Clear',
-                onPressed: () {
-                  setState(() => _content.clear());
-                  _updatePreview();
-                },
-              ),
-              const SmallDropdown(
-                items: ['Select Template'],
-                initialValue: 'Select Template',
-              ),
-            ],
-            controller: _content,
-            onChanged: (_) => _updatePreview(),
-            placeholder: 'BEGIN:VCARD...',
+    return _ResizableSplit(
+      horizontal: false,
+      first: EditorPane(
+        label: 'Content',
+        actions: [
+          ToolButton(
+            label: 'Clipboard',
+            onPressed: () async {
+              final text = await _readClipboardText();
+              setState(() => _content.text = text);
+              _updatePreview();
+            },
           ),
-        ),
-        const SizedBox(height: 16),
-        Expanded(
-          child: Column(
-            children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: const [
-                  Text(
-                    'Read QR Code:',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  ToolButton(label: 'File...'),
-                  ToolButton(label: 'Clipboard'),
-                ],
+          ToolButton(
+            label: 'Sample',
+            onPressed: () {
+              setState(
+                () => _content.text = 'BEGIN:VCARD\nFN:DevUtils\nEND:VCARD',
+              );
+              _updatePreview();
+            },
+          ),
+          ToolButton(
+            label: 'Clear',
+            onPressed: () {
+              setState(() => _content.clear());
+              _updatePreview();
+            },
+          ),
+          SmallDropdown(
+            items: const [
+              'Plain text',
+              'URL',
+              'vCard',
+              'Wi-Fi',
+              'Email',
+              'SMS',
+            ],
+            initialValue: _template,
+            onChanged: _applyTemplate,
+          ),
+        ],
+        controller: _content,
+        onChanged: (_) => _updatePreview(),
+        placeholder: 'BEGIN:VCARD...',
+      ),
+      second: Column(
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: const [
+              Text(
+                'Read QR Code:',
+                style: TextStyle(fontWeight: FontWeight.w600),
               ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: const [
-                  ToolButton(label: 'Add Watermark...'),
-                  ToolButton(label: 'Add Icon...'),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.black12),
-                  ),
-                  child: Stack(
-                    children: [
-                      Center(child: Text(_preview)),
-                      Positioned(
-                        top: 6,
-                        right: 6,
-                        child: IconButton(
-                          onPressed: () {},
-                          icon: const Icon(Icons.copy_all, size: 16),
-                          tooltip: 'Copy image',
-                          padding: const EdgeInsets.all(4),
-                          splashRadius: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: const [
-                  SmallDropdown(
-                    items: [
-                      'Error Correction: H (30%)',
-                      'Error Correction: M (15%)',
-                    ],
-                    initialValue: 'Error Correction: H (30%)',
-                  ),
-                  ToolButton(label: 'Save'),
-                ],
-              ),
+              ToolButton(label: 'File...'),
+              ToolButton(label: 'Clipboard'),
             ],
           ),
-        ),
-      ],
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: const [
+              ToolButton(label: 'Add Watermark...'),
+              ToolButton(label: 'Add Icon...'),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Container(
+              decoration: _toolSurfaceDecoration(context),
+              child: Stack(children: [Center(child: Text(_preview))]),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: const [
+              SmallDropdown(
+                items: [
+                  'Error Correction: H (30%)',
+                  'Error Correction: M (15%)',
+                ],
+                initialValue: 'Error Correction: H (30%)',
+              ),
+              ToolButton(label: 'Save'),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -3538,9 +10071,20 @@ class _StringInspectorViewState extends State<_StringInspectorView> {
   bool _caseSensitive = true;
 
   @override
+  void initState() {
+    super.initState();
+    _input.addListener(_handleInputChanged);
+  }
+
+  @override
   void dispose() {
+    _input.removeListener(_handleInputChanged);
     _input.dispose();
     super.dispose();
+  }
+
+  void _handleInputChanged() {
+    if (mounted) setState(() {});
   }
 
   Map<String, int> _wordCounts(String text) {
@@ -3555,6 +10099,29 @@ class _StringInspectorViewState extends State<_StringInspectorView> {
     return counts;
   }
 
+  List<int> _lineColumnForOffset(String text, int offset) {
+    final safeOffset = offset.clamp(0, text.length).toInt();
+    var line = 1;
+    var column = 1;
+    for (var i = 0; i < safeOffset; i++) {
+      if (text.codeUnitAt(i) == 10) {
+        line++;
+        column = 1;
+      } else {
+        column++;
+      }
+    }
+    return [line, column];
+  }
+
+  void _setSample() {
+    _input.text = 'This is a special emoji 😀.\nAwesome, right?';
+  }
+
+  void _clear() {
+    _input.clear();
+  }
+
   @override
   Widget build(BuildContext context) {
     final text = _input.text;
@@ -3563,85 +10130,252 @@ class _StringInspectorViewState extends State<_StringInspectorView> {
     final words = text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
     final lines = text.isEmpty ? 0 : '\n'.allMatches(text).length + 1;
     final counts = _wordCounts(text);
+    final sortedCounts = counts.entries.toList()
+      ..sort((a, b) {
+        final countOrder = b.value.compareTo(a.value);
+        if (countOrder != 0) return countOrder;
+        return a.key.compareTo(b.key);
+      });
+    final maxCount = sortedCounts.isEmpty ? 1 : sortedCounts.first.value;
+    final selection = _input.selection;
+    final cursorOffset = selection.isValid
+        ? selection.extentOffset.clamp(0, text.length).toInt()
+        : 0;
+    final cursorPosition = _lineColumnForOffset(text, cursorOffset);
+    final selectedChars = selection.isValid && !selection.isCollapsed
+        ? selection.textInside(text).characters.length
+        : 0;
 
-    return Column(
-      children: [
-        Expanded(
-          child: EditorPane(
-            label: 'Input',
-            actions: [
-              ToolButton(
-                label: 'Clipboard',
-                onPressed: () async {
-                  final clip = await _readClipboardText();
-                  setState(() => _input.text = clip);
-                },
-              ),
-              ToolButton(
-                label: 'Sample',
-                onPressed: () {
-                  setState(
-                    () => _input.text =
-                        'This is a special emoji 😀.\nAwesome, right?',
-                  );
-                },
-              ),
-              ToolButton(
-                label: 'Clear',
-                onPressed: () => setState(() => _input.clear()),
-              ),
-            ],
-            controller: _input,
-            onChanged: (_) => setState(() {}),
-            placeholder: 'This is a special emoji...',
-          ),
-        ),
-        const SizedBox(height: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SectionHeader(title: 'Count'),
-              Text('Characters $chars'),
-              Text('Bytes $bytes'),
-              Text('Words $words'),
-              Text('Lines $lines'),
-              const SizedBox(height: 8),
-              const SectionHeader(title: 'Selection'),
-              const Text('Location 0'),
-              const Text('Current line 0'),
-              const Text('Column 0'),
-              const SizedBox(height: 12),
-              const SectionHeader(title: 'Word distribution'),
-              Row(
+    return _ResizableSplit(
+      horizontal: false,
+      initialRatio: 0.30,
+      minFirstExtent: 140,
+      minSecondExtent: 300,
+      first: EditorPane(
+        label: 'Input',
+        actions: [
+          ToolButton(label: 'Sample', onPressed: _setSample),
+          ToolButton(label: 'Clear', onPressed: _clear),
+        ],
+        controller: _input,
+        placeholder: 'Type or paste text to inspect...',
+        showHeader: false,
+      ),
+      second: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = constraints.maxWidth >= 920 ? 7 : 4;
+              const gap = 8.0;
+              final width =
+                  (constraints.maxWidth - ((columns - 1) * gap)) / columns;
+              return Wrap(
+                spacing: gap,
+                runSpacing: gap,
                 children: [
-                  const ToolButton(label: 'Filter'),
-                  const SizedBox(width: 8),
-                  Checkbox(
-                    value: _caseSensitive,
-                    onChanged: (value) =>
-                        setState(() => _caseSensitive = value ?? true),
+                  _InspectorMetricTile(
+                    label: 'Characters',
+                    value: '$chars',
+                    width: width,
                   ),
-                  const Text('Case sensitive'),
+                  _InspectorMetricTile(
+                    label: 'Bytes',
+                    value: '$bytes',
+                    width: width,
+                  ),
+                  _InspectorMetricTile(
+                    label: 'Words',
+                    value: '$words',
+                    width: width,
+                  ),
+                  _InspectorMetricTile(
+                    label: 'Lines',
+                    value: '$lines',
+                    width: width,
+                  ),
+                  _InspectorMetricTile(
+                    label: 'Unique',
+                    value: '${counts.length}',
+                    width: width,
+                  ),
+                  _InspectorMetricTile(
+                    label: 'Cursor',
+                    value: '${cursorPosition[0]}:${cursorPosition[1]}',
+                    width: width,
+                  ),
+                  _InspectorMetricTile(
+                    label: 'Selected',
+                    value: '$selectedChars',
+                    width: width,
+                  ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Container(
+              decoration: _toolSurfaceDecoration(context),
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Word distribution',
+                        style: TextStyle(
+                          color: context.appColors.editorText,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const Spacer(),
+                      Checkbox(
+                        value: _caseSensitive,
+                        onChanged: (value) =>
+                            setState(() => _caseSensitive = value ?? true),
+                      ),
+                      Text(
+                        'Case sensitive',
+                        style: TextStyle(color: context.appColors.editorText),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: sortedCounts.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No words yet',
+                              style: _mutedToolTextStyle(context),
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: sortedCounts.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 8),
+                            itemBuilder: (context, index) {
+                              final entry = sortedCounts[index];
+                              return _WordDistributionRow(
+                                word: entry.key,
+                                count: entry.value,
+                                fraction: entry.value / maxCount,
+                              );
+                            },
+                          ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.black12),
-                  ),
-                  padding: const EdgeInsets.all(8),
-                  child: ListView(
-                    children: counts.entries
-                        .map((entry) => Text('${entry.key}: ${entry.value}'))
-                        .toList(),
-                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InspectorMetricTile extends StatelessWidget {
+  const _InspectorMetricTile({
+    required this.label,
+    required this.value,
+    required this.width,
+  });
+
+  final String label;
+  final String value;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return SizedBox(
+      width: max(96, width),
+      child: Container(
+        decoration: _toolSurfaceDecoration(context, radius: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: appColors.mutedText,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: appColors.editorText,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WordDistributionRow extends StatelessWidget {
+  const _WordDistributionRow({
+    required this.word,
+    required this.count,
+    required this.fraction,
+  });
+
+  final String word;
+  final int count;
+  final double fraction;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                word,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: appColors.editorText,
+                  fontFamily: 'Menlo',
+                  fontSize: 12,
                 ),
               ),
-            ],
+            ),
+            const SizedBox(width: 12),
+            Text(
+              '$count',
+              style: TextStyle(
+                color: appColors.mutedText,
+                fontFamily: 'Menlo',
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(2),
+          child: LinearProgressIndicator(
+            value: fraction.clamp(0, 1).toDouble(),
+            minHeight: 3,
+            color: appColors.accent,
+            backgroundColor: appColors.border.withAlpha(90),
           ),
         ),
       ],
@@ -3658,72 +10392,319 @@ class _MarkdownPreviewView extends StatefulWidget {
 
 class _MarkdownPreviewViewState extends State<_MarkdownPreviewView> {
   final TextEditingController _input = TextEditingController();
-  final TextEditingController _preview = TextEditingController();
 
   @override
   void dispose() {
     _input.dispose();
-    _preview.dispose();
     super.dispose();
   }
 
   Future<void> _pasteClipboard() async {
     final text = await _readClipboardText();
-    setState(() {
-      _input.text = text;
-      _preview.text = text;
-    });
+    setState(() => _input.text = text);
   }
 
   void _setSample() {
-    const sample = '# Heading 1\n\nParagraphs are separated by a blank line.';
-    setState(() {
-      _input.text = sample;
-      _preview.text = sample;
-    });
+    const sample = '''
+# Heading 1
+
+Paragraphs are separated by a blank line.
+
+- Lists render as lists
+- **Bold** and `inline code` render too''';
+    setState(() => _input.text = sample);
   }
 
   void _clear() {
-    setState(() {
-      _input.clear();
-      _preview.clear();
-    });
+    setState(() => _input.clear());
   }
 
   @override
   Widget build(BuildContext context) {
+    return _ResizableSplit(
+      horizontal: false,
+      initialRatio: 0.42,
+      minFirstExtent: 110,
+      minSecondExtent: 120,
+      first: EditorPane(
+        label: 'Input',
+        actions: [
+          ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
+          ToolButton(label: 'Sample', onPressed: _setSample),
+          ToolButton(label: 'Clear', onPressed: _clear),
+        ],
+        controller: _input,
+        onChanged: (_) => setState(() {}),
+        placeholder: '# Heading 1',
+      ),
+      second: _RenderedPreviewPane(
+        label: 'Preview',
+        html: markdownToHtmlForPreview(_input.text),
+        badge: 'Rendered Markdown',
+      ),
+    );
+  }
+}
+
+class _RenderedPreviewPane extends StatelessWidget {
+  const _RenderedPreviewPane({
+    required this.label,
+    required this.html,
+    required this.badge,
+  });
+
+  final String label;
+  final String html;
+  final String badge;
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: EditorPane(
-            label: 'Input',
-            actions: [
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clear),
-              const ToolButton(label: 'Cheatsheet'),
-            ],
-            controller: _input,
-            onChanged: (value) => setState(() => _preview.text = value),
-            placeholder: '# Heading 1',
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 32),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const Spacer(),
+                _PreviewBadge(label: badge),
+              ],
+            ),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 6),
         Expanded(
-          child: EditorPane(
-            label: 'Preview',
-            actions: const [
-              ToolButton(label: 'Open in Browser'),
-              SmallDropdown(items: ['Preview'], initialValue: 'Preview'),
-            ],
-            readOnly: true,
-            placeholder: '',
-            controller: _preview,
+          child: _HtmlRenderedPreview(
+            html: html,
+            overlay: const SizedBox.shrink(),
           ),
         ),
       ],
     );
   }
+}
+
+class _PreviewBadge extends StatelessWidget {
+  const _PreviewBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: appColors.panelElevated.withAlpha(236),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: appColors.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: appColors.editorText,
+            fontSize: 11.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+@visibleForTesting
+String markdownToHtmlForPreview(String markdown) {
+  final lines = markdown.replaceAll('\r\n', '\n').split('\n');
+  final buffer = StringBuffer();
+  var inList = false;
+  var inCode = false;
+  final paragraph = <String>[];
+
+  void flushParagraph() {
+    if (paragraph.isEmpty) return;
+    buffer.writeln('<p>${_markdownInline(paragraph.join(' '))}</p>');
+    paragraph.clear();
+  }
+
+  void closeList() {
+    if (!inList) return;
+    buffer.writeln('</ul>');
+    inList = false;
+  }
+
+  for (var index = 0; index < lines.length; index++) {
+    final rawLine = lines[index];
+    final line = rawLine.trimRight();
+    final trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      flushParagraph();
+      closeList();
+      if (inCode) {
+        buffer.writeln('</code></pre>');
+      } else {
+        buffer.writeln('<pre><code>');
+      }
+      inCode = !inCode;
+      continue;
+    }
+    if (inCode) {
+      buffer.writeln(htmlEscape.convert(rawLine));
+      continue;
+    }
+    if (trimmed.isEmpty) {
+      flushParagraph();
+      closeList();
+      continue;
+    }
+    final heading = RegExp(r'^(#{1,6})\s+(.+)$').firstMatch(trimmed);
+    if (heading != null) {
+      flushParagraph();
+      closeList();
+      final level = heading.group(1)!.length;
+      buffer.writeln(
+        '<h$level>${_markdownInline(heading.group(2)!)}</h$level>',
+      );
+      continue;
+    }
+    if (_isMarkdownTableStart(lines, index)) {
+      flushParagraph();
+      closeList();
+      final table = _parseMarkdownTable(lines, index);
+      buffer.write(table.html);
+      index = table.lastLineIndex;
+      continue;
+    }
+    final bullet = RegExp(r'^[-*]\s+(.+)$').firstMatch(trimmed);
+    if (bullet != null) {
+      flushParagraph();
+      if (!inList) {
+        buffer.writeln('<ul>');
+        inList = true;
+      }
+      buffer.writeln('<li>${_markdownInline(bullet.group(1)!)}</li>');
+      continue;
+    }
+    paragraph.add(trimmed);
+  }
+  flushParagraph();
+  closeList();
+  if (inCode) buffer.writeln('</code></pre>');
+  return buffer.toString();
+}
+
+bool _isMarkdownTableStart(List<String> lines, int index) {
+  if (index + 1 >= lines.length) return false;
+  final header = lines[index].trim();
+  final delimiter = lines[index + 1].trim();
+  return header.contains('|') && _isMarkdownTableDelimiter(delimiter);
+}
+
+bool _isMarkdownTableDelimiter(String line) {
+  if (!line.contains('|')) return false;
+  final cells = _splitMarkdownTableRow(line);
+  if (cells.isEmpty) return false;
+  return cells.every((cell) => RegExp(r'^:?-{3,}:?$').hasMatch(cell.trim()));
+}
+
+({String html, int lastLineIndex}) _parseMarkdownTable(
+  List<String> lines,
+  int startIndex,
+) {
+  final headers = _splitMarkdownTableRow(lines[startIndex]);
+  final alignments = _splitMarkdownTableRow(
+    lines[startIndex + 1],
+  ).map(_markdownTableAlignment).toList();
+  final rows = <List<String>>[];
+  var index = startIndex + 2;
+
+  while (index < lines.length) {
+    final line = lines[index].trim();
+    if (line.isEmpty || !line.contains('|')) break;
+    rows.add(_splitMarkdownTableRow(lines[index]));
+    index++;
+  }
+
+  String alignStyle(int cellIndex) {
+    if (cellIndex >= alignments.length || alignments[cellIndex] == null) {
+      return '';
+    }
+    return ' style="text-align: ${alignments[cellIndex]}"';
+  }
+
+  final buffer = StringBuffer()
+    ..writeln('<div class="markdown-table-scroll">')
+    ..writeln('<table>')
+    ..writeln('<thead>')
+    ..writeln('<tr>');
+  for (var cellIndex = 0; cellIndex < headers.length; cellIndex++) {
+    buffer.writeln(
+      '<th${alignStyle(cellIndex)}>${_markdownInline(headers[cellIndex])}</th>',
+    );
+  }
+  buffer
+    ..writeln('</tr>')
+    ..writeln('</thead>')
+    ..writeln('<tbody>');
+
+  for (final row in rows) {
+    buffer.writeln('<tr>');
+    for (var cellIndex = 0; cellIndex < headers.length; cellIndex++) {
+      final value = cellIndex < row.length ? row[cellIndex] : '';
+      buffer.writeln(
+        '<td${alignStyle(cellIndex)}>${_markdownInline(value)}</td>',
+      );
+    }
+    buffer.writeln('</tr>');
+  }
+
+  buffer
+    ..writeln('</tbody>')
+    ..writeln('</table>')
+    ..writeln('</div>');
+  return (html: buffer.toString(), lastLineIndex: index - 1);
+}
+
+List<String> _splitMarkdownTableRow(String line) {
+  var trimmed = line.trim();
+  if (trimmed.startsWith('|')) trimmed = trimmed.substring(1);
+  if (trimmed.endsWith('|')) trimmed = trimmed.substring(0, trimmed.length - 1);
+  return trimmed.split('|').map((cell) => cell.trim()).toList();
+}
+
+String? _markdownTableAlignment(String delimiter) {
+  final trimmed = delimiter.trim();
+  if (trimmed.startsWith(':') && trimmed.endsWith(':')) return 'center';
+  if (trimmed.endsWith(':')) return 'right';
+  if (trimmed.startsWith(':')) return 'left';
+  return null;
+}
+
+String _markdownInline(String text) {
+  var output = htmlEscape.convert(text);
+  output = output.replaceAllMapped(
+    RegExp(r'`([^`]+)`'),
+    (match) => '<code>${match.group(1)}</code>',
+  );
+  output = output.replaceAllMapped(
+    RegExp(r'\*\*([^*]+)\*\*'),
+    (match) => '<strong>${match.group(1)}</strong>',
+  );
+  output = output.replaceAllMapped(
+    RegExp(r'\*([^*]+)\*'),
+    (match) => '<em>${match.group(1)}</em>',
+  );
+  output = output.replaceAllMapped(
+    RegExp(r'\[([^\]]+)\]\(([^)]+)\)'),
+    (match) => '<a href="${match.group(2)}">${match.group(1)}</a>',
+  );
+  return output;
 }
 
 class _SqlFormatterView extends StatefulWidget {
@@ -3754,37 +10735,7 @@ class _SqlFormatterViewState extends State<_SqlFormatterView> {
       setState(() {});
       return;
     }
-    var text = _input.text;
-    final keywords = [
-      'select',
-      'from',
-      'where',
-      'join',
-      'left',
-      'right',
-      'inner',
-      'outer',
-      'group',
-      'order',
-      'by',
-      'limit',
-    ];
-    for (final word in keywords) {
-      final reg = RegExp('\\b$word\\b', caseSensitive: false);
-      text = text.replaceAllMapped(reg, (match) {
-        final value = match.group(0)!;
-        return _case == 'Uppercase' ? value.toUpperCase() : value.toLowerCase();
-      });
-    }
-    final indent = _indentFor(_indent);
-    text = text.replaceAll(
-      RegExp(r'\\bSELECT\\b', caseSensitive: false),
-      'SELECT',
-    );
-    final split = text.split(
-      RegExp(r'\\s+(FROM|WHERE|GROUP|ORDER)\\s+', caseSensitive: false),
-    );
-    _output.text = split.map((line) => line.trim()).join('\n$indent');
+    _output.text = _formatSql(_input.text, _case, _indentFor(_indent));
     setState(() {});
   }
 
@@ -3842,7 +10793,10 @@ class _SqlFormatterViewState extends State<_SqlFormatterView> {
           SmallDropdown(
             items: const ['2 spaces', '4 spaces', 'Tabs'],
             initialValue: _indent,
-            onChanged: (value) => setState(() => _indent = value),
+            onChanged: (value) {
+              setState(() => _indent = value);
+              _run();
+            },
           ),
         ToolButton(
           label: 'Copy',
@@ -3853,6 +10807,160 @@ class _SqlFormatterViewState extends State<_SqlFormatterView> {
       outputController: _output,
     );
   }
+}
+
+String _formatSql(String source, String keywordCase, String indentString) {
+  final compact = _compactSqlWhitespace(source);
+  if (compact.isEmpty) return '';
+
+  final cased = _caseSqlKeywords(compact, keywordCase);
+  final clausePattern = RegExp(
+    r'\s+((?:left|right|inner|outer|full|cross)\s+join|join|from|where|having|group\s+by|order\s+by|limit|offset|union(?:\s+all)?|values|set)\b',
+    caseSensitive: false,
+  );
+  var text = cased.replaceAllMapped(clausePattern, (match) {
+    return '\n${_caseSqlKeyword(match.group(1)!, keywordCase)}';
+  });
+  text = _breakSqlCommas(text, indentString);
+
+  final lines = text
+      .split('\n')
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty)
+      .toList();
+  if (lines.isEmpty) return '';
+
+  final formatted = <String>[];
+  for (final line in lines) {
+    final lower = line.toLowerCase();
+    if (lower.startsWith(',') ||
+        lower.startsWith('and ') ||
+        lower.startsWith('or ')) {
+      formatted.add('$indentString$line');
+    } else {
+      formatted.add(line);
+    }
+  }
+  return formatted.join('\n');
+}
+
+String _compactSqlWhitespace(String source) {
+  final buffer = StringBuffer();
+  String? quote;
+  var previousWasSpace = false;
+  for (var i = 0; i < source.length; i++) {
+    final char = source[i];
+    if (quote != null) {
+      buffer.write(char);
+      if (char == quote && (i == 0 || source[i - 1] != '\\')) quote = null;
+      continue;
+    }
+    if (char == '"' || char == "'") {
+      quote = char;
+      buffer.write(char);
+      previousWasSpace = false;
+      continue;
+    }
+    if (RegExp(r'\s').hasMatch(char)) {
+      if (!previousWasSpace && buffer.isNotEmpty) {
+        buffer.write(' ');
+        previousWasSpace = true;
+      }
+      continue;
+    }
+    buffer.write(char);
+    previousWasSpace = false;
+  }
+  return buffer.toString().trim();
+}
+
+String _caseSqlKeywords(String source, String keywordCase) {
+  const keywords = [
+    'select',
+    'distinct',
+    'from',
+    'where',
+    'and',
+    'or',
+    'join',
+    'left',
+    'right',
+    'inner',
+    'outer',
+    'full',
+    'cross',
+    'on',
+    'group',
+    'order',
+    'by',
+    'having',
+    'limit',
+    'offset',
+    'union',
+    'all',
+    'insert',
+    'into',
+    'update',
+    'delete',
+    'values',
+    'set',
+    'as',
+    'case',
+    'when',
+    'then',
+    'else',
+    'end',
+    'is',
+    'not',
+    'null',
+    'like',
+    'in',
+    'exists',
+  ];
+  var output = source;
+  for (final keyword in keywords) {
+    output = output.replaceAllMapped(
+      RegExp('\\b${RegExp.escape(keyword)}\\b', caseSensitive: false),
+      (match) => _caseSqlKeyword(match.group(0)!, keywordCase),
+    );
+  }
+  return output;
+}
+
+String _caseSqlKeyword(String keyword, String keywordCase) {
+  return keywordCase == 'Uppercase'
+      ? keyword.toUpperCase()
+      : keyword.toLowerCase();
+}
+
+String _breakSqlCommas(String source, String indentString) {
+  final buffer = StringBuffer();
+  String? quote;
+  var depth = 0;
+  for (var i = 0; i < source.length; i++) {
+    final char = source[i];
+    if (quote != null) {
+      buffer.write(char);
+      if (char == quote && (i == 0 || source[i - 1] != '\\')) quote = null;
+      continue;
+    }
+    if (char == '"' || char == "'") {
+      quote = char;
+      buffer.write(char);
+      continue;
+    }
+    if (char == '(') depth += 1;
+    if (char == ')') depth = max(0, depth - 1);
+    if (char == ',' && depth == 0) {
+      buffer.write('\n$indentString, ');
+      while (i + 1 < source.length && RegExp(r'\s').hasMatch(source[i + 1])) {
+        i++;
+      }
+      continue;
+    }
+    buffer.write(char);
+  }
+  return buffer.toString();
 }
 
 String _formatSqlExplanation(_SqlExplanation explanation) {
@@ -4844,6 +11952,17 @@ class _StringCaseConverterViewState extends State<_StringCaseConverterView> {
   final TextEditingController _input = TextEditingController();
   final TextEditingController _output = TextEditingController();
   String _mode = 'camelCase';
+  static const _caseModes = [
+    'camelCase',
+    'PascalCase',
+    'snake_case',
+    'CONSTANT_CASE',
+    'kebab-case',
+    'Title Case',
+    'Sentence case',
+    'lowercase',
+    'UPPERCASE',
+  ];
 
   @override
   void dispose() {
@@ -4860,30 +11979,60 @@ class _StringCaseConverterViewState extends State<_StringCaseConverterView> {
   }
 
   String _convert(String input) {
-    final words = input
-        .replaceAll(RegExp(r'[_\-]'), ' ')
-        .split(RegExp(r'\s+'))
-        .where((word) => word.isNotEmpty)
-        .toList();
+    final words = _caseWords(input);
     if (words.isEmpty) return '';
-    if (_mode == 'snake_case') {
-      return words.map((w) => w.toLowerCase()).join('_');
+    final lowerWords = words.map((word) => word.toLowerCase()).toList();
+    switch (_mode) {
+      case 'PascalCase':
+        return lowerWords.map(_capitalizeWord).join();
+      case 'snake_case':
+        return lowerWords.join('_');
+      case 'CONSTANT_CASE':
+        return lowerWords.join('_').toUpperCase();
+      case 'kebab-case':
+        return lowerWords.join('-');
+      case 'Title Case':
+        return lowerWords.map(_capitalizeWord).join(' ');
+      case 'Sentence case':
+        return _capitalizeWord(lowerWords.join(' '));
+      case 'lowercase':
+        return lowerWords.join(' ');
+      case 'UPPERCASE':
+        return lowerWords.join(' ').toUpperCase();
+      case 'camelCase':
+      default:
+        final first = lowerWords.first;
+        final rest = lowerWords.skip(1).map(_capitalizeWord);
+        return ([first, ...rest]).join();
     }
-    if (_mode == 'kebab-case') {
-      return words.map((w) => w.toLowerCase()).join('-');
-    }
-    final first = words.first.toLowerCase();
-    final rest = words
-        .skip(1)
-        .map((w) => w[0].toUpperCase() + w.substring(1).toLowerCase());
-    return ([first, ...rest]).join();
+  }
+
+  List<String> _caseWords(String input) {
+    final spaced = input
+        .replaceAllMapped(
+          RegExp(r'([a-z0-9])([A-Z])'),
+          (match) => '${match[1]} ${match[2]}',
+        )
+        .replaceAllMapped(
+          RegExp(r'([A-Z]+)([A-Z][a-z])'),
+          (match) => '${match[1]} ${match[2]}',
+        )
+        .replaceAll(RegExp(r'[_\-.\/]+'), ' ');
+    return spaced
+        .split(RegExp(r'\s+'))
+        .where((word) => word.trim().isNotEmpty)
+        .toList();
+  }
+
+  String _capitalizeWord(String word) {
+    if (word.isEmpty) return word;
+    return word[0].toUpperCase() + word.substring(1);
   }
 
   @override
   Widget build(BuildContext context) {
     return buildSplitEditors(
       inputActions: [
-        ToolButton(label: 'Go', onPressed: _run),
         ToolButton(
           label: 'Clipboard',
           onPressed: () async {
@@ -4895,7 +12044,7 @@ class _StringCaseConverterViewState extends State<_StringCaseConverterView> {
         ToolButton(
           label: 'Sample',
           onPressed: () {
-            setState(() => _input.text = 'requestURLDecoderID');
+            setState(() => _input.text = 'request URL decoder ID');
             _run();
           },
         ),
@@ -4906,11 +12055,10 @@ class _StringCaseConverterViewState extends State<_StringCaseConverterView> {
             _output.clear();
           },
         ),
-        const ToolIconButton(icon: Icons.settings),
       ],
       outputActions: [
         SmallDropdown(
-          items: const ['camelCase', 'snake_case', 'kebab-case'],
+          items: _caseModes,
           initialValue: _mode,
           onChanged: (value) {
             setState(() => _mode = value);
@@ -4924,6 +12072,7 @@ class _StringCaseConverterViewState extends State<_StringCaseConverterView> {
       ],
       inputController: _input,
       outputController: _output,
+      onInputChanged: (_) => _run(),
     );
   }
 }
@@ -5085,20 +12234,29 @@ class _ColorConverterViewState extends State<_ColorConverterView> {
   final TextEditingController _hwb = TextEditingController();
   final TextEditingController _cmyk = TextEditingController();
   Color _color = const Color(0xFF5CC07F);
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _updateFromHex(_input.text);
+    _setColor(_color);
   }
 
-  void _updateFromHex(String text) {
-    final hex = text.replaceAll('#', '');
-    if (hex.length != 6 && hex.length != 8) return;
-    final value = int.tryParse(hex, radix: 16);
-    if (value == null) return;
-    final color = hex.length == 6 ? Color(0xFF000000 | value) : Color(value);
+  void _updateFromInput(String text) {
+    final color = _parseColorValue(text);
+    if (color == null) {
+      setState(() => _error = text.trim().isEmpty ? null : 'Invalid color.');
+      return;
+    }
+    _setColor(color, updateInput: false);
+  }
+
+  void _setColor(Color color, {bool updateInput = true}) {
     _color = color;
+    _error = null;
+    if (updateInput) {
+      _input.text = _cssHex(color).toUpperCase();
+    }
     _fillFields(color);
     setState(() {});
   }
@@ -5109,8 +12267,8 @@ class _ColorConverterViewState extends State<_ColorConverterView> {
     final b = _colorComponent(color.b);
     final alpha = _colorComponent(color.a);
     final a = alpha / 255;
-    _hex.text = '#${_bytesToHex([r, g, b], lower: true)}';
-    _hexAlpha.text = '#${_bytesToHex([r, g, b, alpha], lower: true)}';
+    _hex.text = _cssHex(color);
+    _hexAlpha.text = _cssHex(color, includeAlpha: true);
     _rgb.text = 'rgb($r, $g, $b)';
     _rgba.text = 'rgba($r, $g, $b, ${a.toStringAsFixed(2)})';
     final hsl = _rgbToHsl(r, g, b);
@@ -5192,190 +12350,524 @@ class _ColorConverterViewState extends State<_ColorConverterView> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Text(
-                        'Input:',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(width: 8),
-                      ToolButton(
-                        label: 'Clipboard',
-                        onPressed: () async {
-                          final text = await _readClipboardText();
-                          setState(() => _input.text = text);
-                          _updateFromHex(text);
-                        },
-                      ),
-                      ToolButton(
-                        label: 'Sample',
-                        onPressed: () {
-                          setState(() => _input.text = '#5CC07F');
-                          _updateFromHex(_input.text);
-                        },
-                      ),
-                      ToolButton(
-                        label: 'Clear',
-                        onPressed: () => setState(() => _input.clear()),
-                      ),
-                      const Spacer(),
-                      SizedBox(
-                        width: 36,
-                        height: 36,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(color: _color),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  _InlineTextField(
-                    hintText: '#5CC07F',
-                    controller: _input,
-                    onChanged: (value) => _updateFromHex(value),
-                  ),
-                  const SizedBox(height: 12),
-                  LabeledField(
-                    label: 'Hex',
-                    trailing: ToolIconButton(
-                      icon: Icons.copy,
-                      onPressed: () =>
-                          Clipboard.setData(ClipboardData(text: _hex.text)),
-                    ),
-                    controller: _hex,
-                    readOnly: true,
-                  ),
-                  LabeledField(
-                    label: 'Hex with alpha',
-                    trailing: ToolIconButton(
-                      icon: Icons.copy,
-                      onPressed: () => Clipboard.setData(
-                        ClipboardData(text: _hexAlpha.text),
-                      ),
-                    ),
-                    controller: _hexAlpha,
-                    readOnly: true,
-                  ),
-                  LabeledField(
-                    label: 'RGB',
-                    trailing: ToolIconButton(
-                      icon: Icons.copy,
-                      onPressed: () =>
-                          Clipboard.setData(ClipboardData(text: _rgb.text)),
-                    ),
-                    controller: _rgb,
-                    readOnly: true,
-                  ),
-                  LabeledField(
-                    label: 'RGBA',
-                    trailing: ToolIconButton(
-                      icon: Icons.copy,
-                      onPressed: () =>
-                          Clipboard.setData(ClipboardData(text: _rgba.text)),
-                    ),
-                    controller: _rgba,
-                    readOnly: true,
-                  ),
-                  LabeledField(
-                    label: 'HSL',
-                    trailing: ToolIconButton(
-                      icon: Icons.copy,
-                      onPressed: () =>
-                          Clipboard.setData(ClipboardData(text: _hsl.text)),
-                    ),
-                    controller: _hsl,
-                    readOnly: true,
-                  ),
-                  LabeledField(
-                    label: 'HSLA',
-                    trailing: ToolIconButton(
-                      icon: Icons.copy,
-                      onPressed: () =>
-                          Clipboard.setData(ClipboardData(text: _hsla.text)),
-                    ),
-                    controller: _hsla,
-                    readOnly: true,
-                  ),
-                  LabeledField(
-                    label: 'HSB (HSV)',
-                    trailing: ToolIconButton(
-                      icon: Icons.copy,
-                      onPressed: () =>
-                          Clipboard.setData(ClipboardData(text: _hsv.text)),
-                    ),
-                    controller: _hsv,
-                    readOnly: true,
-                  ),
-                  LabeledField(
-                    label: 'HWB',
-                    trailing: ToolIconButton(
-                      icon: Icons.copy,
-                      onPressed: () =>
-                          Clipboard.setData(ClipboardData(text: _hwb.text)),
-                    ),
-                    controller: _hwb,
-                    readOnly: true,
-                  ),
-                  LabeledField(
-                    label: 'CMYK',
-                    trailing: ToolIconButton(
-                      icon: Icons.copy,
-                      onPressed: () =>
-                          Clipboard.setData(ClipboardData(text: _cmyk.text)),
-                    ),
-                    controller: _cmyk,
-                    readOnly: true,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 16),
-        SizedBox(
-          width: 320,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: const [
-                  ToolButton(label: 'Code Presets'),
-                  SizedBox(width: 8),
-                  ToolButton(label: 'View Source'),
-                  SizedBox(width: 8),
-                  ToolButton(label: 'Variables'),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.black12),
-                  ),
-                  padding: const EdgeInsets.all(8),
-                  child: Text(
-                    '# CSS Level 4 Color Module:\n${_rgb.text}\n${_hsl.text}',
+    return _ResizableSplit(
+      horizontal: true,
+      initialRatio: 0.74,
+      minFirstExtent: 420,
+      minSecondExtent: 280,
+      first: _buildColorDetails(context),
+      second: _ColorPalettePanel(
+        color: _color,
+        hex: _hex.text,
+        rgb: _rgb.text,
+        onColorChanged: _setColor,
+      ),
+    );
+  }
+
+  Widget _buildColorDetails(BuildContext context) {
+    final appColors = context.appColors;
+    final rows = [
+      ('Hex', _hex.text),
+      ('Hex alpha', _hexAlpha.text),
+      ('RGB', _rgb.text),
+      ('RGBA', _rgba.text),
+      ('HSL', _hsl.text),
+      ('HSLA', _hsla.text),
+      ('HSB (HSV)', _hsv.text),
+      ('HWB', _hwb.text),
+      ('CMYK', _cmyk.text),
+    ];
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Container(
+        decoration: _toolSurfaceDecoration(context),
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Input',
+                  style: TextStyle(
+                    color: appColors.editorText,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _InlineTextField(
+                    hintText: '#5CC07F, rgb(92, 192, 127)',
+                    controller: _input,
+                    onChanged: _updateFromInput,
+                  ),
+                ),
+              ],
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: _errorToolTextStyle(context)),
+            ],
+            const SizedBox(height: 12),
+            Expanded(
+              child: ListView.separated(
+                itemCount: rows.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final row = rows[index];
+                  return _ColorValueRow(label: row.$1, value: row.$2);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ColorPalettePanel extends StatelessWidget {
+  const _ColorPalettePanel({
+    required this.color,
+    required this.hex,
+    required this.rgb,
+    required this.onColorChanged,
+  });
+
+  final Color color;
+  final String hex;
+  final String rgb;
+  final ValueChanged<Color> onColorChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    final hsv = HSVColor.fromColor(color);
+    final alpha = _colorComponent(color.a);
+    final textColor = _readableTextColor(color);
+    final presets = const [
+      Color(0xFFE11D48),
+      Color(0xFFF97316),
+      Color(0xFFEAB308),
+      Color(0xFF22C55E),
+      Color(0xFF14B8A6),
+      Color(0xFF06B6D4),
+      Color(0xFF3B82F6),
+      Color(0xFF8B5CF6),
+      Color(0xFFEC4899),
+      Color(0xFF111827),
+      Color(0xFF6B7280),
+      Color(0xFFF8FAFC),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 16, 16, 16),
+      child: Container(
+        key: const ValueKey('color-converter-swatch-panel'),
+        decoration: _toolSurfaceDecoration(context),
+        padding: const EdgeInsets.all(12),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Palette',
+                style: TextStyle(
+                  color: appColors.editorText,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                height: 104,
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: appColors.border),
+                ),
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Text(
+                      hex.isEmpty ? '#000000' : hex.toUpperCase(),
+                      style: TextStyle(
+                        color: textColor,
+                        fontFamily: 'Menlo',
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      rgb,
+                      style: TextStyle(
+                        color: textColor.withAlpha(225),
+                        fontFamily: 'Menlo',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _ColorSlider(
+                label: 'Hue',
+                value: hsv.hue,
+                min: 0,
+                max: 360,
+                divisions: 360,
+                displayValue: '${hsv.hue.round()}deg',
+                onChanged: (value) {
+                  onColorChanged(hsv.withHue(value).toColor());
+                },
+              ),
+              _ColorSlider(
+                label: 'Saturation',
+                value: hsv.saturation * 100,
+                min: 0,
+                max: 100,
+                divisions: 100,
+                displayValue: '${(hsv.saturation * 100).round()}%',
+                onChanged: (value) {
+                  onColorChanged(hsv.withSaturation(value / 100).toColor());
+                },
+              ),
+              _ColorSlider(
+                label: 'Value',
+                value: hsv.value * 100,
+                min: 0,
+                max: 100,
+                divisions: 100,
+                displayValue: '${(hsv.value * 100).round()}%',
+                onChanged: (value) {
+                  onColorChanged(hsv.withValue(value / 100).toColor());
+                },
+              ),
+              _ColorSlider(
+                label: 'Alpha',
+                value: alpha.toDouble(),
+                min: 0,
+                max: 255,
+                divisions: 255,
+                displayValue: alpha.toString(),
+                onChanged: (value) {
+                  onColorChanged(
+                    Color.fromARGB(
+                      value.round(),
+                      _colorComponent(color.r),
+                      _colorComponent(color.g),
+                      _colorComponent(color.b),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Presets',
+                style: TextStyle(
+                  color: appColors.mutedText,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final preset in presets)
+                    _PaletteChip(
+                      color: preset,
+                      selected: _sameColorIgnoringAlpha(color, preset),
+                      onTap: () {
+                        onColorChanged(
+                          Color.fromARGB(
+                            alpha,
+                            _colorComponent(preset.r),
+                            _colorComponent(preset.g),
+                            _colorComponent(preset.b),
+                          ),
+                        );
+                      },
+                    ),
+                ],
               ),
             ],
           ),
         ),
-      ],
+      ),
     );
   }
+}
+
+class _ColorSlider extends StatelessWidget {
+  const _ColorSlider({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.displayValue,
+    required this.onChanged,
+  });
+
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final int divisions;
+  final String displayValue;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: appColors.editorText,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                displayValue,
+                style: TextStyle(
+                  color: appColors.mutedText,
+                  fontFamily: 'Menlo',
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: value.clamp(min, max).toDouble(),
+            min: min,
+            max: max,
+            divisions: divisions,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PaletteChip extends StatelessWidget {
+  const _PaletteChip({
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Semantics(
+      button: true,
+      label: 'Pick ${_cssHex(color).toUpperCase()}',
+      child: InkWell(
+        key: ValueKey('color-preset-${_cssHex(color)}'),
+        borderRadius: BorderRadius.circular(6),
+        onTap: onTap,
+        child: Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: selected ? appColors.accent : appColors.border,
+              width: selected ? 2 : 1,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ColorValueRow extends StatelessWidget {
+  const _ColorValueRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Listener(
+      onPointerDown: (event) {
+        if ((event.buttons & kSecondaryMouseButton) != 0) {
+          showMenu<String>(
+            context: context,
+            color: appColors.panelElevated,
+            position: RelativeRect.fromLTRB(
+              event.position.dx,
+              event.position.dy,
+              event.position.dx,
+              event.position.dy,
+            ),
+            items: const [
+              PopupMenuItem(value: 'copy', child: Text('Copy value')),
+            ],
+          ).then((selected) {
+            if (selected == 'copy') {
+              Clipboard.setData(ClipboardData(text: value));
+            }
+          });
+        }
+      },
+      child: Container(
+        decoration: _toolSurfaceDecoration(context, radius: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 116,
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: appColors.mutedText,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SelectableText(
+                  value,
+                  style: TextStyle(
+                    color: appColors.editorText,
+                    fontFamily: 'Menlo',
+                    fontSize: 12.5,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Color? _parseColorValue(String raw) {
+  var value = raw.trim();
+  if (value.isEmpty) return null;
+
+  final rgbMatch = RegExp(
+    r'^rgba?\(([^)]+)\)$',
+    caseSensitive: false,
+  ).firstMatch(value);
+  if (rgbMatch != null) {
+    final parts = rgbMatch
+        .group(1)!
+        .split(RegExp(r'\s*,\s*|\s+'))
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.length < 3 || parts.length > 4) return null;
+    final r = _parseColorByte(parts[0]);
+    final g = _parseColorByte(parts[1]);
+    final b = _parseColorByte(parts[2]);
+    if (r == null || g == null || b == null) return null;
+    final alpha = parts.length == 4 ? _parseAlpha(parts[3]) : 255;
+    if (alpha == null) return null;
+    return Color.fromARGB(alpha, r, g, b);
+  }
+
+  if (value.startsWith('#')) {
+    value = value.substring(1);
+  } else if (value.toLowerCase().startsWith('0x')) {
+    final hex = value.substring(2).replaceAll(RegExp(r'[\s_]+'), '');
+    if (hex.length != 8) return null;
+    final argb = int.tryParse(hex, radix: 16);
+    return argb == null ? null : Color(argb);
+  }
+
+  final hex = value.replaceAll(RegExp(r'[\s_]+'), '');
+  if (!RegExp(r'^[0-9a-fA-F]+$').hasMatch(hex)) return null;
+
+  String expandShort(String input) =>
+      input.split('').map((char) => '$char$char').join();
+
+  final normalized = switch (hex.length) {
+    3 => '${expandShort(hex)}ff',
+    4 => expandShort(hex),
+    6 => '${hex}ff',
+    8 => hex,
+    _ => '',
+  };
+  if (normalized.isEmpty) return null;
+  final r = int.parse(normalized.substring(0, 2), radix: 16);
+  final g = int.parse(normalized.substring(2, 4), radix: 16);
+  final b = int.parse(normalized.substring(4, 6), radix: 16);
+  final a = int.parse(normalized.substring(6, 8), radix: 16);
+  return Color.fromARGB(a, r, g, b);
+}
+
+int? _parseColorByte(String text) {
+  if (text.endsWith('%')) {
+    final percent = double.tryParse(text.substring(0, text.length - 1));
+    if (percent == null || percent < 0 || percent > 100) return null;
+    return (percent * 2.55).round().clamp(0, 255);
+  }
+  final value = int.tryParse(text);
+  if (value == null || value < 0 || value > 255) return null;
+  return value;
+}
+
+int? _parseAlpha(String text) {
+  if (text.endsWith('%')) {
+    final percent = double.tryParse(text.substring(0, text.length - 1));
+    if (percent == null || percent < 0 || percent > 100) return null;
+    return (percent * 2.55).round().clamp(0, 255);
+  }
+  final decimal = double.tryParse(text);
+  if (decimal == null) return null;
+  if (decimal >= 0 && decimal <= 1) return (decimal * 255).round();
+  if (decimal >= 0 && decimal <= 255) return decimal.round();
+  return null;
+}
+
+String _cssHex(Color color, {bool includeAlpha = false}) {
+  final values = [
+    _colorComponent(color.r),
+    _colorComponent(color.g),
+    _colorComponent(color.b),
+    if (includeAlpha) _colorComponent(color.a),
+  ];
+  return '#${_bytesToHex(values, lower: true)}';
+}
+
+bool _sameColorIgnoringAlpha(Color a, Color b) {
+  return _colorComponent(a.r) == _colorComponent(b.r) &&
+      _colorComponent(a.g) == _colorComponent(b.g) &&
+      _colorComponent(a.b) == _colorComponent(b.b);
+}
+
+Color _readableTextColor(Color color) {
+  final r = _colorComponent(color.r);
+  final g = _colorComponent(color.g);
+  final b = _colorComponent(color.b);
+  final luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.58 ? const Color(0xFF111827) : Colors.white;
 }
 
 class _RandomStringGeneratorView extends StatefulWidget {
@@ -5397,6 +12889,7 @@ class _RandomStringGeneratorViewState
   final TextEditingController _digits = TextEditingController(text: '8');
   final TextEditingController _words = TextEditingController(text: '0');
   final TextEditingController _output = TextEditingController();
+  String _preset = 'Password';
   String _count = 'x10';
 
   @override
@@ -5447,87 +12940,102 @@ class _RandomStringGeneratorViewState
     await Clipboard.setData(ClipboardData(text: _output.text));
   }
 
+  void _applyPreset(String preset) {
+    final values = switch (preset) {
+      'API key' => ('0', '32', '0', '16'),
+      'PIN' => ('0', '0', '0', '6'),
+      'Token' => ('12', '24', '0', '12'),
+      'Slug' => ('0', '24', '0', '4'),
+      _ => ('4', '14', '4', '6'),
+    };
+    setState(() {
+      _preset = preset;
+      _upper.text = values.$1;
+      _lower.text = values.$2;
+      _symbols.text = values.$3;
+      _digits.text = values.$4;
+    });
+    _generate();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Text(
-                        'Presets:',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(width: 8),
-                      const SmallDropdown(
-                        items: ['(Click to Select)'],
-                        initialValue: '(Click to Select)',
-                      ),
-                      const SizedBox(width: 8),
-                      ToolButton(label: 'Sample', onPressed: _generate),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  LabeledField(label: 'Seed', controller: _seed),
-                  LabeledField(
-                    label: 'Uppercased Characters',
-                    controller: _upper,
-                  ),
-                  LabeledField(
-                    label: 'Lowercased Characters',
-                    controller: _lower,
-                  ),
-                  LabeledField(label: 'Symbols', controller: _symbols),
-                  LabeledField(label: 'Digits', controller: _digits),
-                  LabeledField(label: 'Words', controller: _words),
-                  const LabeledField(label: 'Separator'),
-                  const LabeledField(label: 'Separating Group Size'),
-                  const LabeledField(label: 'Custom Character Set'),
-                ],
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 16),
-        SizedBox(
-          width: 320,
+    return _ResizableSplit(
+      horizontal: true,
+      initialRatio: 0.62,
+      minFirstExtent: 360,
+      minSecondExtent: 320,
+      first: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  const Checkbox(value: true, onChanged: null),
-                  const Text('Colors'),
-                  const Spacer(),
-                  SmallDropdown(
-                    items: const ['x10', 'x20'],
-                    initialValue: _count,
-                    onChanged: (value) => setState(() => _count = value),
+                  const Text(
+                    'Presets:',
+                    style: TextStyle(fontWeight: FontWeight.w600),
                   ),
+                  SmallDropdown(
+                    items: const [
+                      'Password',
+                      'API key',
+                      'PIN',
+                      'Token',
+                      'Slug',
+                    ],
+                    initialValue: _preset,
+                    onChanged: _applyPreset,
+                  ),
+                  ToolButton(label: 'Sample', onPressed: _generate),
                 ],
               ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: EditorPane(
-                  label: '',
-                  actions: const [],
-                  controller: _output,
-                  readOnly: true,
-                  placeholder: 'Generated strings...',
-                  copyAction: _copyOutput,
-                ),
-              ),
+              const SizedBox(height: 12),
+              LabeledField(label: 'Seed', controller: _seed),
+              LabeledField(label: 'Uppercased Characters', controller: _upper),
+              LabeledField(label: 'Lowercased Characters', controller: _lower),
+              LabeledField(label: 'Symbols', controller: _symbols),
+              LabeledField(label: 'Digits', controller: _digits),
+              LabeledField(label: 'Words', controller: _words),
+              const LabeledField(label: 'Separator'),
+              const LabeledField(label: 'Separating Group Size'),
+              const LabeledField(label: 'Custom Character Set'),
             ],
           ),
         ),
-      ],
+      ),
+      second: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Checkbox(value: true, onChanged: null),
+              const Text('Colors'),
+              const Spacer(),
+              SmallDropdown(
+                items: const ['x10', 'x20'],
+                initialValue: _count,
+                onChanged: (value) => setState(() => _count = value),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: EditorPane(
+              label: '',
+              actions: const [],
+              controller: _output,
+              readOnly: true,
+              placeholder: 'Generated strings...',
+              copyAction: _copyOutput,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -5542,10 +13050,16 @@ class _SvgToCssView extends StatefulWidget {
 class _SvgToCssViewState extends State<_SvgToCssView> {
   final TextEditingController _input = TextEditingController();
   final TextEditingController _output = TextEditingController();
+  late final String _dropTargetScope = identityHashCode(this).toRadixString(16);
   String _format = 'URL Encoded';
+  String? _sourceFileName;
+  String? _error;
+
+  String get _dropTargetId => 'svg-source-file-$_dropTargetScope';
 
   @override
   void dispose() {
+    FileDropService.unregisterTarget(_dropTargetId);
     _input.dispose();
     _output.dispose();
     super.dispose();
@@ -5563,74 +13077,261 @@ class _SvgToCssViewState extends State<_SvgToCssView> {
     setState(() {});
   }
 
+  Future<void> _pickSvgFile() async {
+    final path = await FileDialogService.openFile(
+      allowedExtensions: const ['svg'],
+    );
+    if (path == null || !mounted) return;
+    await _loadSvgFile(path);
+  }
+
+  Future<void> _loadSvgFile(String path) async {
+    try {
+      final file = File(path);
+      if (!await file.exists()) {
+        throw const FileSystemException('SVG file does not exist');
+      }
+      final text = await file.readAsString();
+      if (!mounted) return;
+      setState(() {
+        _sourceFileName = p.basename(path);
+        _error = null;
+        _input.text = text;
+      });
+      _run();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = _friendlyFileReadError(error));
+    }
+  }
+
+  void _setSample() {
+    setState(() {
+      _sourceFileName = null;
+      _error = null;
+      _input.text =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">\n'
+          '  <circle cx="32" cy="32" r="28" fill="#5CC07F" />\n'
+          '</svg>';
+    });
+    _run();
+  }
+
+  void _clear() {
+    setState(() {
+      _sourceFileName = null;
+      _error = null;
+      _input.clear();
+      _output.clear();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (_error != null) ...[
+          Text(_error!, style: _errorToolTextStyle(context)),
+          const SizedBox(height: 8),
+        ],
         Expanded(
-          child: buildSplitEditors(
-            inputActions: [
-              ToolButton(label: 'Go', onPressed: _run),
-              ToolButton(
-                label: 'Clipboard',
-                onPressed: () async {
-                  final text = await _readClipboardText();
-                  setState(() => _input.text = text);
-                  _run();
+          child: _ResizableSplit(
+            horizontal: false,
+            initialRatio: 0.68,
+            first: _ResizableSplit(
+              horizontal: false,
+              initialRatio: 0.52,
+              first: _FileDropTargetRegion(
+                targetId: _dropTargetId,
+                onDropped: (paths) {
+                  if (paths.isNotEmpty) unawaited(_loadSvgFile(paths.first));
                 },
+                child: EditorPane(
+                  label: 'Source',
+                  actions: [
+                    ToolButton(label: 'Sample', onPressed: _setSample),
+                    ToolButton(label: 'Clear', onPressed: _clear),
+                  ],
+                  controller: _input,
+                  onChanged: (_) {
+                    _sourceFileName = null;
+                    _run();
+                  },
+                  placeholder: 'Drop an .svg file here or paste SVG source...',
+                  showHeader: false,
+                  overlay: _SourceFileControls(
+                    onPickFile: _pickSvgFile,
+                    fileName: _sourceFileName,
+                    tooltip: 'Choose SVG file',
+                  ),
+                ),
               ),
-              ToolButton(
-                label: 'Sample',
-                onPressed: () {
-                  setState(
-                    () => _input.text =
-                        '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
-                  );
-                  _run();
-                },
+              second: EditorPane(
+                label: 'CSS',
+                actions: const [],
+                controller: _output,
+                readOnly: true,
+                placeholder: 'Output...',
+                showHeader: false,
+                overlay: SmallDropdown(
+                  items: const ['URL Encoded', 'Raw'],
+                  initialValue: _format,
+                  onChanged: (value) {
+                    setState(() => _format = value);
+                    _run();
+                  },
+                ),
               ),
-              ToolButton(
-                label: 'Clear',
-                onPressed: () {
-                  setState(() => _input.clear());
-                  _output.clear();
-                },
-              ),
-            ],
-            outputActions: [
-              SmallDropdown(
-                items: const ['URL Encoded', 'Raw'],
-                initialValue: _format,
-                onChanged: (value) {
-                  setState(() => _format = value);
-                  _run();
-                },
-              ),
-              ToolButton(
-                label: 'Copy',
-                onPressed: () =>
-                    Clipboard.setData(ClipboardData(text: _output.text)),
-              ),
-            ],
-            inputController: _input,
-            outputController: _output,
-          ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 120,
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.black12),
             ),
-            child: const Center(child: Text('Preview')),
+            second: _SvgPreviewPane(svg: _input.text),
           ),
         ),
       ],
     );
   }
+}
+
+class _FileDropTargetRegion extends StatefulWidget {
+  const _FileDropTargetRegion({
+    required this.targetId,
+    required this.onDropped,
+    required this.child,
+  });
+
+  final String targetId;
+  final FileDropHandler onDropped;
+  final Widget child;
+
+  @override
+  State<_FileDropTargetRegion> createState() => _FileDropTargetRegionState();
+}
+
+class _FileDropTargetRegionState extends State<_FileDropTargetRegion> {
+  final GlobalKey _dropKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    _registerTarget();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FileDropTargetRegion oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.targetId != widget.targetId ||
+        oldWidget.onDropped != widget.onDropped) {
+      FileDropService.unregisterTarget(oldWidget.targetId);
+      _registerTarget();
+    }
+  }
+
+  @override
+  void dispose() {
+    FileDropService.unregisterTarget(widget.targetId);
+    super.dispose();
+  }
+
+  void _registerTarget() {
+    FileDropService.registerTarget(
+      widget.targetId,
+      key: _dropKey,
+      handler: widget.onDropped,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => FileDropService.setActiveTarget(widget.targetId),
+      onExit: (_) => FileDropService.setActiveTarget(null),
+      child: KeyedSubtree(key: _dropKey, child: widget.child),
+    );
+  }
+}
+
+class _SourceFileControls extends StatelessWidget {
+  const _SourceFileControls({
+    required this.onPickFile,
+    this.fileName,
+    this.tooltip = 'Choose file',
+  });
+
+  final VoidCallback onPickFile;
+  final String? fileName;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: appColors.panelElevated.withAlpha(236),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: appColors.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (fileName != null) ...[
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 180),
+                child: Text(
+                  fileName!,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: appColors.mutedText, fontSize: 11),
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+            ToolIconButton(
+              icon: Icons.insert_drive_file,
+              tooltip: tooltip,
+              onPressed: onPickFile,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SvgPreviewPane extends StatelessWidget {
+  const _SvgPreviewPane({required this.svg});
+
+  final String svg;
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmed = svg.trim();
+    if (trimmed.isEmpty) {
+      return Container(
+        decoration: _toolSurfaceDecoration(context),
+        child: Center(
+          child: Text(
+            'SVG preview',
+            style: TextStyle(color: context.appColors.mutedText),
+          ),
+        ),
+      );
+    }
+    return _HtmlRenderedPreview(
+      html: trimmed,
+      overlay: const SizedBox.shrink(),
+    );
+  }
+}
+
+String _friendlyFileReadError(Object error) {
+  if (error is FileSystemException) {
+    final message = error.message.isEmpty
+        ? 'Could not read file.'
+        : error.message;
+    return error.path == null ? message : '$message: ${error.path}';
+  }
+  return 'Could not read file: $error';
 }
 
 class _CurlToCodeView extends StatefulWidget {
@@ -5653,19 +13354,14 @@ class _CurlToCodeViewState extends State<_CurlToCodeView> {
   }
 
   void _run() {
-    final url = _extractUrl(_input.text);
-    if (url == null) {
+    final command = _parseCurlCommand(_input.text);
+    if (command == null) {
       _output.text = '';
       setState(() {});
       return;
     }
-    _output.text = _codeFor(url, _lang);
+    _output.text = _codeFor(command, _lang);
     setState(() {});
-  }
-
-  String? _extractUrl(String text) {
-    final match = RegExp("curl\\s+['\\\"]?([^'\\\"\\s]+)").firstMatch(text);
-    return match?.group(1);
   }
 
   @override
@@ -5732,12 +13428,17 @@ class _CurlToCodeViewState extends State<_CurlToCodeView> {
     );
   }
 
-  String _codeFor(String url, String language) {
+  String _codeFor(_CurlCommand command, String language) {
+    final url = command.url;
     if (language == 'wget') {
-      return "wget '$url'";
+      final output = command.downloadFileName;
+      if (output != null) {
+        return "wget -O '${_shellEscape(output)}' '${_shellEscape(url)}'";
+      }
+      return "wget '${_shellEscape(url)}'";
     }
     if (language == 'NodeJS / Fetch') {
-      return "fetch('$url')\n  .then(res => res.text())\n  .then(console.log);";
+      return _nodeFetchCode(command);
     }
     if (language == 'JavaScript / axios') {
       return "import axios from 'axios';\n\naxios.get('$url')\n  .then(res => console.log(res.data))\n  .catch(console.error);";
@@ -5787,6 +13488,235 @@ class _CurlToCodeViewState extends State<_CurlToCodeView> {
   }
 }
 
+class _CurlCommand {
+  const _CurlCommand({
+    required this.url,
+    this.method = 'GET',
+    this.headers = const {},
+    this.body,
+    this.outputFile,
+    this.remoteName = false,
+    this.followRedirects = false,
+    this.insecure = false,
+  });
+
+  final String url;
+  final String method;
+  final Map<String, String> headers;
+  final String? body;
+  final String? outputFile;
+  final bool remoteName;
+  final bool followRedirects;
+  final bool insecure;
+
+  String? get downloadFileName {
+    if (outputFile != null && outputFile!.isNotEmpty) return outputFile;
+    if (!remoteName) return null;
+    try {
+      final path = Uri.parse(url).path;
+      final fileName = p.basename(path);
+      return fileName.isEmpty || fileName == '/' ? 'download' : fileName;
+    } catch (_) {
+      return 'download';
+    }
+  }
+}
+
+_CurlCommand? _parseCurlCommand(String input) {
+  final tokens = _splitShellWords(input.trim());
+  if (tokens.isEmpty) return null;
+  var index = tokens.first == 'curl' ? 1 : 0;
+  var method = 'GET';
+  final headers = <String, String>{};
+  String? body;
+  String? url;
+  String? outputFile;
+  var remoteName = false;
+  var followRedirects = false;
+  var insecure = false;
+
+  String? nextValue() {
+    if (index + 1 >= tokens.length) return null;
+    index += 1;
+    return tokens[index];
+  }
+
+  void parseHeader(String value) {
+    final separator = value.indexOf(':');
+    if (separator <= 0) return;
+    final name = value.substring(0, separator).trim();
+    final headerValue = value.substring(separator + 1).trim();
+    if (name.isNotEmpty) headers[name] = headerValue;
+  }
+
+  const optionsWithValue = {
+    '--connect-timeout',
+    '--max-time',
+    '--retry',
+    '--proxy',
+    '--resolve',
+    '--cacert',
+    '--cert',
+    '--key',
+    '--interface',
+    '--user-agent',
+    '--referer',
+    '-A',
+    '-e',
+  };
+
+  while (index < tokens.length) {
+    final token = tokens[index];
+    if (token == '-X' || token == '--request') {
+      method = (nextValue() ?? method).toUpperCase();
+    } else if (token.startsWith('-X') && token.length > 2) {
+      method = token.substring(2).toUpperCase();
+    } else if (token == '-H' || token == '--header') {
+      final value = nextValue();
+      if (value != null) parseHeader(value);
+    } else if (token.startsWith('--header=')) {
+      parseHeader(token.substring('--header='.length));
+    } else if (token == '-d' ||
+        token == '--data' ||
+        token == '--data-raw' ||
+        token == '--data-binary' ||
+        token == '--data-urlencode') {
+      body = nextValue() ?? '';
+      if (method == 'GET') method = 'POST';
+    } else if (token.startsWith('--data=')) {
+      body = token.substring('--data='.length);
+      if (method == 'GET') method = 'POST';
+    } else if (token == '-o' || token == '--output') {
+      outputFile = nextValue();
+    } else if (token.startsWith('--output=')) {
+      outputFile = token.substring('--output='.length);
+    } else if (token == '-O' || token == '--remote-name') {
+      remoteName = true;
+    } else if (token == '-I' || token == '--head') {
+      method = 'HEAD';
+    } else if (token == '-L' || token == '--location') {
+      followRedirects = true;
+    } else if (token == '-k' || token == '--insecure') {
+      insecure = true;
+    } else if (token == '-u' || token == '--user') {
+      final value = nextValue();
+      if (value != null) {
+        headers['Authorization'] = 'Basic ${base64Encode(utf8.encode(value))}';
+      }
+    } else if (token.startsWith('--user=')) {
+      final value = token.substring('--user='.length);
+      headers['Authorization'] = 'Basic ${base64Encode(utf8.encode(value))}';
+    } else if (optionsWithValue.contains(token)) {
+      nextValue();
+    } else if (!token.startsWith('-') && url == null) {
+      url = token;
+    }
+    index += 1;
+  }
+
+  if (url == null || url.trim().isEmpty) return null;
+  return _CurlCommand(
+    url: url,
+    method: method,
+    headers: headers,
+    body: body,
+    outputFile: outputFile,
+    remoteName: remoteName,
+    followRedirects: followRedirects,
+    insecure: insecure,
+  );
+}
+
+List<String> _splitShellWords(String input) {
+  final words = <String>[];
+  final buffer = StringBuffer();
+  String? quote;
+  var escaped = false;
+
+  for (final codeUnit in input.codeUnits) {
+    final char = String.fromCharCode(codeUnit);
+    if (escaped) {
+      buffer.write(char);
+      escaped = false;
+      continue;
+    }
+    if (char == '\\') {
+      escaped = true;
+      continue;
+    }
+    if (quote != null) {
+      if (char == quote) {
+        quote = null;
+      } else {
+        buffer.write(char);
+      }
+      continue;
+    }
+    if (char == '"' || char == "'") {
+      quote = char;
+      continue;
+    }
+    if (RegExp(r'\s').hasMatch(char)) {
+      if (buffer.isNotEmpty) {
+        words.add(buffer.toString());
+        buffer.clear();
+      }
+      continue;
+    }
+    buffer.write(char);
+  }
+  if (buffer.isNotEmpty) words.add(buffer.toString());
+  return words;
+}
+
+String _nodeFetchCode(_CurlCommand command) {
+  final downloadFileName = command.downloadFileName;
+  final options = _nodeFetchOptions(command);
+  final optionsArg = options.isEmpty ? '' : ', $options';
+  final fetchLine = 'fetch(${_jsString(command.url)}$optionsArg)';
+  if (downloadFileName != null) {
+    return "const fs = require('node:fs');\n\n"
+        '$fetchLine\n'
+        '  .then(async (res) => {\n'
+        r'    if (!res.ok) throw new Error(`HTTP ${res.status}`);'
+        '\n'
+        '    const buffer = Buffer.from(await res.arrayBuffer());\n'
+        '    fs.writeFileSync(${_jsString(downloadFileName)}, buffer);\n'
+        '  });';
+  }
+  return '$fetchLine\n'
+      '  .then(async (res) => {\n'
+      r'    if (!res.ok) throw new Error(`HTTP ${res.status}`);'
+      '\n'
+      '    return res.text();\n'
+      '  })\n'
+      '  .then(console.log);';
+}
+
+String _nodeFetchOptions(_CurlCommand command) {
+  final lines = <String>[];
+  if (command.method != 'GET') lines.add("method: '${command.method}'");
+  if (command.headers.isNotEmpty) {
+    final headerLines = command.headers.entries
+        .map(
+          (entry) => '    ${_jsString(entry.key)}: ${_jsString(entry.value)},',
+        )
+        .join('\n');
+    lines.add('headers: {\n$headerLines\n  }');
+  }
+  if (command.body != null) lines.add('body: ${_jsString(command.body!)}');
+  if (lines.isEmpty) return '';
+  return '{\n  ${lines.join(',\n  ')}\n}';
+}
+
+String _jsString(String value) {
+  return "'${value.replaceAll('\\', r'\\').replaceAll("'", r"\'")}'";
+}
+
+String _shellEscape(String value) {
+  return value.replaceAll("'", "'\\''");
+}
+
 class _JsonToCodeView extends StatefulWidget {
   const _JsonToCodeView();
 
@@ -5827,11 +13757,7 @@ class _JsonToCodeViewState extends State<_JsonToCodeView> {
   Widget build(BuildContext context) {
     final optionsPanel = Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFD5D5D5)),
-      ),
+      decoration: _toolSurfaceDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: const [
@@ -5872,84 +13798,77 @@ class _JsonToCodeViewState extends State<_JsonToCodeView> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 1100;
-        final editors = Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: EditorPane(
-                label: 'Input',
-                actions: [
-                  ToolButton(
-                    label: 'Clipboard',
-                    onPressed: () async {
-                      final text = await _readClipboardText();
-                      setState(() => _input.text = text);
-                      _run();
-                    },
-                  ),
-                  ToolButton(
-                    label: 'Sample',
-                    onPressed: () {
-                      setState(() => _input.text = '{"name":"DevUtils"}');
-                      _run();
-                    },
-                  ),
-                  ToolButton(
-                    label: 'Clear',
-                    onPressed: () {
-                      setState(() => _input.clear());
-                      _output.clear();
-                    },
-                  ),
-                  const SmallDropdown(items: ['JSON'], initialValue: 'JSON'),
-                ],
-                controller: _input,
-                onChanged: (_) => _run(),
-                placeholder: 'Enter your text...',
+        final editors = _ResizableSplit(
+          horizontal: true,
+          first: EditorPane(
+            label: 'Input',
+            actions: [
+              ToolButton(
+                label: 'Clipboard',
+                onPressed: () async {
+                  final text = await _readClipboardText();
+                  setState(() => _input.text = text);
+                  _run();
+                },
               ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: EditorPane(
-                label: 'Output',
-                actions: [
-                  SmallDropdown(
-                    items: const ['Swift', 'TypeScript', 'Kotlin'],
-                    initialValue: _lang,
-                    onChanged: (value) {
-                      setState(() => _lang = value);
-                      _run();
-                    },
-                  ),
-                  ToolButton(
-                    label: 'Copy',
-                    onPressed: () =>
-                        Clipboard.setData(ClipboardData(text: _output.text)),
-                  ),
-                ],
-                controller: _output,
-                readOnly: true,
-                placeholder: '- Right click -> Save to file...',
+              ToolButton(
+                label: 'Sample',
+                onPressed: () {
+                  setState(() => _input.text = '{"name":"DevUtils"}');
+                  _run();
+                },
               ),
-            ),
-          ],
-        );
-        if (wide) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(child: editors),
-              const SizedBox(width: 16),
-              SizedBox(width: 260, child: optionsPanel),
+              ToolButton(
+                label: 'Clear',
+                onPressed: () {
+                  setState(() => _input.clear());
+                  _output.clear();
+                },
+              ),
+              const SmallDropdown(items: ['JSON'], initialValue: 'JSON'),
             ],
+            controller: _input,
+            onChanged: (_) => _run(),
+            placeholder: 'Enter your text...',
+          ),
+          second: EditorPane(
+            label: 'Output',
+            actions: [
+              SmallDropdown(
+                items: const ['Swift', 'TypeScript', 'Kotlin'],
+                initialValue: _lang,
+                onChanged: (value) {
+                  setState(() => _lang = value);
+                  _run();
+                },
+              ),
+              ToolButton(
+                label: 'Copy',
+                onPressed: () =>
+                    Clipboard.setData(ClipboardData(text: _output.text)),
+              ),
+            ],
+            controller: _output,
+            readOnly: true,
+            placeholder: '- Right click -> Save to file...',
+          ),
+        );
+        final options = SingleChildScrollView(child: optionsPanel);
+        if (wide) {
+          return _ResizableSplit(
+            horizontal: true,
+            initialRatio: 0.76,
+            minSecondExtent: 260,
+            first: editors,
+            second: options,
           );
         }
-        return Column(
-          children: [
-            Expanded(child: editors),
-            const SizedBox(height: 16),
-            optionsPanel,
-          ],
+        return _ResizableSplit(
+          horizontal: false,
+          initialRatio: 0.72,
+          minSecondExtent: 220,
+          first: editors,
+          second: options,
         );
       },
     );
@@ -6034,6 +13953,7 @@ class _PhpJsonConverterViewState extends State<_PhpJsonConverterView> {
   final TextEditingController _input = TextEditingController();
   final TextEditingController _output = TextEditingController();
   bool _phpToJson = true;
+  String? _error;
 
   @override
   void dispose() {
@@ -6043,29 +13963,42 @@ class _PhpJsonConverterViewState extends State<_PhpJsonConverterView> {
   }
 
   void _run() {
-    _output.text = 'Scripts Runtime for this tool is missing (php)';
-    setState(() {});
+    final text = _input.text.trim();
+    if (text.isEmpty) {
+      setState(() {
+        _output.clear();
+        _error = null;
+      });
+      return;
+    }
+
+    try {
+      if (_phpToJson) {
+        final decoded = _parsePhpDataLiteral(text);
+        _output.text = const JsonEncoder.withIndent('  ').convert(decoded);
+      } else {
+        final decoded = jsonDecode(text);
+        _output.text = "<?php\nreturn ${_jsonToPhpLiteral(decoded)};\n";
+      }
+      setState(() => _error = null);
+    } catch (error) {
+      setState(() {
+        _error = error.toString();
+        _output.clear();
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return buildSplitEditors(
       inputActions: [
-        ToolButton(label: 'Go', onPressed: _run),
-        ToolButton(
-          label: 'Clipboard',
-          onPressed: () async {
-            final text = await _readClipboardText();
-            setState(() => _input.text = text);
-            _run();
-          },
-        ),
         ToolButton(
           label: 'Sample',
           onPressed: () {
             setState(
               () => _input.text = _phpToJson
-                  ? '(object) array('
+                  ? "<?php\nreturn ['name' => 'DevUtils', 'enabled' => true];"
                   : '{"store": {"book": []}}',
             );
             _run();
@@ -6078,7 +14011,6 @@ class _PhpJsonConverterViewState extends State<_PhpJsonConverterView> {
             _output.clear();
           },
         ),
-        ToolIconButton(icon: Icons.settings, onPressed: _run),
         SegmentedToggle(
           options: const ['PHP → JSON', 'JSON → PHP'],
           initialIndex: _phpToJson ? 0 : 1,
@@ -6089,17 +14021,263 @@ class _PhpJsonConverterViewState extends State<_PhpJsonConverterView> {
         ),
       ],
       outputActions: [
-        ToolButton(
-          label: 'Copy',
-          onPressed: () => Clipboard.setData(ClipboardData(text: _output.text)),
-        ),
+        if (_error != null)
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Text(
+              _error!,
+              overflow: TextOverflow.ellipsis,
+              style: _errorToolTextStyle(context, fontSize: 12),
+            ),
+          ),
       ],
       inputController: _input,
       outputController: _output,
-      inputPlaceholder: _phpToJson ? '(object) array(' : '{"store": {}}',
-      outputPlaceholder: 'Scripts Runtime for this tool is missing (php)',
+      onInputChanged: (_) => _run(),
+      inputPlaceholder: _phpToJson
+          ? "<?php\nreturn ['name' => 'DevUtils'];"
+          : '{"store": {}}',
+      outputPlaceholder: _phpToJson
+          ? '{\n  "name": "DevUtils"\n}'
+          : '<?php\nreturn [',
+      showInputHeader: false,
+      showOutputHeader: false,
     );
   }
+}
+
+dynamic _parsePhpDataLiteral(String input) {
+  var source = input.trim();
+  source = source.replaceAll(RegExp(r'^<\?php\s*', caseSensitive: false), '');
+  source = source.replaceAll(RegExp(r'\?>\s*$'), '').trim();
+  source = source.replaceFirst(RegExp(r'^return\s+', caseSensitive: false), '');
+  source = source.replaceFirst(RegExp(r'^\$[A-Za-z_][A-Za-z0-9_]*\s*=\s*'), '');
+  source = source.trim();
+  if (source.endsWith(';')) source = source.substring(0, source.length - 1);
+
+  if (RegExp(
+    r'\b(function|class|echo|switch|case|if|for|foreach|while|require|include)\b',
+    caseSensitive: false,
+  ).hasMatch(source)) {
+    throw const FormatException(
+      'Paste a PHP array or value. Executable PHP scripts are not evaluated.',
+    );
+  }
+
+  final parser = _PhpLiteralParser(source);
+  final value = parser.parseValue();
+  parser.expectEnd();
+  return value;
+}
+
+class _PhpLiteralParser {
+  _PhpLiteralParser(this.source);
+
+  final String source;
+  var index = 0;
+
+  dynamic parseValue() {
+    _skipWhitespace();
+    if (_match('(object)')) {
+      _skipWhitespace();
+      return parseValue();
+    }
+    if (_peekWord('array')) return _parseArrayKeyword();
+    final char = _peek();
+    if (char == '[') return _parseArray('[', ']');
+    if (char == '"' || char == "'") return _parseString();
+    if (char == '-' || RegExp(r'\d').hasMatch(char)) return _parseNumber();
+    return _parseIdentifier();
+  }
+
+  void expectEnd() {
+    _skipWhitespace();
+    if (index != source.length) {
+      throw FormatException('Unexpected token at offset $index.');
+    }
+  }
+
+  dynamic _parseArrayKeyword() {
+    _consumeWord('array');
+    _skipWhitespace();
+    return _parseArray('(', ')');
+  }
+
+  dynamic _parseArray(String open, String close) {
+    _expect(open);
+    final list = <dynamic>[];
+    final map = <String, dynamic>{};
+    var hasKeys = false;
+
+    while (true) {
+      _skipWhitespace();
+      if (_tryConsume(close)) break;
+      final first = parseValue();
+      _skipWhitespace();
+      if (_tryConsume('=>')) {
+        hasKeys = true;
+        final value = parseValue();
+        map['$first'] = value;
+      } else if (hasKeys) {
+        map['${list.length}'] = first;
+      } else {
+        list.add(first);
+      }
+      _skipWhitespace();
+      _tryConsume(',');
+    }
+
+    if (hasKeys) {
+      for (var i = 0; i < list.length; i++) {
+        map['$i'] = list[i];
+      }
+      return map;
+    }
+    return list;
+  }
+
+  String _parseString() {
+    final quote = _peek();
+    _expect(quote);
+    final buffer = StringBuffer();
+    while (index < source.length) {
+      final char = source[index++];
+      if (char == quote) return buffer.toString();
+      if (char == '\\' && index < source.length) {
+        final escaped = source[index++];
+        switch (escaped) {
+          case 'n':
+            buffer.write('\n');
+            break;
+          case 'r':
+            buffer.write('\r');
+            break;
+          case 't':
+            buffer.write('\t');
+            break;
+          default:
+            buffer.write(escaped);
+        }
+      } else {
+        buffer.write(char);
+      }
+    }
+    throw const FormatException('Unterminated PHP string.');
+  }
+
+  num _parseNumber() {
+    final start = index;
+    if (_peek() == '-') index++;
+    while (index < source.length && RegExp(r'\d').hasMatch(source[index])) {
+      index++;
+    }
+    if (index < source.length && source[index] == '.') {
+      index++;
+      while (index < source.length && RegExp(r'\d').hasMatch(source[index])) {
+        index++;
+      }
+      return double.parse(source.substring(start, index));
+    }
+    return int.parse(source.substring(start, index));
+  }
+
+  dynamic _parseIdentifier() {
+    final start = index;
+    while (index < source.length &&
+        RegExp(r'[A-Za-z0-9_\\]').hasMatch(source[index])) {
+      index++;
+    }
+    final value = source.substring(start, index).toLowerCase();
+    switch (value) {
+      case 'true':
+        return true;
+      case 'false':
+        return false;
+      case 'null':
+        return null;
+      default:
+        throw FormatException('Unsupported PHP value at offset $start.');
+    }
+  }
+
+  String _peek() {
+    if (index >= source.length) {
+      throw const FormatException('Unexpected end of PHP data literal.');
+    }
+    return source[index];
+  }
+
+  bool _peekWord(String word) {
+    return source.substring(index).toLowerCase().startsWith(word) &&
+        (index + word.length >= source.length ||
+            !RegExp(r'[A-Za-z0-9_]').hasMatch(source[index + word.length]));
+  }
+
+  bool _match(String value) {
+    _skipWhitespace();
+    if (!source.substring(index).toLowerCase().startsWith(value)) return false;
+    index += value.length;
+    return true;
+  }
+
+  void _consumeWord(String word) {
+    if (!_peekWord(word)) {
+      throw FormatException('Expected $word at offset $index.');
+    }
+    index += word.length;
+  }
+
+  void _skipWhitespace() {
+    while (index < source.length && RegExp(r'\s').hasMatch(source[index])) {
+      index++;
+    }
+  }
+
+  void _expect(String value) {
+    if (!_tryConsume(value)) {
+      throw FormatException('Expected "$value" at offset $index.');
+    }
+  }
+
+  bool _tryConsume(String value) {
+    _skipWhitespace();
+    if (!source.startsWith(value, index)) return false;
+    index += value.length;
+    return true;
+  }
+}
+
+String _jsonToPhpLiteral(dynamic value, {int level = 0}) {
+  final indent = '  ' * level;
+  final childIndent = '  ' * (level + 1);
+  if (value is Map) {
+    if (value.isEmpty) return '[]';
+    final entries = value.entries
+        .map((entry) {
+          final key = _phpStringLiteral('${entry.key}');
+          final phpValue = _jsonToPhpLiteral(entry.value, level: level + 1);
+          return '$childIndent$key => $phpValue,';
+        })
+        .join('\n');
+    return "[\n$entries\n$indent]";
+  }
+  if (value is List) {
+    if (value.isEmpty) return '[]';
+    final entries = value
+        .map((entry) {
+          return '$childIndent${_jsonToPhpLiteral(entry, level: level + 1)},';
+        })
+        .join('\n');
+    return "[\n$entries\n$indent]";
+  }
+  if (value is String) return _phpStringLiteral(value);
+  if (value is bool) return value ? 'true' : 'false';
+  if (value == null) return 'null';
+  return '$value';
+}
+
+String _phpStringLiteral(String value) {
+  return "'${value.replaceAll('\\', r'\\').replaceAll("'", r"\'")}'";
 }
 
 class _HexAsciiConverterView extends StatefulWidget {
@@ -6226,10 +14404,7 @@ class _HexAsciiConverterViewState extends State<_HexAsciiConverterView> {
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
-            child: Text(
-              _error!,
-              style: const TextStyle(color: Colors.redAccent),
-            ),
+            child: Text(_error!, style: _errorToolTextStyle(context)),
           ),
         ],
       ],
@@ -6367,25 +14542,26 @@ class _TotpCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final appColors = context.appColors;
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final current = _totpCode(entry.secret, now);
     final next = _totpCode(entry.secret, now + 30);
     final secondsRemaining = 30 - (now % 30);
     final warn = secondsRemaining <= 5;
     final blink = warn && (now % 2 == 0);
-    final currentColor = blink ? Colors.redAccent : const Color(0xFF1F1F1F);
-    final nextColor = blink ? const Color(0xFFD32F2F) : Colors.black38;
+    final currentColor = blink ? appColors.error : appColors.editorText;
+    final nextColor = blink ? appColors.error : appColors.mutedText;
     return Container(
       width: 240,
       height: 132,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: appColors.panelElevated,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.black12),
-        boxShadow: const [
+        border: Border.all(color: appColors.border),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x0D000000),
+            color: appColors.shadow.withValues(alpha: 0.08),
             blurRadius: 4,
             offset: Offset(0, 2),
           ),
@@ -6408,9 +14584,9 @@ class _TotpCard extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Current',
-                    style: TextStyle(fontSize: 10, color: Colors.black45),
+                    style: _mutedToolTextStyle(context, fontSize: 10),
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -6427,9 +14603,9 @@ class _TotpCard extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Next',
-                    style: TextStyle(fontSize: 10, color: Colors.black45),
+                    style: _mutedToolTextStyle(context, fontSize: 10),
                   ),
                   const SizedBox(height: 2),
                   Text(next, style: TextStyle(fontSize: 14, color: nextColor)),
@@ -6441,14 +14617,14 @@ class _TotpCard extends StatelessWidget {
                 children: [
                   Text(
                     '${secondsRemaining}s',
-                    style: const TextStyle(fontSize: 11, color: Colors.black38),
+                    style: _mutedToolTextStyle(context, fontSize: 11),
                   ),
                   const SizedBox(height: 4),
                   IconButton(
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.edit,
                       size: 16,
-                      color: Colors.black38,
+                      color: appColors.mutedText,
                     ),
                     onPressed: onEdit,
                     padding: EdgeInsets.zero,
@@ -6464,7 +14640,7 @@ class _TotpCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             entry.name,
-            style: const TextStyle(fontSize: 13, color: Colors.black87),
+            style: TextStyle(fontSize: 13, color: appColors.editorText),
           ),
         ],
       ),
@@ -6479,6 +14655,7 @@ class _TotpAddCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final appColors = context.appColors;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(6),
@@ -6486,12 +14663,12 @@ class _TotpAddCard extends StatelessWidget {
         width: 240,
         height: 132,
         decoration: BoxDecoration(
-          color: const Color(0xFFDADADA),
+          color: appColors.panelElevated,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.black12),
+          border: Border.all(color: appColors.border),
         ),
-        child: const Center(
-          child: Icon(Icons.add, size: 40, color: Colors.black26),
+        child: Center(
+          child: Icon(Icons.add, size: 40, color: appColors.mutedText),
         ),
       ),
     );
@@ -6548,6 +14725,7 @@ class _TotpAddDialogState extends State<_TotpAddDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final appColors = context.appColors;
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
@@ -6563,9 +14741,11 @@ class _TotpAddDialogState extends State<_TotpAddDialog> {
                   horizontal: 20,
                   vertical: 16,
                 ),
-                decoration: const BoxDecoration(
-                  color: Color(0xFFF5F6F8),
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                decoration: BoxDecoration(
+                  color: appColors.panelHeader,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(16),
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -6590,9 +14770,9 @@ class _TotpAddDialogState extends State<_TotpAddDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Secret key',
-                      style: TextStyle(fontSize: 12, color: Colors.black54),
+                      style: _mutedToolTextStyle(context, fontSize: 12),
                     ),
                     const SizedBox(height: 6),
                     _InlineTextField(
@@ -6600,9 +14780,9 @@ class _TotpAddDialogState extends State<_TotpAddDialog> {
                       controller: _secret,
                     ),
                     const SizedBox(height: 14),
-                    const Text(
+                    Text(
                       'Application name',
-                      style: TextStyle(fontSize: 12, color: Colors.black54),
+                      style: _mutedToolTextStyle(context, fontSize: 12),
                     ),
                     const SizedBox(height: 6),
                     _InlineTextField(
@@ -6610,9 +14790,9 @@ class _TotpAddDialogState extends State<_TotpAddDialog> {
                       controller: _name,
                     ),
                     const SizedBox(height: 16),
-                    const Text(
+                    Text(
                       'Accent color',
-                      style: TextStyle(fontSize: 12, color: Colors.black54),
+                      style: _mutedToolTextStyle(context, fontSize: 12),
                     ),
                     const SizedBox(height: 8),
                     Wrap(
@@ -6630,8 +14810,8 @@ class _TotpAddDialogState extends State<_TotpAddDialog> {
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
                                     color: _selected == color
-                                        ? const Color(0xFF2B2B2B)
-                                        : Colors.black26,
+                                        ? appColors.editorText
+                                        : appColors.border,
                                     width: _selected == color ? 2 : 1,
                                   ),
                                   boxShadow: _selected == color
@@ -6656,7 +14836,7 @@ class _TotpAddDialogState extends State<_TotpAddDialog> {
                         ElevatedButton(
                           onPressed: _submit,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF202124),
+                            backgroundColor: appColors.accent,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(
                               horizontal: 24,
@@ -6837,10 +15017,7 @@ class _YamlToJsonViewState extends State<_YamlToJsonView> {
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
-            child: Text(
-              _error!,
-              style: const TextStyle(color: Colors.redAccent),
-            ),
+            child: Text(_error!, style: _errorToolTextStyle(context)),
           ),
         ],
       ],
@@ -6975,10 +15152,7 @@ class _YamlJsonConverterViewState extends State<_YamlJsonConverterView> {
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
-            child: Text(
-              _error!,
-              style: const TextStyle(color: Colors.redAccent),
-            ),
+            child: Text(_error!, style: _errorToolTextStyle(context)),
           ),
         ],
       ],
@@ -7069,10 +15243,7 @@ class _JsonToYamlViewState extends State<_JsonToYamlView> {
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
-            child: Text(
-              _error!,
-              style: const TextStyle(color: Colors.redAccent),
-            ),
+            child: Text(_error!, style: _errorToolTextStyle(context)),
           ),
         ],
       ],
@@ -7214,10 +15385,7 @@ class _JsonToCsvViewState extends State<_JsonToCsvView> {
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
-            child: Text(
-              _error!,
-              style: const TextStyle(color: Colors.redAccent),
-            ),
+            child: Text(_error!, style: _errorToolTextStyle(context)),
           ),
         ],
       ],
@@ -7230,9 +15398,8 @@ List<List<String>> _jsonToCsvRows(dynamic decoded) {
   if (decoded is Map && decoded['data'] is List) {
     data = decoded['data'];
   }
-  if (data is! List) {
-    throw ArgumentError('Expected a JSON array of objects.');
-  }
+  if (data is Map) data = [data];
+  if (data is! List) throw ArgumentError('Expected a JSON object or array.');
   final flattened = <Map<String, dynamic>>[];
   final headers = <String>{};
   for (final item in data) {
@@ -7248,7 +15415,7 @@ List<List<String>> _jsonToCsvRows(dynamic decoded) {
   final rows = <List<String>>[];
   rows.add(headerList);
   for (final item in flattened) {
-    rows.add(headerList.map((key) => '${item[key] ?? ''}').toList());
+    rows.add(headerList.map((key) => _csvCellValue(item[key])).toList());
   }
   return rows;
 }
@@ -7279,6 +15446,24 @@ String _escapeCsv(String value) {
   return value;
 }
 
+String _csvCellValue(Object? value) {
+  if (value == null) return '';
+  if (value is String || value is num || value is bool) return '$value';
+  return jsonEncode(value);
+}
+
+bool _looksLikeJsonInput(String value) {
+  final trimmed = value.trimLeft();
+  return trimmed.startsWith('{') || trimmed.startsWith('[');
+}
+
+bool _looksLikeCsvInput(String value) {
+  final trimmed = value.trim();
+  return trimmed.contains(',') ||
+      trimmed.contains('\n') ||
+      trimmed.contains('\r');
+}
+
 class _JsonCsvConverterView extends StatefulWidget {
   const _JsonCsvConverterView();
 
@@ -7289,28 +15474,41 @@ class _JsonCsvConverterView extends StatefulWidget {
 class _JsonCsvConverterViewState extends State<_JsonCsvConverterView> {
   final TextEditingController _input = TextEditingController();
   final TextEditingController _output = TextEditingController();
+  final ScrollController _inputScroll = ScrollController();
+  final ScrollController _outputScroll = ScrollController();
+  final ValueNotifier<JsonToolStatus> _status = ValueNotifier<JsonToolStatus>(
+    JsonToolStatus.empty,
+  );
   bool _csvToJson = true;
   String _indent = '2 spaces';
-  String? _error;
+  double _inputRatio = 0.5;
 
   @override
   void dispose() {
     _input.dispose();
     _output.dispose();
+    _inputScroll.dispose();
+    _outputScroll.dispose();
+    _status.dispose();
     super.dispose();
   }
 
   void _run() {
     final text = _input.text.trim();
     if (text.isEmpty) {
-      setState(() {
-        _output.text = '';
-        _error = null;
-      });
+      _output.text = '';
+      _status.value = JsonToolStatus.empty;
       return;
     }
     try {
-      if (_csvToJson) {
+      final effectiveCsvToJson = _looksLikeJsonInput(text)
+          ? false
+          : (_looksLikeCsvInput(text) ? true : _csvToJson);
+      if (effectiveCsvToJson != _csvToJson) {
+        setState(() => _csvToJson = effectiveCsvToJson);
+      }
+
+      if (effectiveCsvToJson) {
         final rows = _parseCsv(text);
         if (rows.isEmpty) {
           _output.text = '[]';
@@ -7328,6 +15526,9 @@ class _JsonCsvConverterViewState extends State<_JsonCsvConverterView> {
           final encoder = JsonEncoder.withIndent(_indentFor(_indent));
           _output.text = encoder.convert(data);
         }
+        _status.value = JsonToolStatus(
+          summary: 'CSV → JSON · ${max(0, rows.length - 1)} rows',
+        );
       } else {
         final decoded = jsonDecode(text);
         final rows = _jsonToCsvRows(decoded);
@@ -7336,86 +15537,108 @@ class _JsonCsvConverterViewState extends State<_JsonCsvConverterView> {
           buffer.writeln(row.map(_escapeCsv).join(','));
         }
         _output.text = buffer.toString().trimRight();
+        _status.value = JsonToolStatus(
+          summary: 'JSON → CSV · ${max(0, rows.length - 1)} rows',
+        );
       }
-      setState(() => _error = null);
     } catch (e) {
-      setState(() => _error = e.toString());
-    }
-  }
-
-  Future<void> _pasteClipboard() async {
-    final text = await _readClipboardText();
-    setState(() => _input.text = text);
-  }
-
-  void _setSample() {
-    setState(() {
-      _input.text = _csvToJson
-          ? 'id,name,note\n1,DevUtils,"Sample row"\n2,Example,"Escaped ""string"""'
-          : '{"data":[{"id":1,"name":"JSON Formatter","deep":{"nested":1,"value":2}}]}';
-    });
-  }
-
-  void _clearInput() {
-    setState(() {
-      _input.clear();
       _output.clear();
-      _error = null;
-    });
-  }
-
-  Future<void> _copyOutput() async {
-    await Clipboard.setData(ClipboardData(text: _output.text));
+      _status.value = JsonToolStatus(error: e.toString());
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return _JsonSplitEditors(
+      inputController: _input,
+      outputController: _output,
+      inputScrollController: _inputScroll,
+      outputScrollController: _outputScroll,
+      inputMarkedLines: const <int>{},
+      inputRatio: _inputRatio,
+      onInputRatioChanged: (value) => setState(() => _inputRatio = value),
+      onInputChanged: (_) => _run(),
+      inputPlaceholder: _csvToJson ? 'id,name,note' : '{"data":[{"id":1}]}',
+      outputPlaceholder: _csvToJson ? '[]' : 'id,name',
+      inputActions: const [],
+      outputActions: const [],
+      showInputHeader: false,
+      showOutputHeader: false,
+      inputOverlay: _CsvJsonDirectionOverlay(
+        csvToJson: _csvToJson,
+        onChanged: (value) {
+          setState(() => _csvToJson = value);
+          _run();
+        },
+      ),
+      outputOverlay: _JsonCsvOutputOverlay(
+        csvToJson: _csvToJson,
+        indent: _indent,
+        statusListenable: _status,
+        onIndentChanged: (value) {
+          setState(() => _indent = value);
+          _run();
+        },
+      ),
+    );
+  }
+}
+
+class _CsvJsonDirectionOverlay extends StatelessWidget {
+  const _CsvJsonDirectionOverlay({
+    required this.csvToJson,
+    required this.onChanged,
+  });
+
+  final bool csvToJson;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return ToggleButtons(
+      isSelected: [csvToJson, !csvToJson],
+      onPressed: (index) => onChanged(index == 0),
+      borderRadius: BorderRadius.circular(6),
+      borderColor: appColors.border,
+      selectedBorderColor: appColors.accent,
+      fillColor: appColors.accentSoft,
+      selectedColor: appColors.accent,
+      color: appColors.editorText,
+      constraints: const BoxConstraints(minHeight: 30, minWidth: 88),
+      children: const [
+        Text('CSV → JSON', style: TextStyle(fontSize: 12)),
+        Text('JSON → CSV', style: TextStyle(fontSize: 12)),
+      ],
+    );
+  }
+}
+
+class _JsonCsvOutputOverlay extends StatelessWidget {
+  const _JsonCsvOutputOverlay({
+    required this.csvToJson,
+    required this.indent,
+    required this.statusListenable,
+    required this.onIndentChanged,
+  });
+
+  final bool csvToJson;
+  final String indent;
+  final ValueListenable<JsonToolStatus> statusListenable;
+  final ValueChanged<String> onIndentChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Expanded(
-          child: buildSplitEditors(
-            inputActions: [
-              ToolButton(label: 'Go', onPressed: _run),
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clearInput),
-              SegmentedToggle(
-                options: const ['CSV → JSON', 'JSON → CSV'],
-                initialIndex: _csvToJson ? 0 : 1,
-                onChanged: (index) {
-                  setState(() => _csvToJson = index == 0);
-                  _run();
-                },
-              ),
-            ],
-            outputActions: [
-              if (_csvToJson)
-                SmallDropdown(
-                  items: const ['2 spaces', '4 spaces', 'Tabs'],
-                  initialValue: _indent,
-                  onChanged: (value) {
-                    setState(() => _indent = value);
-                    _run();
-                  },
-                ),
-              ToolButton(label: 'Copy', onPressed: _copyOutput),
-            ],
-            inputController: _input,
-            outputController: _output,
-            inputPlaceholder: _csvToJson
-                ? 'id,name,note'
-                : '{"data":[{"id":1}]}',
-            outputPlaceholder: _csvToJson ? '[]' : 'id,name',
-          ),
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              _error!,
-              style: const TextStyle(color: Colors.redAccent),
-            ),
+        Flexible(child: _JsonStatusPill(statusListenable: statusListenable)),
+        if (csvToJson) ...[
+          const SizedBox(width: 8),
+          SmallDropdown(
+            items: const ['2 spaces', '4 spaces', 'Tabs'],
+            initialValue: indent,
+            onChanged: onIndentChanged,
           ),
         ],
       ],
@@ -7432,12 +15655,24 @@ class _HashGeneratorView extends StatefulWidget {
 
 class _HashGeneratorViewState extends State<_HashGeneratorView> {
   final TextEditingController _input = TextEditingController();
+  final TextEditingController _lookupInput = TextEditingController();
+  final TextEditingController _wordlist = TextEditingController();
+  final TextEditingController _lookupReport = TextEditingController();
+  late final HashLookupService _lookupService = HashLookupService();
   bool _lowercase = false;
+  bool _lookupRunning = false;
+  bool _useDefaultWordlist = true;
+  var _hashMode = 0;
+  var _lookupStatus = 'Paste a hash, a log line, or text containing hashes.';
   final Map<String, String> _hashes = {};
 
   @override
   void dispose() {
+    _lookupService.close();
     _input.dispose();
+    _lookupInput.dispose();
+    _wordlist.dispose();
+    _lookupReport.dispose();
     super.dispose();
   }
 
@@ -7447,11 +15682,11 @@ class _HashGeneratorViewState extends State<_HashGeneratorView> {
       'MD2': _digestHex(MD2Digest(), bytes),
       'MD4': _digestHex(MD4Digest(), bytes),
       'MD5': _digestHex(MD5Digest(), bytes),
-      'SHA-1': _digestHex(SHA1Digest(), bytes),
-      'SHA-224': _digestHex(SHA224Digest(), bytes),
-      'SHA-256': _digestHex(SHA256Digest(), bytes),
-      'SHA-384': _digestHex(SHA384Digest(), bytes),
-      'SHA-512': _digestHex(SHA512Digest(), bytes),
+      'SHA1': _digestHex(SHA1Digest(), bytes),
+      'SHA224': _digestHex(SHA224Digest(), bytes),
+      'SHA256': _digestHex(SHA256Digest(), bytes),
+      'SHA384': _digestHex(SHA384Digest(), bytes),
+      'SHA512': _digestHex(SHA512Digest(), bytes),
       'RIPEMD-128': _digestHex(RIPEMD128Digest(), bytes),
       'RIPEMD-160': _digestHex(RIPEMD160Digest(), bytes),
       'RIPEMD-320': _digestHex(RIPEMD320Digest(), bytes),
@@ -7497,93 +15732,335 @@ class _HashGeneratorViewState extends State<_HashGeneratorView> {
     await Clipboard.setData(ClipboardData(text: value));
   }
 
+  void _useGeneratedHash(String algorithm) {
+    final hash = _hashes[algorithm];
+    if (hash == null || hash.isEmpty) return;
+    setState(() {
+      _hashMode = 1;
+      _lookupInput.text = hash;
+      _lookupStatus = 'Loaded $algorithm hash for lookup.';
+    });
+    _analyzeLookup();
+  }
+
+  List<String> _lookupWords() {
+    final words = <String>[
+      if (_useDefaultWordlist) ...HashLookupService.defaultWordlist,
+      ...const LineSplitter().convert(_wordlist.text),
+    ];
+    return words;
+  }
+
+  void _analyzeLookup() {
+    final candidates = HashLookupService.extractCandidates(_lookupInput.text);
+    setState(() {
+      _lookupStatus = candidates.isEmpty
+          ? 'No supported hex hashes found.'
+          : '${candidates.length} supported hash${candidates.length == 1 ? '' : 'es'} found.';
+      _lookupReport.text = _hashCandidateReport(candidates);
+    });
+  }
+
+  Future<void> _crackLocal() async {
+    if (_lookupRunning) return;
+    setState(() {
+      _lookupRunning = true;
+      _lookupStatus = 'Trying local wordlist...';
+    });
+    final results = await _lookupService.crackWithWordlist(
+      input: _lookupInput.text,
+      words: _lookupWords(),
+    );
+    if (!mounted) return;
+    setState(() {
+      _lookupRunning = false;
+      _lookupStatus = _resultStatus(results, source: 'local wordlist');
+      _lookupReport.text = _hashResultReport(results);
+    });
+  }
+
+  Future<void> _lookupOnline() async {
+    if (_lookupRunning) return;
+    setState(() {
+      _lookupRunning = true;
+      _lookupStatus = 'Checking online hash databases...';
+    });
+    final results = await _lookupService.lookupOnline(input: _lookupInput.text);
+    if (!mounted) return;
+    setState(() {
+      _lookupRunning = false;
+      _lookupStatus = _resultStatus(results, source: 'online lookup');
+      _lookupReport.text = _hashResultReport(results);
+    });
+  }
+
+  String _resultStatus(
+    List<HashCrackResult> results, {
+    required String source,
+  }) {
+    if (results.isEmpty) return 'No supported hashes found.';
+    final cracked = results.where((result) => result.cracked).length;
+    if (cracked == 0) return 'No matches from $source.';
+    return '$cracked of ${results.length} hash${results.length == 1 ? '' : 'es'} matched from $source.';
+  }
+
+  String _hashCandidateReport(List<HashCandidate> candidates) {
+    if (candidates.isEmpty) {
+      return 'Supported hash lengths: MD5/MD4/MD2, SHA1, SHA224, SHA256, SHA384, SHA512, Keccak-256.';
+    }
+    final buffer = StringBuffer();
+    for (final candidate in candidates) {
+      buffer
+        ..writeln(candidate.value)
+        ..writeln('  possible: ${candidate.label}')
+        ..writeln();
+    }
+    return buffer.toString().trimRight();
+  }
+
+  String _hashResultReport(List<HashCrackResult> results) {
+    if (results.isEmpty) return 'No supported hashes found.';
+    final buffer = StringBuffer();
+    for (final result in results) {
+      buffer
+        ..writeln(result.hash)
+        ..writeln('  algorithm: ${result.algorithm}')
+        ..writeln('  source: ${result.source}')
+        ..writeln('  status: ${result.status}');
+      if (result.plaintext != null) {
+        buffer.writeln('  plaintext: ${result.plaintext}');
+      }
+      buffer.writeln();
+    }
+    return buffer.toString().trimRight();
+  }
+
   @override
   Widget build(BuildContext context) {
     final byteCount = utf8.encode(_input.text).length;
-    return Row(
+    return _ResizableSplit(
+      horizontal: true,
+      initialRatio: 0.62,
+      minSecondExtent: 360,
+      first: EditorPane(
+        label: 'Input',
+        actions: [
+          ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
+          ToolButton(label: 'Sample', onPressed: _setSample),
+          const ToolButton(label: 'Load file...'),
+          ToolButton(label: 'Clear', onPressed: _clearInput),
+        ],
+        controller: _input,
+        onChanged: (_) => _compute(),
+        placeholder: 'Enter text to hash...',
+      ),
+      second: _buildHashSidePanel(context, byteCount),
+    );
+  }
+
+  Widget _buildHashSidePanel(BuildContext context, int byteCount) {
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          child: EditorPane(
-            label: 'Input',
-            actions: [
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              const ToolButton(label: 'Load file...'),
-              ToolButton(label: 'Clear', onPressed: _clearInput),
-            ],
-            controller: _input,
-            onChanged: (_) => _compute(),
-            placeholder: 'Enter text to hash...',
-          ),
+        Row(
+          children: [
+            SegmentedToggle(
+              options: const ['Generate', 'Lookup'],
+              initialIndex: _hashMode,
+              onChanged: (index) => setState(() => _hashMode = index),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _hashMode == 0
+                    ? '$byteCount bytes (string)'
+                    : 'Hash-Buster style lookup',
+                overflow: TextOverflow.ellipsis,
+                style: _mutedToolTextStyle(context),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 16),
-        SizedBox(
-          width: 340,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        const SizedBox(height: 10),
+        Expanded(
+          child: _hashMode == 0
+              ? _buildHashGeneratePanel(context)
+              : _buildHashLookupPanel(context),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHashGeneratePanel(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
+              Checkbox(
+                value: _lowercase,
+                onChanged: (value) {
+                  setState(() => _lowercase = value ?? false);
+                  _compute();
+                },
+              ),
+              Text(
+                'lowercased',
+                style: TextStyle(color: context.appColors.editorText),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _HashField(
+            label: 'MD2',
+            value: _hashes['MD2'] ?? '',
+            onCopy: () => _copyHash(_hashes['MD2'] ?? ''),
+          ),
+          _HashField(
+            label: 'MD4',
+            value: _hashes['MD4'] ?? '',
+            onCopy: () => _copyHash(_hashes['MD4'] ?? ''),
+          ),
+          _HashField(
+            label: 'MD5',
+            value: _hashes['MD5'] ?? '',
+            onCopy: () => _copyHash(_hashes['MD5'] ?? ''),
+            onUse: () => _useGeneratedHash('MD5'),
+          ),
+          _HashField(
+            label: 'SHA1',
+            value: _hashes['SHA1'] ?? '',
+            onCopy: () => _copyHash(_hashes['SHA1'] ?? ''),
+            onUse: () => _useGeneratedHash('SHA1'),
+          ),
+          _HashField(
+            label: 'SHA224',
+            value: _hashes['SHA224'] ?? '',
+            onCopy: () => _copyHash(_hashes['SHA224'] ?? ''),
+          ),
+          _HashField(
+            label: 'SHA256',
+            value: _hashes['SHA256'] ?? '',
+            onCopy: () => _copyHash(_hashes['SHA256'] ?? ''),
+            onUse: () => _useGeneratedHash('SHA256'),
+          ),
+          _HashField(
+            label: 'SHA384',
+            value: _hashes['SHA384'] ?? '',
+            onCopy: () => _copyHash(_hashes['SHA384'] ?? ''),
+            onUse: () => _useGeneratedHash('SHA384'),
+          ),
+          _HashField(
+            label: 'SHA512',
+            value: _hashes['SHA512'] ?? '',
+            onCopy: () => _copyHash(_hashes['SHA512'] ?? ''),
+            onUse: () => _useGeneratedHash('SHA512'),
+          ),
+          _HashField(
+            label: 'Keccak-256',
+            value: _hashes['Keccak-256'] ?? '',
+            onCopy: () => _copyHash(_hashes['Keccak-256'] ?? ''),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHashLookupPanel(BuildContext context) {
+    final appColors = context.appColors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          decoration: _toolSurfaceDecoration(context),
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Hash input',
+                style: TextStyle(
+                  color: appColors.editorText,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _HashLookupTextField(
+                key: const ValueKey('hash-lookup-input'),
+                controller: _lookupInput,
+                hint: 'Paste one hash or text containing hashes...',
+                minLines: 2,
+                maxLines: 4,
+                onChanged: (_) => _analyzeLookup(),
+              ),
+              const SizedBox(height: 10),
               Row(
                 children: [
-                  Text('$byteCount bytes (string)'),
-                  const SizedBox(width: 12),
                   Checkbox(
-                    value: _lowercase,
-                    onChanged: (value) {
-                      setState(() => _lowercase = value ?? false);
-                      _compute();
-                    },
+                    value: _useDefaultWordlist,
+                    onChanged: _lookupRunning
+                        ? null
+                        : (value) {
+                            setState(() => _useDefaultWordlist = value ?? true);
+                          },
                   ),
-                  const Text('lowercased'),
+                  Expanded(
+                    child: Text(
+                      'Use small built-in wordlist',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: appColors.editorText),
+                    ),
+                  ),
+                ],
+              ),
+              _HashLookupTextField(
+                controller: _wordlist,
+                hint: 'Optional wordlist, one candidate per line...',
+                minLines: 2,
+                maxLines: 4,
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  ToolButton(
+                    label: 'Analyze',
+                    onPressed: _lookupRunning ? null : _analyzeLookup,
+                  ),
+                  ToolButton(
+                    label: 'Local crack',
+                    onPressed: _lookupRunning ? null : _crackLocal,
+                  ),
+                  ToolButton(
+                    label: 'Online lookup',
+                    onPressed: _lookupRunning ? null : _lookupOnline,
+                  ),
+                  if (_lookupRunning)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
                 ],
               ),
               const SizedBox(height: 8),
-              _HashField(
-                label: 'MD2',
-                value: _hashes['MD2'] ?? '',
-                onCopy: () => _copyHash(_hashes['MD2'] ?? ''),
-              ),
-              _HashField(
-                label: 'MD4',
-                value: _hashes['MD4'] ?? '',
-                onCopy: () => _copyHash(_hashes['MD4'] ?? ''),
-              ),
-              _HashField(
-                label: 'MD5',
-                value: _hashes['MD5'] ?? '',
-                onCopy: () => _copyHash(_hashes['MD5'] ?? ''),
-              ),
-              _HashField(
-                label: 'SHA1',
-                value: _hashes['SHA1'] ?? '',
-                onCopy: () => _copyHash(_hashes['SHA1'] ?? ''),
-              ),
-              _HashField(
-                label: 'SHA224',
-                value: _hashes['SHA224'] ?? '',
-                onCopy: () => _copyHash(_hashes['SHA224'] ?? ''),
-              ),
-              _HashField(
-                label: 'SHA256',
-                value: _hashes['SHA256'] ?? '',
-                onCopy: () => _copyHash(_hashes['SHA256'] ?? ''),
-              ),
-              _HashField(
-                label: 'SHA384',
-                value: _hashes['SHA384'] ?? '',
-                onCopy: () => _copyHash(_hashes['SHA384'] ?? ''),
-              ),
-              _HashField(
-                label: 'SHA512',
-                value: _hashes['SHA512'] ?? '',
-                onCopy: () => _copyHash(_hashes['SHA512'] ?? ''),
-              ),
-              _HashField(
-                label: 'Keccak-256',
-                value: _hashes['Keccak-256'] ?? '',
-                onCopy: () => _copyHash(_hashes['Keccak-256'] ?? ''),
-              ),
+              Text(_lookupStatus, style: _mutedToolTextStyle(context)),
             ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: EditorPane(
+            label: 'Result',
+            controller: _lookupReport,
+            readOnly: true,
+            placeholder: 'Hash analysis and crack results...',
+            showHeader: false,
+            actions: const [],
           ),
         ),
       ],
@@ -8432,6 +16909,7 @@ class _TextEncryptionViewState extends State<_TextEncryptionView> {
 
   @override
   Widget build(BuildContext context) {
+    final appColors = context.appColors;
     // Ensure algorithm is valid for current category
     if (!_algorithms.contains(_algorithm)) {
       _algorithm = _algorithms.first;
@@ -8457,10 +16935,13 @@ class _TextEncryptionViewState extends State<_TextEncryptionView> {
                 SmallDropdown(
                   items: _categories,
                   initialValue: _category,
-                  onChanged: (v) => setState(() {
-                    _category = v;
-                    _algorithm = _algorithmsByCategory[v]!.first;
-                  }),
+                  onChanged: (v) {
+                    setState(() {
+                      _category = v;
+                      _algorithm = _algorithmsByCategory[v]!.first;
+                    });
+                    _process();
+                  },
                 ),
               ],
             ),
@@ -8475,7 +16956,10 @@ class _TextEncryptionViewState extends State<_TextEncryptionView> {
                 SmallDropdown(
                   items: _algorithms,
                   initialValue: _algorithm,
-                  onChanged: (v) => setState(() => _algorithm = v),
+                  onChanged: (v) {
+                    setState(() => _algorithm = v);
+                    _process();
+                  },
                 ),
               ],
             ),
@@ -8490,8 +16974,10 @@ class _TextEncryptionViewState extends State<_TextEncryptionView> {
                 SegmentedToggle(
                   options: const ['Encrypt', 'Decrypt'],
                   initialIndex: _mode == 'Encrypt' ? 0 : 1,
-                  onChanged: (i) =>
-                      setState(() => _mode = i == 0 ? 'Encrypt' : 'Decrypt'),
+                  onChanged: (i) {
+                    setState(() => _mode = i == 0 ? 'Encrypt' : 'Decrypt');
+                    _process();
+                  },
                 ),
               ],
             ),
@@ -8506,8 +16992,10 @@ class _TextEncryptionViewState extends State<_TextEncryptionView> {
                 SegmentedToggle(
                   options: const ['Base64', 'Hex'],
                   initialIndex: _outputFormat == 'Base64' ? 0 : 1,
-                  onChanged: (i) =>
-                      setState(() => _outputFormat = i == 0 ? 'Base64' : 'Hex'),
+                  onChanged: (i) {
+                    setState(() => _outputFormat = i == 0 ? 'Base64' : 'Hex');
+                    _process();
+                  },
                 ),
               ],
             ),
@@ -8524,24 +17012,21 @@ class _TextEncryptionViewState extends State<_TextEncryptionView> {
             const SizedBox(width: 8),
             Expanded(
               child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFD5D5D5)),
-                ),
+                decoration: _toolSurfaceDecoration(context, radius: 6),
                 child: TextField(
                   controller: _key,
                   obscureText: true,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: 'Enter password for encryption/decryption...',
                     border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(
+                    hintStyle: TextStyle(color: appColors.mutedText),
+                    contentPadding: const EdgeInsets.symmetric(
                       horizontal: 10,
                       vertical: 8,
                     ),
                     isDense: true,
                   ),
-                  style: const TextStyle(fontSize: 12),
+                  style: TextStyle(fontSize: 12, color: appColors.editorText),
                   onChanged: (_) => _process(),
                 ),
               ),
@@ -8551,89 +17036,775 @@ class _TextEncryptionViewState extends State<_TextEncryptionView> {
         const SizedBox(height: 12),
         // Input/Output editors
         Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: EditorPane(
-                  label: _mode == 'Encrypt' ? 'Plaintext' : 'Ciphertext',
-                  actions: [
-                    ToolButton(label: 'Go', onPressed: _process),
-                    ToolButton(
-                      label: 'Clipboard',
-                      onPressed: () async {
-                        final text = await _readClipboardText();
-                        setState(() => _input.text = text);
-                        _process();
-                      },
-                    ),
-                    ToolButton(
-                      label: 'Sample',
-                      onPressed: () {
-                        setState(
-                          () => _input.text =
-                              'Hello, World! This is a secret message.',
-                        );
-                        _process();
-                      },
-                    ),
-                    ToolButton(
-                      label: 'Clear',
-                      onPressed: () {
-                        setState(() {
-                          _input.clear();
-                          _output.clear();
-                          _error = null;
-                        });
-                      },
-                    ),
-                  ],
-                  controller: _input,
-                  onChanged: (_) => _process(),
-                  placeholder: _mode == 'Encrypt'
-                      ? 'Enter text to encrypt...'
-                      : 'Enter ciphertext to decrypt...',
+          child: _ResizableSplit(
+            horizontal: true,
+            first: EditorPane(
+              label: _mode == 'Encrypt' ? 'Plaintext' : 'Ciphertext',
+              actions: [
+                ToolButton(
+                  label: 'Clipboard',
+                  onPressed: () async {
+                    final text = await _readClipboardText();
+                    setState(() => _input.text = text);
+                    _process();
+                  },
                 ),
-              ),
-              const SizedBox(width: 8),
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.swap_horiz),
-                    tooltip: 'Swap & toggle mode',
-                    onPressed: _swapInputOutput,
-                  ),
-                ],
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: EditorPane(
-                  label: _mode == 'Encrypt' ? 'Ciphertext' : 'Plaintext',
-                  actions: [
-                    ToolButton(
-                      label: 'Copy',
-                      onPressed: () =>
-                          Clipboard.setData(ClipboardData(text: _output.text)),
-                    ),
-                  ],
-                  controller: _output,
-                  readOnly: true,
-                  placeholder: _mode == 'Encrypt'
-                      ? 'Encrypted output appears here...'
-                      : 'Decrypted output appears here...',
+                ToolButton(
+                  label: 'Sample',
+                  onPressed: () {
+                    setState(
+                      () => _input.text =
+                          'Hello, World! This is a secret message.',
+                    );
+                    _process();
+                  },
                 ),
-              ),
-            ],
+                ToolButton(
+                  label: 'Clear',
+                  onPressed: () {
+                    setState(() {
+                      _input.clear();
+                      _output.clear();
+                      _error = null;
+                    });
+                  },
+                ),
+                ToolIconButton(
+                  icon: Icons.swap_horiz,
+                  tooltip: 'Swap & toggle mode',
+                  onPressed: _swapInputOutput,
+                ),
+              ],
+              controller: _input,
+              onChanged: (_) => _process(),
+              placeholder: _mode == 'Encrypt'
+                  ? 'Enter text to encrypt...'
+                  : 'Enter ciphertext to decrypt...',
+            ),
+            second: EditorPane(
+              label: _mode == 'Encrypt' ? 'Ciphertext' : 'Plaintext',
+              actions: [
+                ToolButton(
+                  label: 'Copy',
+                  onPressed: () =>
+                      Clipboard.setData(ClipboardData(text: _output.text)),
+                ),
+              ],
+              controller: _output,
+              readOnly: true,
+              placeholder: _mode == 'Encrypt'
+                  ? 'Encrypted output appears here...'
+                  : 'Decrypted output appears here...',
+            ),
           ),
         ),
         if (_error != null) ...[
           const SizedBox(height: 8),
-          Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+          Text(_error!, style: _errorToolTextStyle(context)),
         ],
       ],
     );
   }
+}
+
+class _PayloadEmbedderView extends StatefulWidget {
+  const _PayloadEmbedderView();
+
+  @override
+  State<_PayloadEmbedderView> createState() => _PayloadEmbedderViewState();
+}
+
+class _PayloadEmbedderViewState extends State<_PayloadEmbedderView> {
+  final TextEditingController _carrierPath = TextEditingController();
+  final TextEditingController _payloadPath = TextEditingController();
+  final TextEditingController _outputPath = TextEditingController();
+  final TextEditingController _passphrase = TextEditingController();
+  final TextEditingController _status = TextEditingController();
+  late final String _dropTargetScope = identityHashCode(this).toRadixString(16);
+
+  int _modeIndex = 0;
+  bool _busy = false;
+  String? _error;
+  EmbeddedPayloadInfo? _info;
+
+  bool get _isEmbed => _modeIndex == 0;
+  bool get _isCheck => _modeIndex == 1;
+  bool get _isDecode => _modeIndex == 2;
+  String get _carrierDropTargetId => 'payload-carrier-file-$_dropTargetScope';
+  String get _payloadDropTargetId => 'payload-payload-file-$_dropTargetScope';
+
+  @override
+  void dispose() {
+    _carrierPath.dispose();
+    _payloadPath.dispose();
+    _outputPath.dispose();
+    _passphrase.dispose();
+    _status.dispose();
+    super.dispose();
+  }
+
+  Future<void> _embed() async {
+    await _runFileAction(() async {
+      final carrierFile = File(_carrierPath.text.trim());
+      final payloadFile = File(_payloadPath.text.trim());
+      if (!await carrierFile.exists()) {
+        throw const FileSystemException('Carrier/stego file does not exist');
+      }
+      if (!await payloadFile.exists()) {
+        throw const FileSystemException('Payload file does not exist');
+      }
+      final outputPath = _resolvedEmbedOutputPath(carrierFile.path);
+      final result = PayloadEmbeddingService.embed(
+        carrier: await carrierFile.readAsBytes(),
+        payload: await payloadFile.readAsBytes(),
+        payloadFileName: p.basename(payloadFile.path),
+        passphrase: _passphrase.text,
+      );
+      await File(outputPath).writeAsBytes(result.bytes);
+      _info = result.info;
+      _outputPath.text = outputPath;
+      _status.text = [
+        'Embedded encrypted file.',
+        'Output: $outputPath',
+        'Carrier: ${result.info.format.label}',
+        'Method: ${result.info.method}',
+        'Envelope: ${_formatPayloadBytes(result.info.envelopeSize)}',
+        'PBKDF2 iterations: ${result.info.iterations}',
+      ].join('\n');
+    });
+  }
+
+  Future<void> _check({bool preferOutput = false}) async {
+    final targetPath = _checkTargetPath(preferOutput: preferOutput);
+    await _runFileAction(
+      () async {
+        final stegoFile = File(targetPath);
+        if (!await stegoFile.exists()) {
+          throw const FileSystemException('File does not exist');
+        }
+        final bytes = await stegoFile.readAsBytes();
+        _info = PayloadEmbeddingService.inspect(bytes);
+        if (_info == null) {
+          _status.text = [
+            'No DevUtils encrypted payload found.',
+            'Checked: $targetPath',
+          ].join('\n');
+          return;
+        }
+        _status.text = [
+          'Encrypted payload found.',
+          'Checked: $targetPath',
+          'Carrier: ${_info!.format.label}',
+          'Method: ${_info!.method}',
+          'Stored envelope: ${_formatPayloadBytes(_info!.envelopeSize)}',
+          'Carrier size: ${_formatPayloadBytes(_info!.carrierSize)}',
+          'Segments/chunks: ${_info!.segmentCount}',
+          'PBKDF2 iterations: ${_info!.iterations}',
+        ].join('\n');
+      },
+      requirePassphrase: false,
+      requirePayloadPath: false,
+      targetPath: targetPath,
+    );
+  }
+
+  String _checkTargetPath({required bool preferOutput}) {
+    final outputPath = _outputPath.text.trim();
+    if (preferOutput && outputPath.isNotEmpty) return outputPath;
+    return _carrierPath.text.trim();
+  }
+
+  Future<void> _decode() async {
+    await _runFileAction(() async {
+      final carrierFile = File(_carrierPath.text.trim());
+      if (!await carrierFile.exists()) {
+        throw const FileSystemException('Carrier/stego file does not exist');
+      }
+      final bytes = await carrierFile.readAsBytes();
+      final decoded = PayloadEmbeddingService.extract(
+        carrier: bytes,
+        passphrase: _passphrase.text,
+      );
+      final outputPath = _resolvedDecodeOutputPath(
+        carrierFile.path,
+        decoded.fileName,
+      );
+      await File(outputPath).writeAsBytes(decoded.bytes);
+      _outputPath.text = outputPath;
+      _info = PayloadEmbeddingService.inspect(bytes);
+      _status.text = [
+        'Decoded embedded file.',
+        'Output: $outputPath',
+        'Embedded filename: ${decoded.fileName}',
+        'Payload size: ${_formatPayloadBytes(decoded.bytes.length)}',
+        if (decoded.embeddedAt != null)
+          'Embedded at: ${decoded.embeddedAt!.toLocal()}',
+      ].join('\n');
+    });
+  }
+
+  Future<void> _runFileAction(
+    Future<void> Function() action, {
+    bool requirePassphrase = true,
+    bool requirePayloadPath = true,
+    String? targetPath,
+  }) async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+      _status.clear();
+      _info = null;
+    });
+    try {
+      if ((targetPath ?? _carrierPath.text.trim()).isEmpty) {
+        throw ArgumentError('Enter a carrier/stego file path.');
+      }
+      if (requirePassphrase && _passphrase.text.isEmpty) {
+        throw ArgumentError('Enter the passphrase.');
+      }
+      if (requirePayloadPath && _isEmbed && _payloadPath.text.trim().isEmpty) {
+        throw ArgumentError('Enter the payload file path.');
+      }
+      await action();
+    } catch (e) {
+      _status.text = '';
+      _error = _friendlyPayloadError(e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _resolvedEmbedOutputPath(String carrierPath) {
+    final explicit = _outputPath.text.trim();
+    if (explicit.isNotEmpty) {
+      final type = FileSystemEntity.typeSync(explicit);
+      if (type == FileSystemEntityType.directory) {
+        return p.join(explicit, _defaultEmbeddedFileName(carrierPath));
+      }
+      return explicit;
+    }
+    return p.join(
+      p.dirname(carrierPath),
+      _defaultEmbeddedFileName(carrierPath),
+    );
+  }
+
+  String _defaultEmbeddedFileName(String carrierPath) {
+    final extension = p.extension(carrierPath);
+    final baseName = p.basenameWithoutExtension(carrierPath);
+    return '$baseName.embedded$extension';
+  }
+
+  String _resolvedDecodeOutputPath(String carrierPath, String decodedFileName) {
+    final explicit = _outputPath.text.trim();
+    if (explicit.isNotEmpty) {
+      final type = FileSystemEntity.typeSync(explicit);
+      if (type == FileSystemEntityType.directory) {
+        return p.join(explicit, decodedFileName);
+      }
+      return explicit;
+    }
+    final directory = p.dirname(carrierPath);
+    return p.join(directory, decodedFileName);
+  }
+
+  Future<void> _pickCarrierFile() async {
+    final path = await FileDialogService.openFile(
+      allowedExtensions: const ['png', 'jpg', 'jpeg', 'pdf'],
+    );
+    if (path == null || !mounted) return;
+    setState(() {
+      _carrierPath.text = path;
+      _error = null;
+    });
+  }
+
+  Future<void> _pickPayloadFile() async {
+    final path = await FileDialogService.openFile();
+    if (path == null || !mounted) return;
+    setState(() {
+      _payloadPath.text = path;
+      _error = null;
+    });
+  }
+
+  Future<void> _pickOutputFile() async {
+    final carrierPath = _carrierPath.text.trim();
+    final suggestedName = carrierPath.isEmpty
+        ? (_isDecode ? 'decoded-payload' : 'embedded-output')
+        : _isDecode
+        ? p.basename(
+            _outputPath.text.trim().isEmpty
+                ? 'decoded-payload'
+                : _outputPath.text.trim(),
+          )
+        : _defaultEmbeddedFileName(carrierPath);
+    final directoryPath = carrierPath.isEmpty ? null : p.dirname(carrierPath);
+    final path = await FileDialogService.saveFile(
+      suggestedName: suggestedName,
+      directoryPath: directoryPath,
+      allowedExtensions: _isDecode
+          ? const []
+          : const ['png', 'jpg', 'jpeg', 'pdf'],
+    );
+    if (path == null || !mounted) return;
+    setState(() {
+      _outputPath.text = path;
+      _error = null;
+    });
+  }
+
+  Future<void> _pickOutputDirectory() async {
+    final path = await FileDialogService.openDirectory();
+    if (path == null || !mounted) return;
+    setState(() {
+      _outputPath.text = path;
+      _error = null;
+    });
+  }
+
+  void _setDroppedPath(TextEditingController controller, List<String> paths) {
+    if (paths.isEmpty) return;
+    setState(() {
+      controller.text = paths.first;
+      _error = null;
+    });
+  }
+
+  void _setExamplePaths() {
+    _carrierPath.text = '/Users/me/Desktop/image.png';
+    _payloadPath.text = '/Users/me/Desktop/secret.txt';
+    _outputPath.text = '/Users/me/Desktop/image.embedded.png';
+    _status.text =
+        'Use PNG, JPG, or PDF carriers. The embedded file is encrypted before it is stored.';
+    setState(() {
+      _error = null;
+      _info = null;
+    });
+  }
+
+  void _clear() {
+    _carrierPath.clear();
+    _payloadPath.clear();
+    _outputPath.clear();
+    _passphrase.clear();
+    _status.clear();
+    setState(() {
+      _error = null;
+      _info = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _ResizableSplit(
+      horizontal: true,
+      initialRatio: 0.46,
+      minFirstExtent: 420,
+      minSecondExtent: 360,
+      first: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SegmentedToggle(
+                    options: const ['Embed', 'Check', 'Decode'],
+                    initialIndex: _modeIndex,
+                    onChanged: (index) => setState(() => _modeIndex = index),
+                  ),
+                  ToolButton(
+                    label: 'Example paths',
+                    onPressed: _setExamplePaths,
+                  ),
+                  ToolButton(label: 'Reset', onPressed: _clear),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _PayloadPathField(
+                label: _isEmbed ? 'Carrier file' : 'Stego file',
+                controller: _carrierPath,
+                hint: '/path/to/image.png, image.jpg, or document.pdf',
+                onPickFile: _pickCarrierFile,
+                dropTargetId: _carrierDropTargetId,
+                onDropped: (paths) => _setDroppedPath(_carrierPath, paths),
+              ),
+              if (_isEmbed) ...[
+                const SizedBox(height: 10),
+                _PayloadPathField(
+                  label: 'Payload file',
+                  controller: _payloadPath,
+                  hint: '/path/to/secret.txt',
+                  onPickFile: _pickPayloadFile,
+                  dropTargetId: _payloadDropTargetId,
+                  onDropped: (paths) => _setDroppedPath(_payloadPath, paths),
+                ),
+              ],
+              if (!_isCheck) ...[
+                const SizedBox(height: 10),
+                _PayloadPathField(
+                  label: _isDecode ? 'Decoded output' : 'Output file',
+                  controller: _outputPath,
+                  hint: _isDecode
+                      ? 'Leave empty to use embedded filename'
+                      : 'Leave empty to create *.embedded.*',
+                  onPickFile: _pickOutputFile,
+                  onPickDirectory: _pickOutputDirectory,
+                ),
+              ],
+              if (!_isCheck) ...[
+                const SizedBox(height: 10),
+                _PayloadPathField(
+                  label: 'Passphrase',
+                  controller: _passphrase,
+                  hint: 'Required for encryption/decode',
+                  obscureText: true,
+                ),
+              ],
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (_isEmbed)
+                    ToolButton(
+                      label: _busy ? 'Embedding...' : 'Embed encrypted',
+                      onPressed: _busy ? null : _embed,
+                    ),
+                  if (_isCheck)
+                    ToolButton(
+                      label: _busy ? 'Checking...' : 'Check embedded data',
+                      onPressed: _busy ? null : () => _check(),
+                    ),
+                  if (!_isCheck)
+                    ToolButton(
+                      label: _busy
+                          ? 'Checking...'
+                          : _isEmbed && _outputPath.text.trim().isNotEmpty
+                          ? 'Check output'
+                          : 'Check embedded data',
+                      onPressed: _busy
+                          ? null
+                          : () => _check(preferOutput: _isEmbed),
+                    ),
+                  if (_isDecode)
+                    ToolButton(
+                      label: _busy ? 'Decoding...' : 'Decode',
+                      onPressed: _busy ? null : _decode,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _PayloadMethodSummary(),
+            ],
+          ),
+        ),
+      ),
+      second: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_info != null) ...[
+            _PayloadInfoBar(info: _info!),
+            const SizedBox(height: 10),
+          ],
+          if (_error != null) ...[
+            Text(_error!, style: _errorToolTextStyle(context)),
+            const SizedBox(height: 10),
+          ],
+          Expanded(
+            child: EditorPane(
+              label: 'Result',
+              actions: const [],
+              controller: _status,
+              readOnly: true,
+              showHeader: false,
+              placeholder:
+                  'Embed, check, or decode encrypted files inside PNG, JPG, or PDF carriers...',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PayloadPathField extends StatelessWidget {
+  const _PayloadPathField({
+    required this.label,
+    required this.controller,
+    required this.hint,
+    this.obscureText = false,
+    this.onPickFile,
+    this.onPickDirectory,
+    this.dropTargetId,
+    this.onDropped,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final String hint;
+  final bool obscureText;
+  final VoidCallback? onPickFile;
+  final VoidCallback? onPickDirectory;
+  final String? dropTargetId;
+  final FileDropHandler? onDropped;
+
+  @override
+  Widget build(BuildContext context) {
+    return _PayloadPathDropField(
+      label: label,
+      controller: controller,
+      hint: hint,
+      obscureText: obscureText,
+      onPickFile: onPickFile,
+      onPickDirectory: onPickDirectory,
+      dropTargetId: dropTargetId,
+      onDropped: onDropped,
+    );
+  }
+}
+
+class _PayloadPathDropField extends StatefulWidget {
+  const _PayloadPathDropField({
+    required this.label,
+    required this.controller,
+    required this.hint,
+    required this.obscureText,
+    this.onPickFile,
+    this.onPickDirectory,
+    this.dropTargetId,
+    this.onDropped,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final String hint;
+  final bool obscureText;
+  final VoidCallback? onPickFile;
+  final VoidCallback? onPickDirectory;
+  final String? dropTargetId;
+  final FileDropHandler? onDropped;
+
+  @override
+  State<_PayloadPathDropField> createState() => _PayloadPathDropFieldState();
+}
+
+class _PayloadPathDropFieldState extends State<_PayloadPathDropField> {
+  final GlobalKey _dropKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    _registerDropTarget();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PayloadPathDropField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.dropTargetId != widget.dropTargetId ||
+        oldWidget.onDropped != widget.onDropped) {
+      if (oldWidget.dropTargetId != null) {
+        FileDropService.unregisterTarget(oldWidget.dropTargetId!);
+      }
+      _registerDropTarget();
+    }
+  }
+
+  @override
+  void dispose() {
+    final targetId = widget.dropTargetId;
+    if (targetId != null) FileDropService.unregisterTarget(targetId);
+    super.dispose();
+  }
+
+  void _registerDropTarget() {
+    final targetId = widget.dropTargetId;
+    final onDropped = widget.onDropped;
+    if (targetId == null || onDropped == null) return;
+    FileDropService.registerTarget(targetId, key: _dropKey, handler: onDropped);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    final targetId = widget.dropTargetId;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.label,
+          style: TextStyle(
+            color: appColors.editorText,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 6),
+        MouseRegion(
+          onEnter: targetId == null
+              ? null
+              : (_) => FileDropService.setActiveTarget(targetId),
+          onExit: targetId == null
+              ? null
+              : (_) => FileDropService.setActiveTarget(null),
+          child: Row(
+            key: _dropKey,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: widget.controller,
+                  obscureText: widget.obscureText,
+                  decoration: InputDecoration(
+                    hintText: widget.hint,
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    filled: true,
+                    fillColor: appColors.panelElevated,
+                  ),
+                  style: TextStyle(color: appColors.editorText, fontSize: 13),
+                ),
+              ),
+              if (widget.onPickFile != null) ...[
+                const SizedBox(width: 6),
+                ToolIconButton(
+                  icon: Icons.insert_drive_file,
+                  tooltip: 'Choose file',
+                  onPressed: widget.onPickFile,
+                ),
+              ],
+              if (widget.onPickDirectory != null) ...[
+                const SizedBox(width: 6),
+                ToolIconButton(
+                  icon: Icons.folder_open,
+                  tooltip: 'Choose folder',
+                  onPressed: widget.onPickDirectory,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PayloadMethodSummary extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    final rows = const [
+      ('PNG', 'private ancillary chunk'),
+      ('JPG', 'APP15 metadata segments'),
+      ('PDF', 'comment payload block'),
+      ('Crypto', 'AES-256-CBC + HMAC-SHA256'),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: _toolSurfaceDecoration(context),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Format support',
+            style: TextStyle(
+              color: appColors.editorText,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          for (final row in rows)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 64,
+                    child: Text(
+                      row.$1,
+                      style: TextStyle(
+                        color: appColors.mutedText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      row.$2,
+                      style: TextStyle(color: appColors.editorText),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PayloadInfoBar extends StatelessWidget {
+  const _PayloadInfoBar({required this.info});
+
+  final EmbeddedPayloadInfo info;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: appColors.accentSoft,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: appColors.border),
+      ),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 6,
+        children: [
+          Text(
+            info.format.label,
+            style: TextStyle(
+              color: appColors.accent,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Text(info.method, style: TextStyle(color: appColors.editorText)),
+          Text(
+            _formatPayloadBytes(info.envelopeSize),
+            style: TextStyle(color: appColors.mutedText),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _friendlyPayloadError(Object error) {
+  if (error is FileSystemException) {
+    return error.message;
+  }
+  if (error is ArgumentError) {
+    return error.message?.toString() ?? 'Invalid input.';
+  }
+  if (error is FormatException) {
+    return error.message;
+  }
+  return error.toString();
+}
+
+String _formatPayloadBytes(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
 }
 
 class _UserAgentToolView extends StatefulWidget {
@@ -10845,6 +20016,7 @@ class _ChatInputFieldState extends State<_ChatInputField> {
 
   @override
   Widget build(BuildContext context) {
+    final appColors = context.appColors;
     return Focus(
       onKeyEvent: _handleKeyEvent,
       child: TextField(
@@ -10859,8 +20031,13 @@ class _ChatInputFieldState extends State<_ChatInputField> {
               : 'Start a model first...',
           border: InputBorder.none,
           contentPadding: const EdgeInsets.all(12),
+          hintStyle: TextStyle(color: appColors.mutedText),
         ),
-        style: const TextStyle(fontFamily: 'Menlo', fontSize: 12),
+        style: TextStyle(
+          fontFamily: 'Menlo',
+          fontSize: 12,
+          color: appColors.editorText,
+        ),
       ),
     );
   }
@@ -11087,18 +20264,15 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
     return '${(size / 1e6).toStringAsFixed(0)} MB';
   }
 
-  Widget _buildCard({
+  Widget _buildCard(
+    BuildContext context, {
     required String title,
     Widget? trailing,
     required Widget child,
   }) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFD5D5D5)),
-      ),
+      decoration: _toolSurfaceDecoration(context, radius: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -11118,6 +20292,7 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
 
   @override
   Widget build(BuildContext context) {
+    final appColors = context.appColors;
     return Column(
       children: [
         SizedBox(
@@ -11126,6 +20301,7 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
             children: [
               Expanded(
                 child: _buildCard(
+                  context,
                   title: 'Installed Models',
                   trailing: _loadingModels
                       ? const SizedBox(
@@ -11163,17 +20339,17 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
                                       const SizedBox(height: 2),
                                       Text(
                                         model.sizeFormatted,
-                                        style: const TextStyle(
-                                          color: Colors.black54,
-                                        ),
+                                        style: _mutedToolTextStyle(context),
                                       ),
                                       if (isActive)
-                                        const Padding(
-                                          padding: EdgeInsets.only(top: 4),
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 4,
+                                          ),
                                           child: Text(
                                             'Running',
                                             style: TextStyle(
-                                              color: Color(0xFF2FA866),
+                                              color: appColors.success,
                                             ),
                                           ),
                                         ),
@@ -11204,6 +20380,7 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
               const SizedBox(width: 16),
               Expanded(
                 child: _buildCard(
+                  context,
                   title: 'Download Presets',
                   child: ListView.separated(
                     itemCount: kModelPresets.length,
@@ -11231,9 +20408,7 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
                                     const SizedBox(height: 2),
                                     Text(
                                       '${_presetSize(preset)} · ${preset.description}',
-                                      style: const TextStyle(
-                                        color: Colors.black54,
-                                      ),
+                                      style: _mutedToolTextStyle(context),
                                     ),
                                   ],
                                 ),
@@ -11267,11 +20442,7 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
         // Chat history section
         Expanded(
           child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFD5D5D5)),
-            ),
+            decoration: _toolSurfaceDecoration(context),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -11341,7 +20512,7 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
                             _service.isReady
                                 ? 'Start a conversation...'
                                 : 'Start a model to begin chatting',
-                            style: const TextStyle(color: Colors.black38),
+                            style: _mutedToolTextStyle(context),
                           ),
                         )
                       : ListView.builder(
@@ -11361,7 +20532,7 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
                                     height: 28,
                                     decoration: BoxDecoration(
                                       color: isUser
-                                          ? const Color(0xFF2FA866)
+                                          ? appColors.success
                                           : const Color(0xFF6B7280),
                                       borderRadius: BorderRadius.circular(14),
                                     ),
@@ -11379,10 +20550,10 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
                                       children: [
                                         Text(
                                           isUser ? 'You' : 'Assistant',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontWeight: FontWeight.w600,
                                             fontSize: 12,
-                                            color: Colors.black54,
+                                            color: appColors.mutedText,
                                           ),
                                         ),
                                         const SizedBox(height: 4),
@@ -11414,11 +20585,7 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
         const SizedBox(height: 12),
         // Input section
         Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFD5D5D5)),
-          ),
+          decoration: _toolSurfaceDecoration(context),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -11433,7 +20600,7 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
                 Padding(
                   padding: const EdgeInsets.only(right: 8, bottom: 4),
                   child: IconButton(
-                    icon: const Icon(Icons.stop, color: Colors.red),
+                    icon: Icon(Icons.stop, color: appColors.error),
                     tooltip: 'Stop',
                     onPressed: _stopGeneration,
                   ),
@@ -11442,7 +20609,7 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
                 Padding(
                   padding: const EdgeInsets.only(right: 8, bottom: 4),
                   child: IconButton(
-                    icon: const Icon(Icons.send, color: Color(0xFF2FA866)),
+                    icon: Icon(Icons.send, color: appColors.success),
                     tooltip: 'Send',
                     onPressed: _service.isReady ? _run : null,
                   ),
@@ -11452,7 +20619,7 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
         ),
         if (_error != null) ...[
           const SizedBox(height: 8),
-          Text(_error!, style: const TextStyle(color: Color(0xFFB00020))),
+          Text(_error!, style: _errorToolTextStyle(context)),
         ],
       ],
     );
@@ -11611,6 +20778,7 @@ class _AntiBotDetectorViewState extends State<_AntiBotDetectorView> {
 
   @override
   Widget build(BuildContext context) {
+    final appColors = context.appColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -11621,23 +20789,24 @@ class _AntiBotDetectorViewState extends State<_AntiBotDetectorView> {
             const SizedBox(width: 12),
             Expanded(
               child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFD5D5D5)),
-                ),
+                decoration: _toolSurfaceDecoration(context, radius: 6),
                 child: TextField(
                   controller: _url,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: 'https://example.com',
                     border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(
+                    hintStyle: TextStyle(color: appColors.mutedText),
+                    contentPadding: const EdgeInsets.symmetric(
                       horizontal: 10,
                       vertical: 8,
                     ),
                     isDense: true,
                   ),
-                  style: const TextStyle(fontFamily: 'Menlo', fontSize: 12),
+                  style: TextStyle(
+                    fontFamily: 'Menlo',
+                    fontSize: 12,
+                    color: appColors.editorText,
+                  ),
                   onSubmitted: (_) => _analyze(),
                 ),
               ),
@@ -11677,7 +20846,7 @@ class _AntiBotDetectorViewState extends State<_AntiBotDetectorView> {
         ),
         if (_error != null) ...[
           const SizedBox(height: 8),
-          Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+          Text(_error!, style: _errorToolTextStyle(context)),
         ],
       ],
     );
@@ -13303,11 +22472,7 @@ class _JwtDebuggerViewState extends State<_JwtDebuggerView> {
             const SizedBox(height: 6),
             Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.black12),
-              ),
+              decoration: _toolSurfaceDecoration(context),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: const [
@@ -13347,26 +22512,16 @@ class _JwtDebuggerViewState extends State<_JwtDebuggerView> {
             ),
             if (_error != null) ...[
               const SizedBox(height: 6),
-              Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+              Text(_error!, style: _errorToolTextStyle(context)),
             ],
           ],
         );
-        if (horizontal) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(child: inputPane),
-              const SizedBox(width: 16),
-              SizedBox(width: 320, child: detailPane),
-            ],
-          );
-        }
-        return Column(
-          children: [
-            Expanded(child: inputPane),
-            const SizedBox(height: 16),
-            Expanded(child: detailPane),
-          ],
+        return _ResizableSplit(
+          horizontal: horizontal,
+          initialRatio: horizontal ? 0.65 : 0.5,
+          minSecondExtent: horizontal ? 320 : 260,
+          first: inputPane,
+          second: detailPane,
         );
       },
     );
@@ -13471,158 +22626,138 @@ class _RegExpTesterViewState extends State<_RegExpTesterView> {
   Widget build(BuildContext context) {
     final matches = _filteredMatches();
 
-    return Column(
-      children: [
-        Expanded(
-          child: Column(
+    return _ResizableSplit(
+      horizontal: false,
+      initialRatio: 0.66,
+      minFirstExtent: 260,
+      minSecondExtent: 220,
+      first: Column(
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  const Text(
-                    'RegExp:',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  SizedBox(
-                    width: 220,
-                    child: _InlineTextField(
-                      hintText: r'([A-Z])\w+',
-                      controller: _regex,
-                      onChanged: (_) => _run(),
-                    ),
-                  ),
-                  ToolButton(
-                    label: 'Clipboard',
-                    onPressed: _pasteRegexClipboard,
-                  ),
-                  ToolButton(label: 'Sample', onPressed: _setSample),
-                  ToolButton(label: 'Clear', onPressed: _clearAll),
-                  const ToolIconButton(icon: Icons.settings),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Text:',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  ToolButton(
-                    label: 'Clipboard',
-                    onPressed: _pasteTextClipboard,
-                  ),
-                ],
+              const Text(
+                'RegExp:',
+                style: TextStyle(fontWeight: FontWeight.w600),
               ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.black12),
-                  ),
-                  padding: const EdgeInsets.all(8),
-                  child: TextField(
-                    controller: _text,
-                    maxLines: null,
-                    onChanged: (_) => _run(),
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      isDense: true,
-                    ),
-                  ),
+              SizedBox(
+                width: 220,
+                child: _InlineTextField(
+                  hintText: r'([A-Z])\w+',
+                  controller: _regex,
+                  onChanged: (_) => _run(),
                 ),
               ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  const Text(
-                    'Output:',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  SizedBox(
-                    width: 120,
-                    child: _InlineTextField(
-                      hintText: r'$0\n',
-                      controller: _format,
-                      onChanged: (_) => _run(),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 200,
-                    child: _InlineTextField(
-                      hintText: 'Search matches...',
-                      controller: _search,
-                      onChanged: (_) => setState(() {}),
-                    ),
-                  ),
-                ],
+              ToolButton(label: 'Clipboard', onPressed: _pasteRegexClipboard),
+              ToolButton(label: 'Sample', onPressed: _setSample),
+              ToolButton(label: 'Clear', onPressed: _clearAll),
+              const ToolIconButton(icon: Icons.settings),
+              const SizedBox(width: 8),
+              const Text(
+                'Text:',
+                style: TextStyle(fontWeight: FontWeight.w600),
               ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: EditorPane(
-                  label: '',
-                  actions: [ToolButton(label: 'Copy', onPressed: _copyOutput)],
-                  controller: _output,
-                  readOnly: true,
-                  placeholder: '',
-                ),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    _error!,
-                    style: const TextStyle(color: Colors.redAccent),
-                  ),
-                ),
-              ],
+              ToolButton(label: 'Clipboard', onPressed: _pasteTextClipboard),
             ],
           ),
-        ),
-        const SizedBox(height: 12),
-        Expanded(
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  const Spacer(),
-                  const Icon(Icons.chevron_left, size: 16),
-                  const SizedBox(width: 8),
-                  Text('${_matches.length} matches'),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.chevron_right, size: 16),
-                ],
+          const SizedBox(height: 8),
+          Expanded(
+            child: Container(
+              decoration: _toolSurfaceDecoration(context),
+              padding: const EdgeInsets.all(8),
+              child: TextField(
+                controller: _text,
+                maxLines: null,
+                onChanged: (_) => _run(),
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  isDense: true,
+                ),
+                style: TextStyle(color: context.appColors.editorText),
               ),
-              const SizedBox(height: 8),
-              const ToolButton(label: 'Cheat Sheet'),
-              const SizedBox(height: 8),
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.black12),
-                  ),
-                  padding: const EdgeInsets.all(8),
-                  child: ListView.separated(
-                    itemCount: matches.length,
-                    separatorBuilder: (context, index) =>
-                        const Divider(height: 8),
-                    itemBuilder: (context, index) {
-                      final match = matches[index];
-                      final value = match.group(0) ?? '';
-                      return Text('"$value" (${match.start}, ${match.end})');
-                    },
-                  ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              const Text(
+                'Output:',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              SizedBox(
+                width: 120,
+                child: _InlineTextField(
+                  hintText: r'$0\n',
+                  controller: _format,
+                  onChanged: (_) => _run(),
+                ),
+              ),
+              SizedBox(
+                width: 200,
+                child: _InlineTextField(
+                  hintText: 'Search matches...',
+                  controller: _search,
+                  onChanged: (_) => setState(() {}),
                 ),
               ),
             ],
           ),
-        ),
-      ],
+          const SizedBox(height: 8),
+          Expanded(
+            child: EditorPane(
+              label: '',
+              actions: [ToolButton(label: 'Copy', onPressed: _copyOutput)],
+              controller: _output,
+              readOnly: true,
+              placeholder: '',
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(_error!, style: _errorToolTextStyle(context)),
+            ),
+          ],
+        ],
+      ),
+      second: Column(
+        children: [
+          Row(
+            children: [
+              const Spacer(),
+              const Icon(Icons.chevron_left, size: 16),
+              const SizedBox(width: 8),
+              Text('${_matches.length} matches'),
+              const SizedBox(width: 8),
+              const Icon(Icons.chevron_right, size: 16),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const ToolButton(label: 'Cheat Sheet'),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Container(
+              decoration: _toolSurfaceDecoration(context),
+              padding: const EdgeInsets.all(8),
+              child: ListView.separated(
+                itemCount: matches.length,
+                separatorBuilder: (context, index) => const Divider(height: 8),
+                itemBuilder: (context, index) {
+                  final match = matches[index];
+                  final value = match.group(0) ?? '';
+                  return Text('"$value" (${match.start}, ${match.end})');
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -13747,41 +22882,104 @@ class _UnixTimeConverterView extends StatefulWidget {
 
 class _UnixTimeConverterViewState extends State<_UnixTimeConverterView> {
   final TextEditingController _input = TextEditingController();
-  final TextEditingController _local = TextEditingController();
-  final TextEditingController _utc = TextEditingController();
-  final TextEditingController _relative = TextEditingController();
-  final TextEditingController _unix = TextEditingController();
-  final TextEditingController _dayOfYear = TextEditingController();
-  final TextEditingController _weekOfYear = TextEditingController();
-  final TextEditingController _isLeapYear = TextEditingController();
-  final TextEditingController _otherLocal = TextEditingController();
   String _format = 'Unix time (seconds since epoch)';
+  String? _leftTimezone;
+  String? _rightTimezone;
+  DateTime? _currentUtcDate;
   String? _error;
 
   @override
   void dispose() {
     _input.dispose();
-    _local.dispose();
-    _utc.dispose();
-    _relative.dispose();
-    _unix.dispose();
-    _dayOfYear.dispose();
-    _weekOfYear.dispose();
-    _isLeapYear.dispose();
-    _otherLocal.dispose();
     super.dispose();
   }
 
-  void _applyDate(DateTime utcDate) {
-    final local = utcDate.toLocal();
-    _local.text = local.toString();
-    _utc.text = utcDate.toIso8601String();
-    _unix.text = (utcDate.millisecondsSinceEpoch / 1000).round().toString();
-    _dayOfYear.text = _calcDayOfYear(local).toString();
-    _weekOfYear.text = _calcWeekOfYear(local).toString();
-    _isLeapYear.text = _isLeap(local.year) ? 'Yes' : 'No';
-    _otherLocal.text = local.toString();
-    _relative.text = _relativeFromNow(local);
+  String _localTimezoneLabel() {
+    final now = DateTime.now();
+    return '${now.timeZoneName} (${_formatUtcOffset(now.timeZoneOffset)})';
+  }
+
+  List<String> _timezoneOptions() {
+    final zones = <String>[_localTimezoneLabel(), 'UTC'];
+    for (var hour = -12; hour <= 14; hour++) {
+      if (hour == 0) continue;
+      final sign = hour < 0 ? '-' : '+';
+      zones.add('UTC$sign${hour.abs().toString().padLeft(2, '0')}:00');
+    }
+    return zones;
+  }
+
+  String _selectedTimezoneLabel(String? timezone, {required String fallback}) {
+    final options = _timezoneOptions();
+    if (timezone != null && options.contains(timezone)) return timezone;
+    if (options.contains(fallback)) return fallback;
+    return options.first;
+  }
+
+  String _leftTimezoneLabel() {
+    return _selectedTimezoneLabel(
+      _leftTimezone,
+      fallback: _localTimezoneLabel(),
+    );
+  }
+
+  String _rightTimezoneLabel() {
+    return _selectedTimezoneLabel(_rightTimezone, fallback: 'UTC');
+  }
+
+  DateTime _timezoneDate(DateTime utcDate, String timezone) {
+    if (timezone == _localTimezoneLabel()) return utcDate.toLocal();
+    final offset = _parseTimezoneOffset(timezone) ?? Duration.zero;
+    return utcDate.add(offset);
+  }
+
+  String _timezoneOffsetLabel(DateTime utcDate, String timezone) {
+    if (timezone == _localTimezoneLabel()) {
+      final localDate = utcDate.toLocal();
+      return '${localDate.timeZoneName} (${_formatUtcOffset(localDate.timeZoneOffset)})';
+    }
+    return timezone == 'UTC' ? 'UTC+00:00' : timezone;
+  }
+
+  Duration? _parseTimezoneOffset(String timezone) {
+    if (timezone == 'UTC') return Duration.zero;
+    final match = RegExp(r'^UTC([+-])(\d{2}):(\d{2})$').firstMatch(timezone);
+    if (match == null) return null;
+    final sign = match.group(1) == '-' ? -1 : 1;
+    final hours = int.parse(match.group(2)!);
+    final minutes = int.parse(match.group(3)!);
+    return Duration(minutes: sign * (hours * 60 + minutes));
+  }
+
+  _TimezoneDetails? _detailsFor(String timezone) {
+    final utcDate = _currentUtcDate;
+    if (utcDate == null) return null;
+    final selectedDate = _timezoneDate(utcDate, timezone);
+    final offset = timezone == _localTimezoneLabel()
+        ? selectedDate.timeZoneOffset
+        : _parseTimezoneOffset(timezone) ?? Duration.zero;
+    return _TimezoneDetails(
+      dateTime: _formatDisplayDateTime(selectedDate),
+      offset: _timezoneOffsetLabel(utcDate, timezone),
+      utcIso: utcDate.toIso8601String(),
+      relative: _relativeFromNow(utcDate.toLocal()),
+      unixTime: (utcDate.millisecondsSinceEpoch ~/ 1000).toString(),
+      unixMilliseconds: utcDate.millisecondsSinceEpoch.toString(),
+      unixNanoseconds: (utcDate.microsecondsSinceEpoch * 1000).toString(),
+      rfc3339: _formatRfc3339(selectedDate, offset),
+      rfc1123: _formatRfc1123(selectedDate, offset),
+      dayOfYear: _calcDayOfYear(selectedDate).toString(),
+      weekOfYear: _calcWeekOfYear(selectedDate).toString(),
+      isLeapYear: _isLeap(selectedDate.year) ? 'Yes' : 'No',
+    );
+  }
+
+  void _changeLeftTimezone(String timezone) {
+    setState(() => _leftTimezone = timezone);
+  }
+
+  void _changeRightTimezone(String timezone) {
+    setState(() => _rightTimezone = timezone);
   }
 
   void _convert() {
@@ -13796,52 +22994,50 @@ class _UnixTimeConverterViewState extends State<_UnixTimeConverterView> {
       setState(() => _error = 'Invalid number input.');
       return;
     }
-    final ms = _format.contains('ms') ? value.round() : (value * 1000).round();
-    final date = DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
-    _applyDate(date);
-    setState(() => _error = null);
+    final date = switch (_format) {
+      'Unix time (milliseconds since epoch)' =>
+        DateTime.fromMillisecondsSinceEpoch(value.round(), isUtc: true),
+      'Unix time (nanoseconds since epoch)' =>
+        DateTime.fromMicrosecondsSinceEpoch(value.round() ~/ 1000, isUtc: true),
+      _ => DateTime.fromMillisecondsSinceEpoch(
+        (value * 1000).round(),
+        isUtc: true,
+      ),
+    };
+    setState(() {
+      _currentUtcDate = date;
+      _error = null;
+    });
   }
 
   void _clearOutputs() {
-    _local.clear();
-    _utc.clear();
-    _relative.clear();
-    _unix.clear();
-    _dayOfYear.clear();
-    _weekOfYear.clear();
-    _isLeapYear.clear();
-    _otherLocal.clear();
+    _currentUtcDate = null;
   }
 
   void _setNow() {
     final now = DateTime.now().toUtc();
     setState(() {
-      _input.text = _format.contains('ms')
-          ? now.millisecondsSinceEpoch.toString()
-          : (now.millisecondsSinceEpoch / 1000).round().toString();
-    });
-    _applyDate(now);
-  }
-
-  Future<void> _pasteClipboard() async {
-    final text = await _readClipboardText();
-    setState(() => _input.text = text);
-    _convert();
-  }
-
-  void _clearInput() {
-    setState(() {
-      _input.clear();
-      _clearOutputs();
+      _input.text = switch (_format) {
+        'Unix time (milliseconds since epoch)' =>
+          now.millisecondsSinceEpoch.toString(),
+        'Unix time (nanoseconds since epoch)' =>
+          (now.microsecondsSinceEpoch * 1000).toString(),
+        _ => (now.millisecondsSinceEpoch ~/ 1000).toString(),
+      };
+      _currentUtcDate = now;
       _error = null;
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    final timezoneOptions = _timezoneOptions();
+    final leftTimezone = _leftTimezoneLabel();
+    final rightTimezone = _rightTimezoneLabel();
     return SingleChildScrollView(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -13855,13 +23051,11 @@ class _UnixTimeConverterViewState extends State<_UnixTimeConverterView> {
                   style: TextStyle(fontWeight: FontWeight.w600),
                 ),
                 ToolButton(label: 'Now', onPressed: _setNow),
-                ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-                ToolButton(label: 'Clear', onPressed: _clearInput),
-                const ToolIconButton(icon: Icons.settings),
                 SmallDropdown(
                   items: const [
                     'Unix time (seconds since epoch)',
-                    'Unix time (ms)',
+                    'Unix time (milliseconds since epoch)',
+                    'Unix time (nanoseconds since epoch)',
                   ],
                   initialValue: _format,
                   onChanged: (value) {
@@ -13871,185 +23065,311 @@ class _UnixTimeConverterViewState extends State<_UnixTimeConverterView> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.black12),
-              ),
+              decoration: _toolSurfaceDecoration(context, radius: 6),
               padding: const EdgeInsets.symmetric(horizontal: 8),
+              constraints: const BoxConstraints(minHeight: 34),
               child: TextField(
+                key: const ValueKey('unix-time-input'),
                 controller: _input,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   border: InputBorder.none,
                   isDense: true,
+                  hintStyle: TextStyle(color: appColors.mutedText),
                 ),
+                style: TextStyle(color: appColors.editorText),
                 onChanged: (_) => _convert(),
               ),
             ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               'Tips: Mathematical operators + - * / are supported',
-              style: TextStyle(fontSize: 12, color: Colors.black54),
+              style: _mutedToolTextStyle(context, fontSize: 12),
             ),
             if (_error != null) ...[
               const SizedBox(height: 6),
-              Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+              Text(_error!, style: _errorToolTextStyle(context)),
             ],
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
             LayoutBuilder(
               builder: (context, constraints) {
-                final leftFields = Column(
-                  children: [
-                    LabeledField(
-                      label: 'Local:',
-                      trailing: ToolIconButton(
-                        icon: Icons.copy,
-                        onPressed: () {
-                          Clipboard.setData(ClipboardData(text: _local.text));
-                        },
-                      ),
-                      controller: _local,
-                      readOnly: true,
-                    ),
-                    LabeledField(
-                      label: 'UTC (ISO 8601):',
-                      trailing: ToolIconButton(
-                        icon: Icons.copy,
-                        onPressed: () {
-                          Clipboard.setData(ClipboardData(text: _utc.text));
-                        },
-                      ),
-                      controller: _utc,
-                      readOnly: true,
-                    ),
-                    LabeledField(
-                      label: 'Relative:',
-                      trailing: ToolIconButton(
-                        icon: Icons.copy,
-                        onPressed: () {
-                          Clipboard.setData(
-                            ClipboardData(text: _relative.text),
-                          );
-                        },
-                      ),
-                      controller: _relative,
-                      readOnly: true,
-                    ),
-                    LabeledField(
-                      label: 'Unix time:',
-                      trailing: ToolIconButton(
-                        icon: Icons.copy,
-                        onPressed: () {
-                          Clipboard.setData(ClipboardData(text: _unix.text));
-                        },
-                      ),
-                      controller: _unix,
-                      readOnly: true,
-                    ),
-                  ],
+                final leftPanel = _TimezoneDetailsPanel(
+                  title: 'Timezone 1',
+                  timezoneOptions: timezoneOptions,
+                  selectedTimezone: leftTimezone,
+                  onTimezoneChanged: _changeLeftTimezone,
+                  details: _detailsFor(leftTimezone),
                 );
-                final rightFields = Column(
-                  children: [
-                    LabeledField(
-                      label: 'Day of year',
-                      trailing: ToolIconButton(
-                        icon: Icons.copy,
-                        onPressed: () {
-                          Clipboard.setData(
-                            ClipboardData(text: _dayOfYear.text),
-                          );
-                        },
-                      ),
-                      controller: _dayOfYear,
-                      readOnly: true,
-                    ),
-                    LabeledField(
-                      label: 'Week of year',
-                      trailing: ToolIconButton(
-                        icon: Icons.copy,
-                        onPressed: () {
-                          Clipboard.setData(
-                            ClipboardData(text: _weekOfYear.text),
-                          );
-                        },
-                      ),
-                      controller: _weekOfYear,
-                      readOnly: true,
-                    ),
-                    LabeledField(
-                      label: 'Is leap year?',
-                      trailing: ToolIconButton(
-                        icon: Icons.copy,
-                        onPressed: () {
-                          Clipboard.setData(
-                            ClipboardData(text: _isLeapYear.text),
-                          );
-                        },
-                      ),
-                      controller: _isLeapYear,
-                      readOnly: true,
-                    ),
-                    LabeledField(
-                      label: 'Other formats (local)',
-                      trailing: ToolIconButton(
-                        icon: Icons.copy,
-                        onPressed: () {
-                          Clipboard.setData(
-                            ClipboardData(text: _otherLocal.text),
-                          );
-                        },
-                      ),
-                      controller: _otherLocal,
-                      readOnly: true,
-                    ),
-                  ],
+                final rightPanel = _TimezoneDetailsPanel(
+                  title: 'Timezone 2',
+                  timezoneOptions: timezoneOptions,
+                  selectedTimezone: rightTimezone,
+                  onTimezoneChanged: _changeRightTimezone,
+                  details: _detailsFor(rightTimezone),
                 );
+                const gap = 10.0;
+                const minPanelWidth = 330.0;
+                final availableWidth = constraints.maxWidth.isFinite
+                    ? constraints.maxWidth
+                    : minPanelWidth * 2 + gap;
+                final comparisonWidth = max(
+                  availableWidth,
+                  minPanelWidth * 2 + gap,
+                );
+                final panelWidth = (comparisonWidth - gap) / 2;
 
-                if (constraints.maxWidth < 720) {
-                  return Column(
-                    children: [
-                      leftFields,
-                      const SizedBox(height: 8),
-                      rightFields,
-                    ],
-                  );
-                }
-
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: leftFields),
-                    const SizedBox(width: 24),
-                    Expanded(child: rightFields),
-                  ],
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: comparisonWidth,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(width: panelWidth, child: leftPanel),
+                        const SizedBox(width: gap),
+                        SizedBox(width: panelWidth, child: rightPanel),
+                      ],
+                    ),
+                  ),
                 );
               },
             ),
-            const Divider(height: 32),
-            const Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TimezoneDetails {
+  const _TimezoneDetails({
+    required this.dateTime,
+    required this.offset,
+    required this.utcIso,
+    required this.relative,
+    required this.unixTime,
+    required this.unixMilliseconds,
+    required this.unixNanoseconds,
+    required this.rfc3339,
+    required this.rfc1123,
+    required this.dayOfYear,
+    required this.weekOfYear,
+    required this.isLeapYear,
+  });
+
+  final String dateTime;
+  final String offset;
+  final String utcIso;
+  final String relative;
+  final String unixTime;
+  final String unixMilliseconds;
+  final String unixNanoseconds;
+  final String rfc3339;
+  final String rfc1123;
+  final String dayOfYear;
+  final String weekOfYear;
+  final String isLeapYear;
+}
+
+class _TimezoneDetailsPanel extends StatelessWidget {
+  const _TimezoneDetailsPanel({
+    required this.title,
+    required this.timezoneOptions,
+    required this.selectedTimezone,
+    required this.onTimezoneChanged,
+    required this.details,
+  });
+
+  final String title;
+  final List<String> timezoneOptions;
+  final String selectedTimezone;
+  final ValueChanged<String> onTimezoneChanged;
+  final _TimezoneDetails? details;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    final details = this.details;
+    return Container(
+      decoration: _toolSurfaceDecoration(context, radius: 8),
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final dropdownWidth = min(
+                190.0,
+                max(132.0, constraints.maxWidth - 102.0),
+              );
+              return Row(
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: appColors.editorText,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: SmallDropdown(
+                        items: timezoneOptions,
+                        initialValue: selectedTimezone,
+                        width: dropdownWidth,
+                        onChanged: onTimezoneChanged,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          if (details == null)
+            Container(
+              width: double.infinity,
+              constraints: const BoxConstraints(minHeight: 300),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: appColors.editorBackground,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: appColors.border),
+              ),
+              child: Text(
+                'Enter a Unix time or press Now',
+                style: _mutedToolTextStyle(context),
+              ),
+            )
+          else ...[
+            _UnixDetailRow(label: 'Date/time', value: details.dateTime),
+            _UnixDetailRow(label: 'Offset', value: details.offset),
+            _UnixDetailRow(label: 'UTC ISO', value: details.utcIso),
+            _UnixDetailRow(label: 'Relative', value: details.relative),
+            _UnixDetailRow(label: 'Unix sec', value: details.unixTime),
+            _UnixDetailRow(label: 'Unix ms', value: details.unixMilliseconds),
+            _UnixDetailRow(label: 'Unix ns', value: details.unixNanoseconds),
+            _UnixDetailRow(label: 'RFC 3339', value: details.rfc3339),
+            _UnixDetailRow(label: 'RFC 1123', value: details.rfc1123),
+            Row(
               children: [
-                Text(
-                  'Other timezones:',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                Expanded(
+                  child: _UnixDetailRow(
+                    label: 'Day',
+                    value: details.dayOfYear,
+                    compact: true,
+                  ),
                 ),
-                SmallDropdown(
-                  items: ['Add timezone...', 'UTC', 'America/Los_Angeles'],
-                  initialValue: 'Add timezone...',
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _UnixDetailRow(
+                    label: 'Week',
+                    value: details.weekOfYear,
+                    compact: true,
+                  ),
                 ),
-                ToolButton(label: 'Add'),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _UnixDetailRow(
+                    label: 'Leap',
+                    value: details.isLeapYear,
+                    compact: true,
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 6),
-            const Text(
-              '(Pick a timezone to get started...)',
-              style: TextStyle(fontSize: 12, color: Colors.black54),
-            ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _UnixDetailRow extends StatelessWidget {
+  const _UnixDetailRow({
+    required this.label,
+    required this.value,
+    this.compact = false,
+  });
+
+  final String label;
+  final String value;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: compact
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: appColors.mutedText,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                _UnixDetailValue(value: value, minHeight: 38),
+              ],
+            )
+          : Row(
+              children: [
+                SizedBox(
+                  width: 72,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: appColors.mutedText,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: _UnixDetailValue(value: value)),
+              ],
+            ),
+    );
+  }
+}
+
+class _UnixDetailValue extends StatelessWidget {
+  const _UnixDetailValue({required this.value, this.minHeight = 36});
+
+  final String value;
+  final double minHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Container(
+      width: double.infinity,
+      constraints: BoxConstraints(minHeight: minHeight),
+      alignment: Alignment.centerLeft,
+      decoration: BoxDecoration(
+        color: appColors.editorBackground,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: appColors.border),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+      child: SelectableText(
+        value,
+        maxLines: 1,
+        style: TextStyle(
+          color: appColors.editorText,
+          fontFamily: 'Menlo',
+          fontSize: 12,
         ),
       ),
     );
@@ -14060,6 +23380,69 @@ bool _isLeap(int year) {
   if (year % 400 == 0) return true;
   if (year % 100 == 0) return false;
   return year % 4 == 0;
+}
+
+String _formatUtcOffset(Duration offset) {
+  final sign = offset.isNegative ? '-' : '+';
+  final absolute = offset.abs();
+  final hours = absolute.inHours.toString().padLeft(2, '0');
+  final minutes = (absolute.inMinutes % 60).toString().padLeft(2, '0');
+  return 'UTC$sign$hours:$minutes';
+}
+
+String _formatDisplayDateTime(DateTime date) {
+  final buffer = StringBuffer()
+    ..write(date.year.toString().padLeft(4, '0'))
+    ..write('-')
+    ..write(date.month.toString().padLeft(2, '0'))
+    ..write('-')
+    ..write(date.day.toString().padLeft(2, '0'))
+    ..write(' ')
+    ..write(date.hour.toString().padLeft(2, '0'))
+    ..write(':')
+    ..write(date.minute.toString().padLeft(2, '0'))
+    ..write(':')
+    ..write(date.second.toString().padLeft(2, '0'));
+  if (date.millisecond != 0 || date.microsecond != 0) {
+    buffer.write('.');
+    buffer.write(date.millisecond.toString().padLeft(3, '0'));
+    if (date.microsecond != 0) {
+      buffer.write(date.microsecond.toString().padLeft(3, '0'));
+    }
+  }
+  return buffer.toString();
+}
+
+String _formatRfc3339(DateTime date, Duration offset) {
+  final base = _formatDisplayDateTime(date).replaceFirst(' ', 'T');
+  return '$base${_formatUtcOffset(offset).replaceFirst('UTC', '')}';
+}
+
+String _formatRfc1123(DateTime date, Duration offset) {
+  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final offsetText = _formatUtcOffset(offset).replaceFirst('UTC', '');
+  return '${weekdays[date.weekday - 1]}, '
+      '${date.day.toString().padLeft(2, '0')} '
+      '${months[date.month - 1]} '
+      '${date.year.toString().padLeft(4, '0')} '
+      '${date.hour.toString().padLeft(2, '0')}:'
+      '${date.minute.toString().padLeft(2, '0')}:'
+      '${date.second.toString().padLeft(2, '0')} '
+      '${offsetText.replaceAll(':', '')}';
 }
 
 int _calcDayOfYear(DateTime date) {
@@ -14137,6 +23520,7 @@ class _MimeTypesViewState extends State<_MimeTypesView> {
 
   @override
   Widget build(BuildContext context) {
+    final appColors = context.appColors;
     final entries = _filteredEntries();
     entries.sort((a, b) {
       final result = _compareEntries(a, b, _sortColumnIndex);
@@ -14175,18 +23559,14 @@ class _MimeTypesViewState extends State<_MimeTypesView> {
             const SizedBox(width: 12),
             Text(
               '${entries.length} entries',
-              style: const TextStyle(color: Colors.black54),
+              style: _mutedToolTextStyle(context),
             ),
           ],
         ),
         const SizedBox(height: 12),
         Expanded(
           child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFD5D5D5)),
-            ),
+            decoration: _toolSurfaceDecoration(context),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: SingleChildScrollView(
@@ -14196,7 +23576,7 @@ class _MimeTypesViewState extends State<_MimeTypesView> {
                     sortAscending: _sortAscending,
                     sortColumnIndex: _sortColumnIndex,
                     headingRowColor: WidgetStateProperty.all(
-                      const Color(0xFFF4F4F4),
+                      appColors.panelHeader,
                     ),
                     columnSpacing: 24,
                     columns: [
@@ -14258,8 +23638,11 @@ Widget buildUnixTimeConverter() {
   return const _UnixTimeConverterView();
 }
 
-Widget buildJsonFormatValidate() {
-  return const _JsonFormatValidateView();
+Widget buildJsonFormatValidate({
+  JsonToolSession? session,
+  JsonPanelCompareDetails? compare,
+}) {
+  return _JsonFormatValidateView(session: session, compare: compare);
 }
 
 Widget buildBase64String() {
@@ -14284,6 +23667,26 @@ Widget buildUrlEncodeDecode() {
 
 Widget buildUrlParser() {
   return const _UrlParserView();
+}
+
+Widget buildSubdomainFinder() {
+  return const _SubdomainFinderView();
+}
+
+Widget buildSubdomainTakeover() {
+  return const _SubdomainTakeoverView();
+}
+
+Widget buildPortScanner() {
+  return const _PortScannerView();
+}
+
+Widget buildNetworkScanner() {
+  return const _NetworkScannerView();
+}
+
+Widget buildFirewallFingerprint() {
+  return const _FirewallFingerprintView();
 }
 
 Widget buildHtmlEntityEncodeDecode() {
@@ -14328,6 +23731,9 @@ Widget buildHtmlBeautifyMinify(String language) {
   }
   if (language == 'HTML') {
     return const _HtmlBeautifyMinifyView();
+  }
+  if (language == 'CSS' || language == 'SCSS' || language == 'LESS') {
+    return _StyleBeautifyMinifyView(language: language);
   }
   return _SimplePassThroughView(
     inputPlaceholder: 'Paste $language here...',
@@ -14379,6 +23785,10 @@ Widget buildTextEncryption() {
   return const _TextEncryptionView();
 }
 
+Widget buildPayloadEmbedder() {
+  return const _PayloadEmbedderView();
+}
+
 Widget buildUserAgentTool() {
   return const _UserAgentToolView();
 }
@@ -14392,15 +23802,11 @@ Widget buildOfflineLlm() {
 }
 
 Widget buildHtmlToJsx() {
-  return buildSplitEditors(
-    inputActions: const [
-      ToolButton(label: 'Go'),
-      ToolButton(label: 'Clipboard'),
-      ToolButton(label: 'Sample'),
-      ToolButton(label: 'Clear'),
-    ],
-    outputActions: const [ToolButton(label: 'Copy')],
-  );
+  return const _HtmlToJsxView();
+}
+
+Widget buildJsToTsConverter() {
+  return const _JsToTsConverterView();
 }
 
 Widget buildMarkdownPreview() {
@@ -14482,6 +23888,10 @@ Widget buildLineSortDedupe() {
   return const _LineSortDedupeView();
 }
 
+Widget buildPreferences() {
+  return const _PreferencesView();
+}
+
 Widget buildPreferencesGeneral() {
   return const _PreferencesGeneralView();
 }
@@ -14512,9 +23922,483 @@ class _PrefCheckbox extends StatelessWidget {
       child: Row(
         children: [
           Checkbox(value: value, onChanged: onChanged),
-          Text(label),
+          Expanded(child: Text(label, softWrap: true)),
         ],
       ),
+    );
+  }
+}
+
+class _PreferencesView extends StatefulWidget {
+  const _PreferencesView();
+
+  @override
+  State<_PreferencesView> createState() => _PreferencesViewState();
+}
+
+class _PreferencesViewState extends State<_PreferencesView> {
+  static const _tabs = ['General', 'Appearance', 'Scripting'];
+
+  String _selectedTab = _tabs.first;
+  bool _hideOnLaunch = false;
+  bool _confirmQuit = false;
+  bool _shareAnalytics = false;
+  bool _writeLogs = false;
+  bool _showStatusBar = true;
+  bool _showDock = true;
+  String _theme = 'System';
+  String _colorTheme = 'Classic Blue';
+  int _scriptSegment = 0;
+  String _phpPath = 'No Usable PHP Runtime';
+  final TextEditingController _whitelist = TextEditingController(
+    text: 'serialize,var_export,json_encode,json_decode,unserialize',
+  );
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _hideOnLaunch = prefs.getBool('pref_hide_on_launch') ?? false;
+      _confirmQuit = prefs.getBool('pref_confirm_quit') ?? false;
+      _shareAnalytics = prefs.getBool('pref_share_analytics') ?? false;
+      _writeLogs = prefs.getBool('pref_write_logs') ?? false;
+      _showStatusBar = prefs.getBool('pref_show_status_bar') ?? true;
+      _showDock = prefs.getBool('pref_show_dock') ?? true;
+      _theme = prefs.getString('pref_theme') ?? 'System';
+      _colorTheme = prefs.getString('colorTheme') ?? 'Classic Blue';
+      _scriptSegment = prefs.getInt('pref_script_segment') ?? 0;
+      _phpPath = prefs.getString('pref_php_path') ?? 'No Usable PHP Runtime';
+      _whitelist.text =
+          prefs.getString('pref_php_whitelist') ??
+          'serialize,var_export,json_encode,json_decode,unserialize';
+      _loaded = true;
+    });
+  }
+
+  Future<void> _setPref(String key, Object value) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (value is bool) {
+      await prefs.setBool(key, value);
+    } else if (value is int) {
+      await prefs.setInt(key, value);
+    } else if (value is String) {
+      await prefs.setString(key, value);
+    }
+  }
+
+  @override
+  void dispose() {
+    _whitelist.dispose();
+    super.dispose();
+  }
+
+  Widget _buildGeneral() {
+    return _PreferenceSection(
+      title: 'General',
+      children: [
+        _PrefCheckbox(
+          label: 'Hide the main window at launch',
+          value: _hideOnLaunch,
+          onChanged: (value) {
+            setState(() => _hideOnLaunch = value ?? false);
+            _setPref('pref_hide_on_launch', _hideOnLaunch);
+          },
+        ),
+        _PrefCheckbox(
+          label: 'Confirm before quitting with Cmd+Q',
+          value: _confirmQuit,
+          onChanged: (value) {
+            setState(() => _confirmQuit = value ?? false);
+            _setPref('pref_confirm_quit', _confirmQuit);
+          },
+        ),
+        _PrefCheckbox(
+          label: 'Share anonymous crash reports and analytics',
+          value: _shareAnalytics,
+          onChanged: (value) {
+            setState(() => _shareAnalytics = value ?? false);
+            _setPref('pref_share_analytics', _shareAnalytics);
+          },
+        ),
+        _PrefCheckbox(
+          label: 'Write debug logs',
+          value: _writeLogs,
+          onChanged: (value) {
+            setState(() => _writeLogs = value ?? false);
+            _setPref('pref_write_logs', _writeLogs);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAppearance() {
+    final state = ToolStateScope.maybeOf(context);
+    Widget colorThemePicker(String selectedTheme) {
+      return _ColorThemePicker(
+        selectedTheme: selectedTheme,
+        onChanged: (value) {
+          setState(() => _colorTheme = value);
+          state?.colorTheme.value = value;
+          _setPref('colorTheme', value);
+        },
+      );
+    }
+
+    return _PreferenceSection(
+      title: 'Appearance',
+      children: [
+        _PrefCheckbox(
+          label: 'Show status bar icon',
+          value: _showStatusBar,
+          onChanged: (value) {
+            setState(() => _showStatusBar = value ?? true);
+            _setPref('pref_show_status_bar', _showStatusBar);
+          },
+        ),
+        _PrefCheckbox(
+          label: 'Show Dock icon',
+          value: _showDock,
+          onChanged: (value) {
+            setState(() => _showDock = value ?? true);
+            _setPref('pref_show_dock', _showDock);
+          },
+        ),
+        const SizedBox(height: 8),
+        _PreferenceSelectRow(
+          label: 'Mode',
+          child: SmallDropdown(
+            items: const ['System', 'Light', 'Dark'],
+            initialValue: _theme,
+            onChanged: (value) {
+              setState(() => _theme = value);
+              _setPref('pref_theme', _theme);
+              if (value == 'Light') state?.darkMode.value = false;
+              if (value == 'Dark') state?.darkMode.value = true;
+            },
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (state == null)
+          colorThemePicker(_colorTheme)
+        else
+          ValueListenableBuilder<String>(
+            valueListenable: state.colorTheme,
+            builder: (context, selectedTheme, _) {
+              return colorThemePicker(selectedTheme);
+            },
+          ),
+      ],
+    );
+  }
+
+  Widget _buildScripting() {
+    return _PreferenceSection(
+      title: 'Scripting',
+      children: [
+        ToggleButtons(
+          isSelected: List<bool>.generate(3, (i) => i == _scriptSegment),
+          onPressed: (index) {
+            setState(() => _scriptSegment = index);
+            _setPref('pref_script_segment', _scriptSegment);
+          },
+          borderRadius: BorderRadius.circular(6),
+          constraints: const BoxConstraints(minHeight: 32, minWidth: 86),
+          children: const [Text('PHP'), Text('OpenSSL'), Text('Other')],
+        ),
+        const SizedBox(height: 16),
+        _PreferenceReadonlyField(label: 'Runtime', value: _phpPath),
+        const SizedBox(height: 14),
+        Text(
+          'Allowed PHP functions',
+          style: TextStyle(
+            color: context.appColors.editorText,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          height: 116,
+          decoration: _toolSurfaceDecoration(context),
+          padding: const EdgeInsets.all(8),
+          child: TextField(
+            controller: _whitelist,
+            maxLines: null,
+            expands: true,
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              hintText: 'serialize,var_export,json_encode,json_decode',
+              hintStyle: TextStyle(color: context.appColors.mutedText),
+            ),
+            style: TextStyle(color: context.appColors.editorText),
+            onChanged: (value) => _setPref('pref_php_whitelist', value),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final body = switch (_selectedTab) {
+      'Appearance' => _buildAppearance(),
+      'Scripting' => _buildScripting(),
+      _ => _buildGeneral(),
+    };
+
+    return Padding(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ToggleButtons(
+              isSelected: _tabs.map((tab) => tab == _selectedTab).toList(),
+              onPressed: (index) => setState(() => _selectedTab = _tabs[index]),
+              borderRadius: BorderRadius.circular(6),
+              constraints: const BoxConstraints(minHeight: 34, minWidth: 112),
+              children: _tabs.map(Text.new).toList(),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Expanded(
+            child: SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: body,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PreferenceSection extends StatelessWidget {
+  const _PreferenceSection({required this.title, required this.children});
+
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: _toolSurfaceDecoration(context),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              color: context.appColors.editorText,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+class _PreferenceSelectRow extends StatelessWidget {
+  const _PreferenceSelectRow({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const SizedBox(width: 36),
+        SizedBox(
+          width: 110,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: context.appColors.editorText,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        child,
+      ],
+    );
+  }
+}
+
+class _ColorThemePicker extends StatelessWidget {
+  const _ColorThemePicker({
+    required this.selectedTheme,
+    required this.onChanged,
+  });
+
+  final String selectedTheme;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _PreferenceSelectRow(
+          label: 'Color theme',
+          child: SmallDropdown(
+            items: AppColors.colorThemeNames,
+            initialValue: selectedTheme,
+            width: 170,
+            onChanged: onChanged,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Padding(
+          padding: const EdgeInsets.only(left: 146),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final theme in AppColors.colorThemes)
+                _ColorThemeSwatchButton(
+                  theme: theme,
+                  selected: theme.name == selectedTheme,
+                  onTap: () => onChanged(theme.name),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.only(left: 146),
+          child: Text(
+            'Applies to accents, selection, hover states, and focused controls.',
+            style: TextStyle(color: appColors.mutedText, fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ColorThemeSwatchButton extends StatelessWidget {
+  const _ColorThemeSwatchButton({
+    required this.theme,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final AppColorThemeChoice theme;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: theme.name,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          width: 122,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            color: selected ? appColors.selected : appColors.panelElevated,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: selected ? appColors.accent : appColors.border,
+              width: selected ? 1.4 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              _ThemeDot(color: theme.darkAccent),
+              const SizedBox(width: 4),
+              _ThemeDot(color: theme.lightAccent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  theme.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: appColors.editorText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemeDot extends StatelessWidget {
+  const _ThemeDot({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 14,
+      height: 14,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: context.appColors.border),
+      ),
+    );
+  }
+}
+
+class _PreferenceReadonlyField extends StatelessWidget {
+  const _PreferenceReadonlyField({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(width: 110, child: Text(label)),
+        Expanded(
+          child: Container(
+            decoration: _toolSurfaceDecoration(context, radius: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Text(
+              value,
+              style: TextStyle(
+                color: context.appColors.editorText,
+                fontFamily: 'Menlo',
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -14791,11 +24675,7 @@ class _PreferencesScriptingViewState extends State<_PreferencesScriptingView> {
           const SizedBox(height: 8),
           Container(
             height: 100,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.black12),
-            ),
+            decoration: _toolSurfaceDecoration(context),
             padding: const EdgeInsets.all(8),
             child: TextField(
               controller: _whitelist,
@@ -14806,6 +24686,7 @@ class _PreferencesScriptingViewState extends State<_PreferencesScriptingView> {
                 hintText:
                     'serialize,var_export,json_encode,json_decode,unserialize',
               ),
+              style: TextStyle(color: context.appColors.editorText),
               onChanged: (value) => _setPref('pref_php_whitelist', value),
             ),
           ),
@@ -14866,6 +24747,7 @@ class _PrefTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final appColors = context.appColors;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Column(
@@ -14873,12 +24755,14 @@ class _PrefTab extends StatelessWidget {
           Icon(
             Icons.settings,
             size: 24,
-            color: selected ? Colors.blue : Colors.black54,
+            color: selected ? appColors.accent : appColors.mutedText,
           ),
           const SizedBox(height: 4),
           Text(
             label,
-            style: TextStyle(color: selected ? Colors.blue : Colors.black54),
+            style: TextStyle(
+              color: selected ? appColors.accent : appColors.mutedText,
+            ),
           ),
         ],
       ),
@@ -14901,14 +24785,11 @@ class _InlineTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final appColors = context.appColors;
     return SizedBox(
       width: width,
       child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.black12),
-        ),
+        decoration: _toolSurfaceDecoration(context, radius: 6),
         padding: const EdgeInsets.symmetric(horizontal: 8),
         child: TextField(
           controller: controller,
@@ -14917,7 +24798,9 @@ class _InlineTextField extends StatelessWidget {
             hintText: hintText,
             border: InputBorder.none,
             isDense: true,
+            hintStyle: TextStyle(color: appColors.mutedText),
           ),
+          style: TextStyle(color: appColors.editorText),
         ),
       ),
     );
@@ -14929,11 +24812,13 @@ class _HashField extends StatelessWidget {
     required this.label,
     required this.value,
     required this.onCopy,
+    this.onUse,
   });
 
   final String label;
   final String value;
   final VoidCallback onCopy;
+  final VoidCallback? onUse;
 
   @override
   Widget build(BuildContext context) {
@@ -14944,23 +24829,25 @@ class _HashField extends StatelessWidget {
           SizedBox(width: 80, child: Text('$label:')),
           Expanded(
             child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.black12),
-              ),
+              decoration: _toolSurfaceDecoration(context, radius: 6),
               child: Stack(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 6, 28, 6),
+                    padding: EdgeInsets.fromLTRB(
+                      8,
+                      6,
+                      onUse == null ? 46 : 104,
+                      6,
+                    ),
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Text(
                         value,
                         softWrap: false,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: 'Menlo',
                           fontSize: 11.5,
+                          color: context.appColors.editorText,
                         ),
                       ),
                     ),
@@ -14968,16 +24855,33 @@ class _HashField extends StatelessWidget {
                   Positioned(
                     top: 4,
                     right: 4,
-                    child: IconButton(
-                      onPressed: onCopy,
-                      icon: const Icon(Icons.copy_all, size: 16),
-                      tooltip: 'Copy',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 20,
-                        minHeight: 20,
-                      ),
-                      splashRadius: 14,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (onUse != null)
+                          TextButton(
+                            onPressed: value.isEmpty ? null : onUse,
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                              ),
+                              minimumSize: const Size(0, 22),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              textStyle: const TextStyle(fontSize: 10.5),
+                            ),
+                            child: const Text('Lookup'),
+                          ),
+                        TextButton(
+                          onPressed: value.isEmpty ? null : onCopy,
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 5),
+                            minimumSize: const Size(0, 22),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            textStyle: const TextStyle(fontSize: 10.5),
+                          ),
+                          child: const Text('Copy'),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -14990,59 +24894,44 @@ class _HashField extends StatelessWidget {
   }
 }
 
-class _BaseRow extends StatelessWidget {
-  const _BaseRow({
-    required this.label,
-    this.trailing,
-    this.actions = const ['Clipboard', 'Clear'],
-    this.controller,
+class _HashLookupTextField extends StatelessWidget {
+  const _HashLookupTextField({
+    super.key,
+    required this.controller,
+    required this.hint,
+    required this.minLines,
+    required this.maxLines,
     this.onChanged,
   });
 
-  final String label;
-  final Widget? trailing;
-  final List<String> actions;
-  final TextEditingController? controller;
+  final TextEditingController controller;
+  final String hint;
+  final int minLines;
+  final int maxLines;
   final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(width: 8),
-              if (trailing != null) trailing!,
-              const Spacer(),
-              for (final action in actions) ...[
-                ToolButton(
-                  label: action,
-                  onPressed: () async {
-                    if (controller == null) return;
-                    if (action == 'Clipboard') {
-                      final text = await _readClipboardText();
-                      controller!.text = text;
-                      onChanged?.call(text);
-                    } else if (action == 'Clear') {
-                      controller!.clear();
-                      onChanged?.call('');
-                    } else if (action == 'Sample') {
-                      controller!.text = '123';
-                      onChanged?.call('123');
-                    }
-                  },
-                ),
-                const SizedBox(width: 6),
-              ],
-            ],
-          ),
-          const SizedBox(height: 6),
-          _InlineTextField(controller: controller, onChanged: onChanged),
-        ],
+    final appColors = context.appColors;
+    return Container(
+      decoration: _toolSurfaceDecoration(context, radius: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      child: TextField(
+        controller: controller,
+        minLines: minLines,
+        maxLines: maxLines,
+        onChanged: onChanged,
+        decoration: InputDecoration(
+          hintText: hint,
+          border: InputBorder.none,
+          isDense: true,
+          hintStyle: TextStyle(color: appColors.mutedText),
+        ),
+        style: TextStyle(
+          color: appColors.editorText,
+          fontFamily: 'Menlo',
+          fontSize: 12.5,
+        ),
       ),
     );
   }

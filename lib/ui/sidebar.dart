@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../app.dart';
 import '../models/dev_tool.dart';
+import 'app_colors.dart';
 import 'widgets.dart';
 
 class Sidebar extends StatefulWidget {
@@ -11,6 +11,7 @@ class Sidebar extends StatefulWidget {
     required this.selectedToolId,
     required this.searchQuery,
     required this.favorites,
+    required this.width,
     required this.onSelect,
     required this.onSearch,
   });
@@ -19,6 +20,7 @@ class Sidebar extends StatefulWidget {
   final String selectedToolId;
   final String searchQuery;
   final Set<String> favorites;
+  final double width;
   final ValueChanged<String> onSelect;
   final ValueChanged<String> onSearch;
 
@@ -28,8 +30,9 @@ class Sidebar extends StatefulWidget {
 
 class _SidebarState extends State<Sidebar> {
   final ScrollController _scrollController = ScrollController();
-  late final TextEditingController _searchController =
-      TextEditingController(text: widget.searchQuery);
+  late final TextEditingController _searchController = TextEditingController(
+    text: widget.searchQuery,
+  );
 
   @override
   void didUpdateWidget(covariant Sidebar oldWidget) {
@@ -49,70 +52,101 @@ class _SidebarState extends State<Sidebar> {
 
   @override
   Widget build(BuildContext context) {
-    final appColors = Theme.of(context).extension<AppColors>();
+    final appColors = context.appColors;
+    final compact = widget.width < 150;
     final categories = <String, List<DevTool>>{};
     for (final tool in widget.tools) {
       categories.putIfAbsent(tool.category, () => []).add(tool);
     }
-    final favoriteTools = widget.tools.where((tool) => widget.favorites.contains(tool.id)).toList();
+    final favoriteTools = widget.tools
+        .where((tool) => widget.favorites.contains(tool.id))
+        .toList();
     return Container(
-      width: 250,
-      color: appColors?.sidebar ?? const Color(0xFFE4E4E4),
+      width: widget.width,
+      color: appColors.sidebar,
       child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              controller: _searchController,
-              onChanged: widget.onSearch,
-              decoration: InputDecoration(
-                hintText: 'Search...',
-                prefixIcon: const Icon(Icons.search, size: 18),
-                suffixIcon: widget.searchQuery.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear, size: 16),
-                        onPressed: () {
-                          _searchController.clear();
-                          widget.onSearch('');
-                        },
-                      ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+          if (compact)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Tooltip(
+                message: 'Expand sidebar to search',
+                child: Icon(Icons.search, size: 20, color: appColors.mutedText),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: TextField(
+                controller: _searchController,
+                onChanged: widget.onSearch,
+                decoration: InputDecoration(
+                  hintText: 'Search tools',
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  suffixIcon: widget.searchQuery.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear, size: 16),
+                          onPressed: () {
+                            _searchController.clear();
+                            widget.onSearch('');
+                          },
+                        ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  isDense: true,
                 ),
-                isDense: true,
               ),
             ),
-          ),
           const Divider(height: 1),
           Expanded(
             child: ListView(
               controller: _scrollController,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: EdgeInsets.symmetric(
+                horizontal: compact ? 6 : 8,
+                vertical: 4,
+              ),
               children: [
-                const SectionHeader(title: 'Favorites'),
-                if (favoriteTools.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 4),
-                    child: Text('No favorites yet.', style: TextStyle(color: Colors.black54)),
+                if (compact)
+                  ...widget.tools.map(
+                    (tool) => _SidebarItem(
+                      tool: tool,
+                      selected: tool.id == widget.selectedToolId,
+                      compact: true,
+                      onTap: () => widget.onSelect(tool.id),
+                    ),
                   )
-                else
-                  ...favoriteTools.map(
-                    (tool) => _SidebarItem(
-                      tool: tool,
-                      selected: tool.id == widget.selectedToolId,
-                      onTap: () => widget.onSelect(tool.id),
+                else ...[
+                  const SectionHeader(title: 'Favorites'),
+                  if (favoriteTools.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Text(
+                        'No favorites yet.',
+                        style: TextStyle(color: appColors.mutedText),
+                      ),
+                    )
+                  else
+                    ...favoriteTools.map(
+                      (tool) => _SidebarItem(
+                        tool: tool,
+                        selected: tool.id == widget.selectedToolId,
+                        compact: false,
+                        onTap: () => widget.onSelect(tool.id),
+                      ),
                     ),
-                  ),
-                for (final entry in categories.entries) ...[
-                  SectionHeader(title: entry.key),
-                  ...entry.value.map(
-                    (tool) => _SidebarItem(
-                      tool: tool,
-                      selected: tool.id == widget.selectedToolId,
-                      onTap: () => widget.onSelect(tool.id),
+                  for (final entry in categories.entries) ...[
+                    SectionHeader(title: entry.key),
+                    ...entry.value.map(
+                      (tool) => _SidebarItem(
+                        tool: tool,
+                        selected: tool.id == widget.selectedToolId,
+                        compact: false,
+                        onTap: () => widget.onSelect(tool.id),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ],
             ),
@@ -127,50 +161,97 @@ class _SidebarItem extends StatelessWidget {
   const _SidebarItem({
     required this.tool,
     required this.selected,
+    required this.compact,
     required this.onTap,
   });
 
   final DevTool tool;
   final bool selected;
+  final bool compact;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final highlight = selected ? const Color(0xFFD8E3EA) : Colors.transparent;
+    final appColors = context.appColors;
+    final highlight = selected ? appColors.selected : Colors.transparent;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 0.5),
-      child: Material(
-        color: highlight,
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
-          hoverColor: const Color(0xFFE2EBF0),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Row(
-              children: [
-                Icon(tool.icon, size: 18),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    tool.name,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    ),
-                  ),
-                ),
-                if (selected)
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF3E5B6A),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-              ],
+      padding: EdgeInsets.symmetric(vertical: compact ? 2 : 0.5),
+      child: Tooltip(
+        message: compact ? tool.name : '',
+        waitDuration: const Duration(milliseconds: 350),
+        child: Semantics(
+          label: tool.name,
+          button: true,
+          selected: selected,
+          child: Material(
+            color: highlight,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(8),
+              hoverColor: appColors.hover,
+              child: Container(
+                height: compact ? 38 : null,
+                padding: compact
+                    ? const EdgeInsets.symmetric(horizontal: 6, vertical: 6)
+                    : const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: compact
+                    ? Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Icon(
+                            tool.icon,
+                            size: 20,
+                            color: selected
+                                ? appColors.accent
+                                : appColors.editorText,
+                          ),
+                          if (selected)
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: Container(
+                                width: 3,
+                                height: 18,
+                                decoration: BoxDecoration(
+                                  color: appColors.accent,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
+                        ],
+                      )
+                    : Row(
+                        children: [
+                          Icon(
+                            tool.icon,
+                            size: 18,
+                            color: appColors.editorText,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              tool.name,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                color: appColors.editorText,
+                                fontWeight: selected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          if (selected)
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color: appColors.accent,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                        ],
+                      ),
+              ),
             ),
           ),
         ),

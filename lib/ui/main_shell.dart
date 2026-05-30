@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../models/dev_tool.dart';
 import '../registry/tool_registry.dart';
 import '../state/tool_state.dart';
+import 'app_colors.dart';
 import 'sidebar.dart';
+import 'workspace.dart';
 
 class MainShell extends StatelessWidget {
   const MainShell({super.key, required this.state});
@@ -12,79 +13,63 @@ class MainShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final appColors = context.appColors;
     return ValueListenableBuilder<String>(
       valueListenable: state.searchQuery,
       builder: (context, query, _) {
-        final tools = ToolRegistry.tools;
-        final filtered = tools
+        final filtered = ToolRegistry.tools
             .where(
               (tool) => tool.name.toLowerCase().contains(query.toLowerCase()),
             )
             .toList();
 
-        return ValueListenableBuilder<String>(
-          valueListenable: state.selectedToolId,
-          builder: (context, selectedId, _) {
-            return ValueListenableBuilder<Set<String>>(
-              valueListenable: state.favorites,
-              builder: (context, favorites, _) {
-                DevTool? selectedTool;
-                for (final tool in filtered) {
-                  if (tool.id == selectedId) {
-                    selectedTool = tool;
-                    break;
-                  }
-                }
-                if (selectedTool == null && filtered.isNotEmpty) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    state.selectedToolId.value = filtered.first.id;
-                  });
-                  selectedTool = filtered.first;
-                }
+        return ValueListenableBuilder<Set<String>>(
+          valueListenable: state.favorites,
+          builder: (context, favorites, _) {
+            return ValueListenableBuilder<String?>(
+              valueListenable: state.workspace.focusedPanelId,
+              builder: (context, focusedPanelId, _) {
+                final focusedPanel = focusedPanelId == null
+                    ? null
+                    : state.workspace.panelById(focusedPanelId);
+                final selectedToolId =
+                    focusedPanel?.toolId ?? state.selectedToolId.value;
 
-                return Scaffold(
-                  body: Row(
-                    children: [
-                      Sidebar(
-                        tools: filtered,
-                        selectedToolId: selectedTool?.id ?? '',
-                        searchQuery: query,
-                        favorites: favorites,
-                        onSelect: (id) => state.selectedToolId.value = id,
-                        onSearch: (value) => state.searchQuery.value = value,
+                return ValueListenableBuilder<double>(
+                  valueListenable: state.sidebarWidth,
+                  builder: (context, sidebarWidth, _) {
+                    return Scaffold(
+                      body: Row(
+                        children: [
+                          Sidebar(
+                            width: sidebarWidth,
+                            tools: filtered,
+                            selectedToolId: selectedToolId,
+                            searchQuery: query,
+                            favorites: favorites,
+                            onSelect: (id) {
+                              state.selectedToolId.value = id;
+                              state.workspace.openTool(id);
+                            },
+                            onSearch: (value) =>
+                                state.searchQuery.value = value,
+                          ),
+                          _SidebarResizeHandle(
+                            key: const ValueKey('sidebar-resize-handle'),
+                            color: appColors.border,
+                            hoverColor: appColors.accent,
+                            onDrag: (delta) {
+                              state.sidebarWidth.value =
+                                  (state.sidebarWidth.value + delta.dx)
+                                      .clamp(64, 420)
+                                      .toDouble();
+                            },
+                          ),
+                          Expanded(child: WorkspaceView(state: state)),
+                        ],
                       ),
-                      const VerticalDivider(width: 1, color: Color(0xFFCCCCCC)),
-                      Expanded(
-                        child: Column(
-                          children: [
-                            _ToolHeader(
-                              tool: selectedTool,
-                              isFavorite:
-                                  selectedTool != null &&
-                                  favorites.contains(selectedTool.id),
-                              onToggleFavorite: selectedTool == null
-                                  ? null
-                                  : () =>
-                                        state.toggleFavorite(selectedTool!.id),
-                            ),
-                            const Divider(height: 1),
-                            Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: selectedTool == null
-                                    ? const Center(
-                                        child: Text(
-                                          'No tools match your search.',
-                                        ),
-                                      )
-                                    : selectedTool.builder(context),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                    );
+                  },
                 );
               },
             );
@@ -95,60 +80,43 @@ class MainShell extends StatelessWidget {
   }
 }
 
-class _ToolHeader extends StatelessWidget {
-  const _ToolHeader({
-    required this.tool,
-    required this.isFavorite,
-    required this.onToggleFavorite,
+class _SidebarResizeHandle extends StatefulWidget {
+  const _SidebarResizeHandle({
+    super.key,
+    required this.color,
+    required this.hoverColor,
+    required this.onDrag,
   });
 
-  final DevTool? tool;
-  final bool isFavorite;
-  final VoidCallback? onToggleFavorite;
+  final Color color;
+  final Color hoverColor;
+  final ValueChanged<Offset> onDrag;
+
+  @override
+  State<_SidebarResizeHandle> createState() => _SidebarResizeHandleState();
+}
+
+class _SidebarResizeHandleState extends State<_SidebarResizeHandle> {
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
-    if (tool == null) {
-      return const SizedBox(height: 56);
-    }
-
-    return Container(
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      color: Colors.white,
-      child: Row(
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE9EEF2),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Icon(tool!.icon, size: 16, color: const Color(0xFF3E5B6A)),
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanUpdate: (details) => widget.onDrag(details.delta),
+        child: Container(
+          width: 7,
+          color: Colors.transparent,
+          alignment: Alignment.center,
+          child: Container(
+            width: _hovered ? 2 : 1,
+            color: _hovered ? widget.hoverColor : widget.color,
           ),
-          const SizedBox(width: 10),
-          Text(tool!.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-          const SizedBox(width: 6),
-          IconButton(
-            icon: Icon(isFavorite ? Icons.star : Icons.star_border),
-            onPressed: onToggleFavorite,
-            tooltip: isFavorite ? 'Remove from favorites' : 'Add to favorites',
-            visualDensity: VisualDensity.compact,
-            splashRadius: 16,
-          ),
-          const Spacer(),
-          if (tool!.showDemo)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE9EEF2),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFFC7D4DD)),
-              ),
-              child: const Text('Demo', style: TextStyle(fontSize: 12)),
-            ),
-        ],
+        ),
       ),
     );
   }
