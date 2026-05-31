@@ -93,7 +93,10 @@ class _WorkspaceViewState extends State<WorkspaceView> {
                               _jsonCompareMode,
                             );
                       _syncJsonScrollIfNeeded(jsonPair);
-                      return _WorkspaceCanvas(
+                      final minimizedPanels = panels
+                          .where((panel) => panel.isMinimized)
+                          .toList();
+                      final canvas = _WorkspaceCanvas(
                         panels: panels,
                         focusedPanelId: focusedPanelId,
                         jsonPair: jsonPair,
@@ -112,6 +115,19 @@ class _WorkspaceViewState extends State<WorkspaceView> {
                         },
                         onBuildTool: _buildToolContent,
                         workspace: _workspace,
+                      );
+                      return Column(
+                        children: [
+                          Expanded(child: canvas),
+                          if (minimizedPanels.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                              child: _MinimizedDock(
+                                panels: minimizedPanels,
+                                onRestore: _workspace.restorePanel,
+                              ),
+                            ),
+                        ],
                       );
                     },
                   );
@@ -477,7 +493,6 @@ class _WorkspaceCanvas extends StatelessWidget {
         final visible = panels.where((panel) => !panel.isMinimized).toList()
           ..sort((a, b) => a.zIndex.compareTo(b.zIndex));
         final displayed = _displayedWorkspacePanels(panels, focusedPanelId);
-        final minimized = panels.where((panel) => panel.isMinimized).toList();
         return Container(
           color: appColors.canvas,
           child: Stack(
@@ -539,16 +554,6 @@ class _WorkspaceCanvas extends StatelessWidget {
                   ),
                   onSelectDockTab: workspace.focusPanel,
                   child: onBuildTool(context, panel, _compareForPanel(panel)),
-                ),
-              if (minimized.isNotEmpty)
-                Positioned(
-                  left: 12,
-                  right: 12,
-                  bottom: 12,
-                  child: _MinimizedDock(
-                    panels: minimized,
-                    onRestore: workspace.restorePanel,
-                  ),
                 ),
             ],
           ),

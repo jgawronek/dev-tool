@@ -97,6 +97,13 @@ class ToolRegistry {
       category: 'Network',
     ),
     DevTool(
+      id: 'local_server',
+      name: 'Local Server',
+      icon: Icons.dns,
+      builder: (_) => buildLocalServer(),
+      category: 'Network',
+    ),
+    DevTool(
       id: 'firewall_fingerprint',
       name: 'Firewall Fingerprint',
       icon: Icons.shield,
@@ -168,30 +175,16 @@ class ToolRegistry {
     ),
     DevTool(
       id: 'js_beautify_minify',
-      name: 'JS Beautify/Minify',
+      name: 'JS/TS Beautify/Minify',
       icon: Icons.format_align_left,
       builder: (_) => buildHtmlBeautifyMinify('JS'),
       category: 'Formatters',
     ),
     DevTool(
-      id: 'erb_beautify_minify',
-      name: 'ERB Beautify/Minify',
+      id: 'rb_beautify_minify',
+      name: 'RB Beautify/Minify',
       icon: Icons.format_align_left,
-      builder: (_) => buildHtmlBeautifyMinify('ERB'),
-      category: 'Formatters',
-    ),
-    DevTool(
-      id: 'less_beautify_minify',
-      name: 'LESS Beautify/Minify',
-      icon: Icons.format_align_left,
-      builder: (_) => buildHtmlBeautifyMinify('LESS'),
-      category: 'Formatters',
-    ),
-    DevTool(
-      id: 'scss_beautify_minify',
-      name: 'SCSS Beautify/Minify',
-      icon: Icons.format_align_left,
-      builder: (_) => buildHtmlBeautifyMinify('SCSS'),
+      builder: (_) => buildHtmlBeautifyMinify('RB'),
       category: 'Formatters',
     ),
     DevTool(
@@ -300,13 +293,6 @@ class ToolRegistry {
       category: 'Formatters',
     ),
     DevTool(
-      id: 'string_case_converter',
-      name: 'String Case Converter',
-      icon: Icons.text_snippet,
-      builder: (_) => buildStringCaseConverter(),
-      category: 'Text',
-    ),
-    DevTool(
       id: 'cron_job_parser',
       name: 'Cron Job Parser',
       icon: Icons.schedule,
@@ -321,10 +307,10 @@ class ToolRegistry {
       category: 'Converters',
     ),
     DevTool(
-      id: 'php_json_converter',
-      name: 'PHP ↔ JSON',
+      id: 'php_to_js',
+      name: 'PHP to JS',
       icon: Icons.code,
-      builder: (_) => buildPhpJsonConverter(),
+      builder: (_) => buildPhpToJs(),
       category: 'Converters',
     ),
     DevTool(

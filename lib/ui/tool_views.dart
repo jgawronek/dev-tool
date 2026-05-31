@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
@@ -35,6 +36,7 @@ import 'package:pointycastle/stream/rc4_engine.dart';
 import 'package:pointycastle/block/desede_engine.dart';
 import 'package:pointycastle/block/rc2_engine.dart';
 import 'package:pointycastle/api.dart' as pc;
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:yaml/yaml.dart';
@@ -43,9 +45,12 @@ import '../data/mime_types.dart';
 import '../services/file_dialog_service.dart';
 import '../services/firewall_fingerprint_service.dart';
 import '../services/hash_lookup_service.dart';
+import '../services/app_appearance_service.dart';
 import '../services/local_llm_service.dart';
+import '../services/local_server_service.dart';
 import '../services/network_scanner_service.dart';
 import '../services/payload_embedding_service.dart';
+import '../services/php_to_js_service.dart';
 import '../services/port_scanner_service.dart';
 import '../services/subdomain_lookup_service.dart';
 import '../services/subdomain_takeover_service.dart';
@@ -74,9 +79,13 @@ Widget buildSplitEditors({
   bool showOutputHeader = false,
   Widget? inputOverlay,
   Widget? outputOverlay,
+  String? inputDropTargetId,
+  FileDropHandler? onInputDropped,
 }) {
   final liveInputChanged = onInputChanged ?? _goActionChanged(inputActions);
-  final input = EditorPane(
+  final wrapsOwnDropTarget =
+      inputDropTargetId != null && onInputDropped != null;
+  Widget input = EditorPane(
     label: inputLabel,
     actions: inputActions,
     placeholder: inputPlaceholder,
@@ -87,7 +96,17 @@ Widget buildSplitEditors({
     markedLines: inputMarkedLines,
     showHeader: showInputHeader,
     overlay: inputOverlay,
+    // The built-in EditorPane drop would double-register with the explicit
+    // wrapper below, so disable it when this helper owns the drop target.
+    enableFileDrop: !wrapsOwnDropTarget,
   );
+  if (inputDropTargetId != null && onInputDropped != null) {
+    input = _FileDropTargetRegion(
+      targetId: inputDropTargetId,
+      onDropped: onInputDropped,
+      child: input,
+    );
+  }
   final output = EditorPane(
     label: outputLabel,
     actions: outputActions,
@@ -363,32 +382,39 @@ class JsonToolSession {
   );
 
   String indent = '2 spaces';
+  int _formatToken = 0;
 
   String get inputText => input.text;
   String get outputText => output.text;
 
-  void format() {
+  Future<void> format() async {
     final text = input.text.trim();
     if (text.isEmpty) {
       output.text = '';
       status.value = JsonToolStatus.empty;
       return;
     }
+    final token = ++_formatToken;
+    final indentString = _indentFor(indent);
+    JsonFormatOutcome outcome;
     try {
-      final validation = _validateJson(text, strict: true);
-      if (!validation.isValid) {
-        output.text = '';
-        status.value = JsonToolStatus(
-          error: validation.error?.description ?? 'Invalid JSON',
-        );
-        return;
+      // Large documents are decoded + re-encoded off the UI thread so the
+      // app stays responsive (a 26MB file would otherwise block for seconds).
+      if (text.length > 200000) {
+        outcome = await compute(_formatJsonWorker, (text, indentString));
+      } else {
+        outcome = _formatJsonSync(text, indentString);
       }
-      final decoded = jsonDecode(text);
-      final encoder = JsonEncoder.withIndent(_indentFor(indent));
-      output.text = encoder.convert(decoded);
-      status.value = JsonToolStatus(summary: validation.info?.summary);
     } catch (e) {
-      status.value = JsonToolStatus(error: e.toString());
+      outcome = JsonFormatOutcome(error: e.toString());
+    }
+    if (token != _formatToken) return; // a newer format() superseded this one
+    if (outcome.error != null) {
+      output.text = '';
+      status.value = JsonToolStatus(error: outcome.error);
+    } else {
+      output.text = outcome.output ?? '';
+      status.value = JsonToolStatus(summary: outcome.summary);
     }
   }
 
@@ -416,6 +442,37 @@ class JsonToolSession {
     inputScroll.dispose();
     outputScroll.dispose();
     status.dispose();
+  }
+}
+
+class JsonFormatOutcome {
+  const JsonFormatOutcome({this.output, this.summary, this.error});
+  final String? output;
+  final String? summary;
+  final String? error;
+}
+
+// Top-level so it can run inside an isolate via `compute`.
+JsonFormatOutcome _formatJsonWorker((String, String) args) {
+  return _formatJsonSync(args.$1, args.$2);
+}
+
+JsonFormatOutcome _formatJsonSync(String text, String indentString) {
+  // jsonDecode is the source of truth for validity: it rejects real comments
+  // and trailing commas with a precise offset, and (unlike a naive `//` scan)
+  // correctly accepts `//` inside string values such as https:// URLs.
+  try {
+    final decoded = jsonDecode(text);
+    final output = JsonEncoder.withIndent(indentString).convert(decoded);
+    final info = _analyzeJson(decoded, text.length);
+    return JsonFormatOutcome(output: output, summary: info.summary);
+  } on FormatException catch (e) {
+    final position = _positionFromIndex(e.offset ?? 0, text);
+    return JsonFormatOutcome(
+      error: 'Line ${position.line}, column ${position.column}: ${e.message}',
+    );
+  } catch (_) {
+    return const JsonFormatOutcome(error: 'Invalid JSON');
   }
 }
 
@@ -512,6 +569,8 @@ class _JsonFormatValidateViewState extends State<_JsonFormatValidateView> {
   late JsonToolSession _session;
   late bool _ownsSession;
   double _inputRatio = 0.5;
+  bool _wrap = false;
+  Timer? _debounce;
 
   @override
   void initState() {
@@ -532,6 +591,7 @@ class _JsonFormatValidateViewState extends State<_JsonFormatValidateView> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     if (_ownsSession) _session.dispose();
     super.dispose();
   }
@@ -544,7 +604,8 @@ class _JsonFormatValidateViewState extends State<_JsonFormatValidateView> {
   }
 
   void _formatLive(String _) {
-    _session.format();
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 200), _session.format);
   }
 
   void _setExample() {
@@ -567,6 +628,8 @@ class _JsonFormatValidateViewState extends State<_JsonFormatValidateView> {
           _JsonCompareStrip(compare: compare),
           const SizedBox(height: 8),
         ],
+        _JsonStatsHeader(statusListenable: _session.status),
+        const SizedBox(height: 8),
         Expanded(
           child: _JsonSplitEditors(
             inputController: _session.input,
@@ -578,6 +641,8 @@ class _JsonFormatValidateViewState extends State<_JsonFormatValidateView> {
             onInputRatioChanged: (value) => setState(() => _inputRatio = value),
             onInputChanged: _formatLive,
             horizontal: true,
+            inputSoftWrap: _wrap,
+            outputSoftWrap: _wrap,
             inputActions: [
               ToolButton(label: 'Sample', onPressed: _setExample),
               ToolButton(label: 'Clear', onPressed: _clearSource),
@@ -586,9 +651,10 @@ class _JsonFormatValidateViewState extends State<_JsonFormatValidateView> {
             showInputHeader: false,
             showOutputHeader: false,
             outputOverlay: _JsonFormatOutputOverlay(
-              statusListenable: _session.status,
               indent: _session.indent,
+              wrap: _wrap,
               onIndentChanged: _setIndent,
+              onWrapChanged: (value) => setState(() => _wrap = value),
             ),
           ),
         ),
@@ -599,21 +665,27 @@ class _JsonFormatValidateViewState extends State<_JsonFormatValidateView> {
 
 class _JsonFormatOutputOverlay extends StatelessWidget {
   const _JsonFormatOutputOverlay({
-    required this.statusListenable,
     required this.indent,
+    required this.wrap,
     required this.onIndentChanged,
+    required this.onWrapChanged,
   });
 
-  final ValueListenable<JsonToolStatus> statusListenable;
   final String indent;
+  final bool wrap;
   final ValueChanged<String> onIndentChanged;
+  final ValueChanged<bool> onWrapChanged;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Flexible(child: _JsonStatusPill(statusListenable: statusListenable)),
+        SmallDropdown(
+          items: const ['No wrap', 'Wrap'],
+          initialValue: wrap ? 'Wrap' : 'No wrap',
+          onChanged: (value) => onWrapChanged(value == 'Wrap'),
+        ),
         const SizedBox(width: 8),
         SmallDropdown(
           items: const ['2 spaces', '4 spaces', 'Tabs'],
@@ -621,6 +693,65 @@ class _JsonFormatOutputOverlay extends StatelessWidget {
           onChanged: onIndentChanged,
         ),
       ],
+    );
+  }
+}
+
+/// Compact stats header shown at the top of the JSON Format/Validate tool:
+/// root type, item/key count, size, and depth — or the validation error.
+class _JsonStatsHeader extends StatelessWidget {
+  const _JsonStatsHeader({required this.statusListenable});
+
+  final ValueListenable<JsonToolStatus> statusListenable;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return ValueListenableBuilder<JsonToolStatus>(
+      valueListenable: statusListenable,
+      builder: (context, status, _) {
+        final IconData icon;
+        final Color color;
+        final String text;
+        if (status.error != null) {
+          icon = Icons.error_outline;
+          color = appColors.error;
+          text = status.error!;
+        } else if (status.summary != null) {
+          icon = Icons.check_circle_outline;
+          color = appColors.success;
+          text = status.summary!;
+        } else {
+          icon = Icons.data_object;
+          color = appColors.mutedText;
+          text = 'Paste or drop JSON to validate and format.';
+        }
+        return Container(
+          width: double.infinity,
+          decoration: _toolSurfaceDecoration(context),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: status.error != null
+                        ? appColors.error
+                        : appColors.editorText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -644,6 +775,8 @@ class _JsonSplitEditors extends StatelessWidget {
     this.inputOverlay,
     this.outputOverlay,
     this.horizontal = false,
+    this.outputSoftWrap = true,
+    this.inputSoftWrap = true,
   });
 
   final TextEditingController inputController;
@@ -663,6 +796,8 @@ class _JsonSplitEditors extends StatelessWidget {
   final Widget? inputOverlay;
   final Widget? outputOverlay;
   final bool horizontal;
+  final bool outputSoftWrap;
+  final bool inputSoftWrap;
 
   @override
   Widget build(BuildContext context) {
@@ -693,6 +828,7 @@ class _JsonSplitEditors extends StatelessWidget {
                   markedLines: inputMarkedLines,
                   showHeader: showInputHeader,
                   overlay: inputOverlay,
+                  softWrap: inputSoftWrap,
                 ),
               ),
               _EditorSplitter(
@@ -715,6 +851,7 @@ class _JsonSplitEditors extends StatelessWidget {
                   scrollController: outputScrollController,
                   showHeader: showOutputHeader,
                   overlay: outputOverlay,
+                  softWrap: outputSoftWrap,
                 ),
               ),
             ],
@@ -744,6 +881,7 @@ class _JsonSplitEditors extends StatelessWidget {
                 markedLines: inputMarkedLines,
                 showHeader: showInputHeader,
                 overlay: inputOverlay,
+                softWrap: inputSoftWrap,
               ),
             ),
             _JsonEditorSplitter(
@@ -765,6 +903,7 @@ class _JsonSplitEditors extends StatelessWidget {
                 scrollController: outputScrollController,
                 showHeader: showOutputHeader,
                 overlay: outputOverlay,
+                softWrap: outputSoftWrap,
               ),
             ),
           ],
@@ -886,16 +1025,38 @@ class _JsonValidationInfo {
   final int size;
 
   String get summary {
+    final count = elementCount != null
+        ? '${_thousandsSep(elementCount!)} ${elementCount == 1 ? 'item' : 'items'}'
+        : keyCount != null
+        ? '${_thousandsSep(keyCount!)} ${keyCount == 1 ? 'key' : 'keys'}'
+        : null;
     final parts = <String>[
-      'Valid JSON',
-      'root: $rootType',
-      if (keyCount != null) 'keys: $keyCount',
-      if (elementCount != null) 'elements: $elementCount',
-      'depth: $depth',
-      '$size bytes',
+      rootType,
+      if (count != null) count,
+      _humanJsonSize(size),
+      'depth $depth',
     ];
-    return parts.join(' • ');
+    return parts.join('  ·  ');
   }
+}
+
+String _humanJsonSize(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  if (bytes < 1024 * 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+  return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+}
+
+String _thousandsSep(int value) {
+  final digits = value.toString();
+  final buffer = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(',');
+    buffer.write(digits[i]);
+  }
+  return buffer.toString();
 }
 
 class _JsonValidationError {
@@ -920,6 +1081,7 @@ class _JsonValidationError {
   }
 }
 
+// ignore: unused_element
 _JsonValidationResult _validateJson(String json, {bool strict = false}) {
   final trimmed = json.trim();
   if (trimmed.isEmpty) {
@@ -1875,12 +2037,10 @@ class _SimplePassThroughView extends StatefulWidget {
   const _SimplePassThroughView({
     required this.inputPlaceholder,
     this.showIndent = false,
-    this.showIncludeComments = false,
   });
 
   final String inputPlaceholder;
   final bool showIndent;
-  final bool showIncludeComments;
 
   @override
   State<_SimplePassThroughView> createState() => _SimplePassThroughViewState();
@@ -1921,14 +2081,6 @@ class _SimplePassThroughViewState extends State<_SimplePassThroughView> {
   @override
   Widget build(BuildContext context) {
     final outputActions = <Widget>[];
-    if (widget.showIncludeComments) {
-      outputActions.add(
-        const SmallDropdown(
-          items: ['Include Comments', 'Exclude Comments'],
-          initialValue: 'Include Comments',
-        ),
-      );
-    }
     if (widget.showIndent) {
       outputActions.add(
         SmallDropdown(
@@ -1972,11 +2124,22 @@ class _StyleBeautifyMinifyView extends StatefulWidget {
 class _StyleBeautifyMinifyViewState extends State<_StyleBeautifyMinifyView> {
   final TextEditingController _input = TextEditingController();
   final TextEditingController _output = TextEditingController();
+  late final String _dropTargetScope = identityHashCode(this).toRadixString(16);
   String _format = 'Beautify';
   String _indent = '2 spaces';
+  String? _sourceFileName;
+  String? _error;
+
+  String get _dropTargetId => 'style-source-file-$_dropTargetScope';
+
+  List<String> get _acceptedExtensions {
+    final ext = widget.language.toLowerCase();
+    return [ext, 'txt'];
+  }
 
   @override
   void dispose() {
+    FileDropService.unregisterTarget(_dropTargetId);
     _input.dispose();
     _output.dispose();
     super.dispose();
@@ -1990,16 +2153,50 @@ class _StyleBeautifyMinifyViewState extends State<_StyleBeautifyMinifyView> {
     setState(() {});
   }
 
+  Future<void> _pickFile() async {
+    final path = await FileDialogService.openFile(
+      allowedExtensions: _acceptedExtensions,
+    );
+    if (path == null || !mounted) return;
+    await _loadFile(path);
+  }
+
+  Future<void> _loadFile(String path) async {
+    try {
+      final file = File(path);
+      if (!await file.exists()) {
+        throw FileSystemException('${widget.language} file does not exist');
+      }
+      final text = await file.readAsString();
+      if (!mounted) return;
+      setState(() {
+        _sourceFileName = p.basename(path);
+        _error = null;
+        _input.text = text;
+      });
+      _run();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = _friendlyFileReadError(error));
+    }
+  }
+
   void _setSample() {
     const sample =
         'body{margin:25px;background-color:rgb(240,240,240);font-size:14px;}'
         'h1{font-size:35px;font-weight:normal;margin-top:5px;}';
-    setState(() => _input.text = sample);
+    setState(() {
+      _sourceFileName = null;
+      _error = null;
+      _input.text = sample;
+    });
     _run();
   }
 
   void _clearInput() {
     setState(() {
+      _sourceFileName = null;
+      _error = null;
       _input.clear();
       _output.clear();
     });
@@ -2022,20 +2219,43 @@ class _StyleBeautifyMinifyViewState extends State<_StyleBeautifyMinifyView> {
       },
     );
 
-    return buildSplitEditors(
-      inputPlaceholder: 'Paste ${widget.language} here...',
+    final editors = buildSplitEditors(
+      inputPlaceholder: 'Drop a .${widget.language.toLowerCase()} file here '
+          'or paste ${widget.language}...',
       outputPlaceholder: 'Output...',
       inputController: _input,
       outputController: _output,
-      onInputChanged: (_) => _run(),
+      onInputChanged: (_) {
+        _sourceFileName = null;
+        _run();
+      },
       inputActions: [
         ToolButton(label: 'Sample', onPressed: _setSample),
         ToolButton(label: 'Clear', onPressed: _clearInput),
       ],
       outputActions: const [],
+      inputOverlay: _SourceFileControls(
+        onPickFile: _pickFile,
+        fileName: _sourceFileName,
+        tooltip: 'Choose ${widget.language} file',
+      ),
       outputOverlay: controls,
       showInputHeader: false,
       showOutputHeader: false,
+      inputDropTargetId: _dropTargetId,
+      onInputDropped: (paths) {
+        if (paths.isNotEmpty) unawaited(_loadFile(paths.first));
+      },
+    );
+
+    if (_error == null) return editors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(_error!, style: _errorToolTextStyle(context)),
+        const SizedBox(height: 8),
+        Expanded(child: editors),
+      ],
     );
   }
 }
@@ -2415,6 +2635,7 @@ class _JsToTsConverterViewState extends State<_JsToTsConverterView> {
   final TextEditingController _input = TextEditingController();
   final TextEditingController _output = TextEditingController();
 
+  bool _tsToJs = false;
   bool _addClassFields = true;
   bool _useJsDoc = true;
   bool _rewriteCommonJs = true;
@@ -2435,13 +2656,15 @@ class _JsToTsConverterViewState extends State<_JsToTsConverterView> {
 
   void _convert() {
     try {
-      final result = _convertJavaScriptToTypeScript(
-        _input.text,
-        addClassFields: _addClassFields,
-        useJsDoc: _useJsDoc,
-        rewriteCommonJs: _rewriteCommonJs,
-        addAnyFallbacks: _addAnyFallbacks,
-      );
+      final result = _tsToJs
+          ? _convertTypeScriptToJavaScript(_input.text)
+          : _convertJavaScriptToTypeScript(
+              _input.text,
+              addClassFields: _addClassFields,
+              useJsDoc: _useJsDoc,
+              rewriteCommonJs: _rewriteCommonJs,
+              addAnyFallbacks: _addAnyFallbacks,
+            );
       setState(() {
         _error = null;
         _lastResult = result;
@@ -2456,9 +2679,21 @@ class _JsToTsConverterViewState extends State<_JsToTsConverterView> {
     }
   }
 
+  void _setDirection(bool tsToJs) {
+    if (tsToJs == _tsToJs) return;
+    setState(() {
+      _tsToJs = tsToJs;
+      _sourceFileName = null;
+      _error = null;
+    });
+    _convert();
+  }
+
   Future<void> _pickSourceFile() async {
     final path = await FileDialogService.openFile(
-      allowedExtensions: const ['js', 'jsx', 'mjs', 'cjs'],
+      allowedExtensions: _tsToJs
+          ? const ['ts', 'tsx', 'mts', 'cts']
+          : const ['js', 'jsx', 'mjs', 'cjs'],
     );
     if (path == null || !mounted) return;
     await _loadSourceFile(path);
@@ -2485,7 +2720,35 @@ class _JsToTsConverterViewState extends State<_JsToTsConverterView> {
   }
 
   void _setExample() {
-    _input.text = '''
+    _input.text = _tsToJs
+        ? '''
+import type { Request, Response } from 'express';
+
+interface User {
+  name: string;
+  createdAt: Date;
+}
+
+enum Role {
+  Admin,
+  Member,
+}
+
+function greet(name: string, count: number = 1): string {
+  return name.repeat(count);
+}
+
+class UserCard {
+  private name: string;
+  readonly createdAt: Date = new Date();
+
+  constructor(name: string) {
+    this.name = name;
+  }
+}
+
+const role = Role.Admin as Role;'''
+        : '''
 const express = require('express');
 
 /**
@@ -2527,7 +2790,9 @@ module.exports = { greet, UserCard };''';
   @override
   Widget build(BuildContext context) {
     final summary = _lastResult.notes.isEmpty
-        ? 'Paste JavaScript to generate TypeScript migration output.'
+        ? (_tsToJs
+              ? 'Paste TypeScript to strip types into plain JavaScript.'
+              : 'Paste JavaScript to generate TypeScript migration output.')
         : _lastResult.notes.join('  •  ');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2539,8 +2804,12 @@ module.exports = { greet, UserCard };''';
         Expanded(
           child: buildSplitEditors(
             horizontal: true,
-            inputPlaceholder: 'Choose a .js/.jsx file or paste JavaScript...',
-            outputPlaceholder: 'TypeScript output...',
+            inputPlaceholder: _tsToJs
+                ? 'Choose a .ts/.tsx file or paste TypeScript...'
+                : 'Choose a .js/.jsx file or paste JavaScript...',
+            outputPlaceholder: _tsToJs
+                ? 'JavaScript output...'
+                : 'TypeScript output...',
             inputController: _input,
             outputController: _output,
             onInputChanged: (_) {
@@ -2554,37 +2823,133 @@ module.exports = { greet, UserCard };''';
             outputActions: const [],
             showInputHeader: false,
             showOutputHeader: false,
-            inputOverlay: _SourceFileControls(
-              onPickFile: _pickSourceFile,
-              fileName: _sourceFileName,
-              tooltip: 'Choose JavaScript file',
+            inputOverlay: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _JsToTsDirectionToggle(
+                  tsToJs: _tsToJs,
+                  onChanged: _setDirection,
+                ),
+                const SizedBox(width: 6),
+                _SourceFileControls(
+                  onPickFile: _pickSourceFile,
+                  fileName: _sourceFileName,
+                  tooltip: _tsToJs
+                      ? 'Choose TypeScript file'
+                      : 'Choose JavaScript file',
+                ),
+              ],
             ),
-            outputOverlay: _JsToTsOptionsOverlay(
-              addClassFields: _addClassFields,
-              useJsDoc: _useJsDoc,
-              rewriteCommonJs: _rewriteCommonJs,
-              addAnyFallbacks: _addAnyFallbacks,
-              onChanged:
-                  ({
-                    bool? addClassFields,
-                    bool? useJsDoc,
-                    bool? rewriteCommonJs,
-                    bool? addAnyFallbacks,
-                  }) {
-                    setState(() {
-                      _addClassFields = addClassFields ?? _addClassFields;
-                      _useJsDoc = useJsDoc ?? _useJsDoc;
-                      _rewriteCommonJs = rewriteCommonJs ?? _rewriteCommonJs;
-                      _addAnyFallbacks = addAnyFallbacks ?? _addAnyFallbacks;
-                    });
-                    _convert();
-                  },
-            ),
+            outputOverlay: _tsToJs
+                ? null
+                : _JsToTsOptionsOverlay(
+                    addClassFields: _addClassFields,
+                    useJsDoc: _useJsDoc,
+                    rewriteCommonJs: _rewriteCommonJs,
+                    addAnyFallbacks: _addAnyFallbacks,
+                    onChanged:
+                        ({
+                          bool? addClassFields,
+                          bool? useJsDoc,
+                          bool? rewriteCommonJs,
+                          bool? addAnyFallbacks,
+                        }) {
+                          setState(() {
+                            _addClassFields = addClassFields ?? _addClassFields;
+                            _useJsDoc = useJsDoc ?? _useJsDoc;
+                            _rewriteCommonJs =
+                                rewriteCommonJs ?? _rewriteCommonJs;
+                            _addAnyFallbacks =
+                                addAnyFallbacks ?? _addAnyFallbacks;
+                          });
+                          _convert();
+                        },
+                  ),
           ),
         ),
         const SizedBox(height: 8),
         Text(summary, style: _mutedToolTextStyle(context, fontSize: 12)),
       ],
+    );
+  }
+}
+
+class _JsToTsDirectionToggle extends StatelessWidget {
+  const _JsToTsDirectionToggle({required this.tsToJs, required this.onChanged});
+
+  final bool tsToJs;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: appColors.panelElevated.withAlpha(236),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: appColors.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _JsToTsDirectionChip(
+              label: 'JS → TS',
+              selected: !tsToJs,
+              onTap: () => onChanged(false),
+            ),
+            const SizedBox(width: 2),
+            _JsToTsDirectionChip(
+              label: 'TS → JS',
+              selected: tsToJs,
+              onTap: () => onChanged(true),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _JsToTsDirectionChip extends StatelessWidget {
+  const _JsToTsDirectionChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(4),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: selected ? appColors.accent.withAlpha(48) : Colors.transparent,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              color: selected ? appColors.accent : appColors.mutedText,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -2780,6 +3145,260 @@ _JsToTsConversionResult _convertJavaScriptToTypeScript(
   }
 
   return _JsToTsConversionResult(code: output.trim(), notes: notes);
+}
+
+@visibleForTesting
+String convertTypeScriptToJavaScriptForPreview(String input) {
+  return _convertTypeScriptToJavaScript(input).code;
+}
+
+/// Best-effort TypeScript → JavaScript transpile by stripping type syntax.
+/// This is a heuristic (regex-based) strip, not a full `tsc` compile, so the
+/// returned notes flag that complex generics/overloads should be reviewed.
+_JsToTsConversionResult _convertTypeScriptToJavaScript(String input) {
+  var output = input.replaceAll('\r\n', '\n');
+  if (output.trim().isEmpty) {
+    return const _JsToTsConversionResult(code: '', notes: []);
+  }
+
+  final notes = <String>[];
+
+  // Type-only imports/exports: `import type … ;`, `export type { … } …;`.
+  var typeImports = 0;
+  output = output.replaceAllMapped(
+    RegExp(r'^[ \t]*(?:import|export)\s+type\s+[^\n]*\n?', multiLine: true),
+    (_) {
+      typeImports++;
+      return '';
+    },
+  );
+  // Inline `type` modifier inside named imports/exports: `{ type A, B }`.
+  output = output.replaceAll(RegExp(r'([{,]\s*)type\s+(?=[A-Za-z_$])'), r'$1');
+
+  // `interface … { … }` blocks.
+  final interfaces = _removeBalancedBlocks(
+    output,
+    RegExp(
+      r'(?:export\s+)?(?:declare\s+)?interface\s+[A-Za-z_$][\w$]*\s*'
+      r'(?:<[^>]*>)?\s*(?:extends\s+[^{]+)?\{',
+    ),
+  );
+  output = interfaces.$1;
+
+  // `enum … { … }` → frozen plain object.
+  final enums = _convertTsEnums(output);
+  output = enums.$1;
+
+  // `type X = …;` aliases.
+  final aliases = _removeTsTypeAliases(output);
+  output = aliases.$1;
+
+  // `declare …` statements.
+  output = output.replaceAll(
+    RegExp(r'^[ \t]*declare\s+[^\n]*\n?', multiLine: true),
+    '',
+  );
+
+  // Class member modifiers and `implements` clauses.
+  output = output.replaceAll(
+    RegExp(r'\b(?:public|private|protected|readonly|abstract|override)\s+'),
+    '',
+  );
+  output = output.replaceAll(RegExp(r'\s+implements\s+[^{]+(?=\{)'), ' ');
+
+  // `as Type` / `as const` / `satisfies Type` expression casts.
+  output = output.replaceAll(
+    RegExp(r'\s+as\s+(?:const\b|[A-Za-z_$][\w$.]*(?:<[^>]*>)?(?:\[\])*)'),
+    '',
+  );
+  output = output.replaceAll(
+    RegExp(r'\s+satisfies\s+[A-Za-z_$][\w$.]*(?:<[^>]*>)?'),
+    '',
+  );
+
+  // Generic type parameters on function/class declarations and call sites.
+  output = output.replaceAllMapped(
+    RegExp(r'\b(function\s+[A-Za-z_$][\w$]*|class\s+[A-Za-z_$][\w$]*)\s*<[^>]*>'),
+    (m) => m.group(1)!,
+  );
+  output = output.replaceAllMapped(
+    RegExp(r'([A-Za-z_$][\w$]*)\s*<[^<>;()]*>(?=\s*\()'),
+    (m) => m.group(1)!,
+  );
+
+  // Definite-assignment assertion: `name!: T` → `name: T`.
+  output = output.replaceAll(RegExp(r'([A-Za-z_$][\w$]*)!(?=\s*:)'), r'$1');
+
+  // Function/method return types: `): T {` / `): T =>` / `): T;`.
+  output = output.replaceAllMapped(
+    RegExp(r'\)\s*:\s*[A-Za-z_$\{\[][^=;{}\n]*?(\s*(?:=>|\{|;))'),
+    (m) => ')${m.group(1)}',
+  );
+
+  // Variable declarations: `const x: T = …` / `let y: T;`.
+  output = output.replaceAllMapped(
+    RegExp(r'\b(const|let|var)\s+([A-Za-z_$][\w$]*)\s*:\s*[^=;\n]+?(\s*[=;])'),
+    (m) => '${m.group(1)} ${m.group(2)}${m.group(3)}',
+  );
+
+  // Parameter annotations (anchored on `(`/`,`), optional then required.
+  output = output.replaceAllMapped(
+    RegExp(r'([(,]\s*(?:\.\.\.)?[A-Za-z_$][\w$]*)\s*\?\s*:\s*[^,)=]+?(?=\s*[,)=])'),
+    (m) => m.group(1)!,
+  );
+  output = output.replaceAllMapped(
+    RegExp(r'([(,]\s*(?:\.\.\.)?[A-Za-z_$][\w$]*)\s*:\s*[^,)=]+?(?=\s*[,)=])'),
+    (m) => m.group(1)!,
+  );
+
+  // Class field declarations: `name?: T;` / `name: T = …`.
+  output = output.replaceAllMapped(
+    RegExp(r'^([ \t]*)([A-Za-z_$][\w$]*)\s*\??\s*:\s*[^=;\n]+?(\s*[=;])', multiLine: true),
+    (m) => '${m.group(1)}${m.group(2)}${m.group(3)}',
+  );
+
+  // Non-null assertions: `foo!.bar`, `value!)`.
+  output = output.replaceAll(RegExp(r'!(?=\s*[.;,)\]}])'), '');
+
+  output = output.replaceAll(RegExp(r'[ \t]+\n'), '\n');
+  output = output.replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+
+  if (typeImports > 0) {
+    notes.add('$typeImports type-only import(s) removed');
+  }
+  if (interfaces.$2 > 0) {
+    notes.add('${interfaces.$2} interface(s) removed');
+  }
+  if (enums.$2 > 0) {
+    notes.add('${enums.$2} enum(s) converted to objects');
+  }
+  if (aliases.$2 > 0) {
+    notes.add('${aliases.$2} type alias(es) removed');
+  }
+  notes.add('type annotations stripped (heuristic — review complex generics)');
+
+  return _JsToTsConversionResult(code: output, notes: notes);
+}
+
+int _matchClosingBrace(String source, int openIndex) {
+  var depth = 0;
+  for (var i = openIndex; i < source.length; i++) {
+    final char = source[i];
+    if (char == '{') {
+      depth++;
+    } else if (char == '}') {
+      depth--;
+      if (depth == 0) return i;
+    }
+  }
+  return -1;
+}
+
+(String, int) _removeBalancedBlocks(String source, RegExp header) {
+  var src = source;
+  var count = 0;
+  while (true) {
+    final match = header.firstMatch(src);
+    if (match == null) break;
+    final braceStart = src.indexOf('{', match.start);
+    if (braceStart == -1) break;
+    final end = _matchClosingBrace(src, braceStart);
+    if (end == -1) break;
+    var after = end + 1;
+    if (after < src.length && src[after] == ';') after++;
+    src = src.substring(0, match.start) + src.substring(after);
+    count++;
+  }
+  return (src, count);
+}
+
+(String, int) _convertTsEnums(String source) {
+  final header = RegExp(
+    r'(?:export\s+)?(?:const\s+)?enum\s+([A-Za-z_$][\w$]*)\s*\{',
+  );
+  var src = source;
+  var count = 0;
+  while (true) {
+    final match = header.firstMatch(src);
+    if (match == null) break;
+    final name = match.group(1)!;
+    final braceStart = src.indexOf('{', match.start);
+    final end = _matchClosingBrace(src, braceStart);
+    if (end == -1) break;
+    final body = src.substring(braceStart + 1, end);
+    final members = <String>[];
+    var auto = 0;
+    for (final rawPart in body.split(',')) {
+      final part = rawPart.trim();
+      if (part.isEmpty) continue;
+      final eq = part.indexOf('=');
+      if (eq == -1) {
+        members.add('  $part: $auto');
+        auto++;
+      } else {
+        final key = part.substring(0, eq).trim();
+        final value = part.substring(eq + 1).trim();
+        members.add('  $key: $value');
+        final asInt = int.tryParse(value);
+        if (asInt != null) auto = asInt + 1;
+      }
+    }
+    final keepExport = src.substring(match.start, braceStart).contains('export');
+    final prefix = keepExport ? 'export const' : 'const';
+    final replacement =
+        '$prefix $name = Object.freeze({\n${members.join(',\n')}\n});';
+    var after = end + 1;
+    if (after < src.length && src[after] == ';') after++;
+    src = src.substring(0, match.start) + replacement + src.substring(after);
+    count++;
+  }
+  return (src, count);
+}
+
+(String, int) _removeTsTypeAliases(String source) {
+  final header = RegExp(
+    r'(?:export\s+)?type\s+[A-Za-z_$][\w$]*\s*(?:<[^=]*?>)?\s*=',
+  );
+  var src = source;
+  var count = 0;
+  while (true) {
+    final match = header.firstMatch(src);
+    if (match == null) break;
+    var depth = 0;
+    var lastMeaningful = '=';
+    var endIdx = -1;
+    for (var i = match.end; i < src.length; i++) {
+      final char = src[i];
+      if (char == '<' || char == '{' || char == '(' || char == '[') {
+        depth++;
+      } else if (char == '>' || char == '}' || char == ')' || char == ']') {
+        if (depth > 0) depth--;
+      } else if (char == ';' && depth == 0) {
+        endIdx = i + 1;
+        break;
+      } else if (char == '\n' && depth == 0) {
+        var j = i + 1;
+        while (j < src.length &&
+            (src[j] == ' ' || src[j] == '\t' || src[j] == '\n')) {
+          j++;
+        }
+        final next = j < src.length ? src[j] : '';
+        const continuations = {'|', '&', '=', ',', '(', '[', '.'};
+        if (continuations.contains(lastMeaningful) ||
+            next == '|' ||
+            next == '&') {
+          continue;
+        }
+        endIdx = i;
+        break;
+      }
+      if (char != ' ' && char != '\t') lastMeaningful = char;
+    }
+    if (endIdx == -1) endIdx = src.length;
+    src = src.substring(0, match.start) + src.substring(endIdx);
+    count++;
+  }
+  return (src, count);
 }
 
 Map<String, Set<String>> _findOptionalFunctionParameters(String source) {
@@ -3641,8 +4260,13 @@ class _HtmlRenderedPreviewState extends State<_HtmlRenderedPreview> {
   void _initWebView() {
     try {
       final controller = WebViewController()
-        ..setJavaScriptMode(JavaScriptMode.disabled)
-        ..setBackgroundColor(Colors.transparent);
+        ..setJavaScriptMode(JavaScriptMode.disabled);
+      // macOS WKWebView has no `opaque`/background-color setter, so
+      // setBackgroundColor throws UnimplementedError there. The preview
+      // container already paints an opaque white surface, so skip it.
+      if (!Platform.isMacOS) {
+        controller.setBackgroundColor(Colors.transparent);
+      }
       _controller = controller;
       _loadHtml();
     } catch (error) {
@@ -4710,7 +5334,7 @@ class _JsBeautifyMinifyViewState extends State<_JsBeautifyMinifyView> {
       ],
       inputController: _input,
       outputController: _output,
-      inputPlaceholder: 'Paste JS here...',
+      inputPlaceholder: 'Paste JavaScript or TypeScript here...',
       outputPlaceholder: 'Output...',
     );
   }
@@ -9924,8 +10548,32 @@ class _QrCodeView extends StatefulWidget {
 
 class _QrCodeViewState extends State<_QrCodeView> {
   final TextEditingController _content = TextEditingController();
-  String _preview = 'QR Preview';
   String _template = 'Plain text';
+  String _errorCorrection = 'High (30%)';
+  bool _roundedModules = false;
+  bool _circleEyes = false;
+  String? _logoPath;
+  ui.Image? _logoImage;
+
+  static const _ecLevels = <String, int>{
+    'Low (7%)': QrErrorCorrectLevel.L,
+    'Medium (15%)': QrErrorCorrectLevel.M,
+    'Quartile (25%)': QrErrorCorrectLevel.Q,
+    'High (30%)': QrErrorCorrectLevel.H,
+  };
+
+  int get _ecLevel => _ecLevels[_errorCorrection] ?? QrErrorCorrectLevel.H;
+
+  QrEyeStyle get _eyeStyle => QrEyeStyle(
+    eyeShape: _circleEyes ? QrEyeShape.circle : QrEyeShape.square,
+    color: Colors.black,
+  );
+
+  QrDataModuleStyle get _dataModuleStyle => QrDataModuleStyle(
+    dataModuleShape:
+        _roundedModules ? QrDataModuleShape.circle : QrDataModuleShape.square,
+    color: Colors.black,
+  );
 
   @override
   void dispose() {
@@ -9934,11 +10582,121 @@ class _QrCodeViewState extends State<_QrCodeView> {
   }
 
   void _updatePreview() {
+    setState(() {});
+  }
+
+  Future<ui.Image> _decodeUiImage(Uint8List bytes) {
+    final completer = Completer<ui.Image>();
+    ui.decodeImageFromList(bytes, completer.complete);
+    return completer.future;
+  }
+
+  Future<void> _pickLogo() async {
+    final path = await FileDialogService.openFile(
+      allowedExtensions: const ['png', 'jpg', 'jpeg', 'gif', 'webp'],
+    );
+    if (path == null || !mounted) return;
+    try {
+      final bytes = await File(path).readAsBytes();
+      final image = await _decodeUiImage(bytes);
+      if (!mounted) return;
+      setState(() {
+        _logoPath = path;
+        _logoImage = image;
+        // A center logo covers data modules, so force the highest error
+        // correction to keep the code scannable.
+        _errorCorrection = 'High (30%)';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not load logo: $error')),
+      );
+    }
+  }
+
+  void _removeLogo() {
     setState(() {
-      _preview = _content.text.isEmpty
-          ? 'QR Preview'
-          : 'QR Ready (${_content.text.length} chars)';
+      _logoPath = null;
+      _logoImage = null;
     });
+  }
+
+  Future<void> _savePng() async {
+    final data = _content.text;
+    if (data.isEmpty) return;
+    try {
+      const exportSize = 1024.0;
+      const margin = exportSize * 0.08; // quiet zone
+      final painter = QrPainter(
+        data: data,
+        version: QrVersions.auto,
+        errorCorrectionLevel: _ecLevel,
+        gapless: true,
+        eyeStyle: _eyeStyle,
+        dataModuleStyle: _dataModuleStyle,
+      );
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(
+        recorder,
+        const Rect.fromLTWH(0, 0, exportSize, exportSize),
+      );
+      canvas.drawRect(
+        const Rect.fromLTWH(0, 0, exportSize, exportSize),
+        Paint()..color = Colors.white,
+      );
+      canvas.save();
+      canvas.translate(margin, margin);
+      painter.paint(canvas, const Size(exportSize - 2 * margin, exportSize - 2 * margin));
+      canvas.restore();
+
+      final logo = _logoImage;
+      if (logo != null) {
+        const center = Offset(exportSize / 2, exportSize / 2);
+        final plate = exportSize * 0.22;
+        final plateRect = Rect.fromCenter(
+          center: center,
+          width: plate,
+          height: plate,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(plateRect, const Radius.circular(24)),
+          Paint()..color = Colors.white,
+        );
+        final inner = plate * 0.82;
+        final scale = min(inner / logo.width, inner / logo.height);
+        final drawn = Rect.fromCenter(
+          center: center,
+          width: logo.width * scale,
+          height: logo.height * scale,
+        );
+        canvas.drawImageRect(
+          logo,
+          Rect.fromLTWH(0, 0, logo.width.toDouble(), logo.height.toDouble()),
+          drawn,
+          Paint()..filterQuality = FilterQuality.high,
+        );
+      }
+
+      final picture = recorder.endRecording();
+      final rendered = await picture.toImage(
+        exportSize.toInt(),
+        exportSize.toInt(),
+      );
+      final bytes = await rendered.toByteData(format: ui.ImageByteFormat.png);
+      if (bytes == null || !mounted) return;
+      final path = await FileDialogService.saveFile(
+        suggestedName: 'qr-code.png',
+        allowedExtensions: const ['png'],
+      );
+      if (path == null) return;
+      await File(path).writeAsBytes(bytes.buffer.asUint8List());
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save QR code: $error')),
+      );
+    }
   }
 
   void _applyTemplate(String value) {
@@ -10008,33 +10766,70 @@ class _QrCodeViewState extends State<_QrCodeView> {
       ),
       second: Column(
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: const [
-              Text(
-                'Read QR Code:',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              ToolButton(label: 'File...'),
-              ToolButton(label: 'Clipboard'),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: const [
-              ToolButton(label: 'Add Watermark...'),
-              ToolButton(label: 'Add Icon...'),
-            ],
-          ),
-          const SizedBox(height: 8),
           Expanded(
             child: Container(
               decoration: _toolSurfaceDecoration(context),
-              child: Stack(children: [Center(child: Text(_preview))]),
+              padding: const EdgeInsets.all(16),
+              child: Center(
+                child: _content.text.isEmpty
+                    ? Text(
+                        'Enter content to generate a QR code',
+                        style: _mutedToolTextStyle(context),
+                      )
+                    : ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: 320,
+                          maxHeight: 320,
+                        ),
+                        child: AspectRatio(
+                          aspectRatio: 1,
+                          child: DecoratedBox(
+                            decoration: const BoxDecoration(color: Colors.white),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  QrImageView(
+                                    data: _content.text,
+                                    version: QrVersions.auto,
+                                    errorCorrectionLevel: _ecLevel,
+                                    backgroundColor: Colors.white,
+                                    eyeStyle: _eyeStyle,
+                                    dataModuleStyle: _dataModuleStyle,
+                                    errorStateBuilder: (context, error) =>
+                                        Padding(
+                                          padding: const EdgeInsets.all(12),
+                                          child: Text(
+                                            'Content too long for a QR code at this error-correction level.',
+                                            textAlign: TextAlign.center,
+                                            style: _errorToolTextStyle(context),
+                                          ),
+                                        ),
+                                  ),
+                                  if (_logoPath != null)
+                                    FractionallySizedBox(
+                                      widthFactor: 0.24,
+                                      heightFactor: 0.24,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Image.file(
+                                          File(_logoPath!),
+                                          fit: BoxFit.contain,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -10042,15 +10837,41 @@ class _QrCodeViewState extends State<_QrCodeView> {
             spacing: 8,
             runSpacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
-            children: const [
+            children: [
               SmallDropdown(
-                items: [
-                  'Error Correction: H (30%)',
-                  'Error Correction: M (15%)',
-                ],
-                initialValue: 'Error Correction: H (30%)',
+                items: const ['Square modules', 'Rounded modules'],
+                initialValue:
+                    _roundedModules ? 'Rounded modules' : 'Square modules',
+                onChanged: (value) =>
+                    setState(() => _roundedModules = value == 'Rounded modules'),
               ),
-              ToolButton(label: 'Save'),
+              SmallDropdown(
+                items: const ['Square eyes', 'Circle eyes'],
+                initialValue: _circleEyes ? 'Circle eyes' : 'Square eyes',
+                onChanged: (value) =>
+                    setState(() => _circleEyes = value == 'Circle eyes'),
+              ),
+              if (_logoPath == null)
+                ToolButton(label: 'Add Logo', onPressed: _pickLogo)
+              else ...[
+                ToolButton(label: 'Change Logo', onPressed: _pickLogo),
+                ToolButton(label: 'Remove Logo', onPressed: _removeLogo),
+              ],
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SmallDropdown(
+                items: _ecLevels.keys.toList(),
+                initialValue: _errorCorrection,
+                onChanged: (value) =>
+                    setState(() => _errorCorrection = value),
+              ),
+              ToolButton(label: 'Save PNG', onPressed: _savePng),
             ],
           ),
         ],
@@ -10392,16 +11213,53 @@ class _MarkdownPreviewView extends StatefulWidget {
 
 class _MarkdownPreviewViewState extends State<_MarkdownPreviewView> {
   final TextEditingController _input = TextEditingController();
+  late final String _dropTargetScope = identityHashCode(this).toRadixString(16);
+  String? _sourceFileName;
+  String? _error;
+
+  String get _dropTargetId => 'markdown-source-file-$_dropTargetScope';
 
   @override
   void dispose() {
+    FileDropService.unregisterTarget(_dropTargetId);
     _input.dispose();
     super.dispose();
   }
 
   Future<void> _pasteClipboard() async {
     final text = await _readClipboardText();
-    setState(() => _input.text = text);
+    setState(() {
+      _sourceFileName = null;
+      _error = null;
+      _input.text = text;
+    });
+  }
+
+  Future<void> _pickFile() async {
+    final path = await FileDialogService.openFile(
+      allowedExtensions: const ['md', 'markdown', 'mdown', 'txt'],
+    );
+    if (path == null || !mounted) return;
+    await _loadFile(path);
+  }
+
+  Future<void> _loadFile(String path) async {
+    try {
+      final file = File(path);
+      if (!await file.exists()) {
+        throw const FileSystemException('Markdown file does not exist');
+      }
+      final text = await file.readAsString();
+      if (!mounted) return;
+      setState(() {
+        _sourceFileName = p.basename(path);
+        _error = null;
+        _input.text = text;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = _friendlyFileReadError(error));
+    }
   }
 
   void _setSample() {
@@ -10412,36 +11270,68 @@ Paragraphs are separated by a blank line.
 
 - Lists render as lists
 - **Bold** and `inline code` render too''';
-    setState(() => _input.text = sample);
+    setState(() {
+      _sourceFileName = null;
+      _error = null;
+      _input.text = sample;
+    });
   }
 
   void _clear() {
-    setState(() => _input.clear());
+    setState(() {
+      _sourceFileName = null;
+      _error = null;
+      _input.clear();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return _ResizableSplit(
+    final split = _ResizableSplit(
       horizontal: false,
       initialRatio: 0.42,
       minFirstExtent: 110,
       minSecondExtent: 120,
-      first: EditorPane(
-        label: 'Input',
-        actions: [
-          ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-          ToolButton(label: 'Sample', onPressed: _setSample),
-          ToolButton(label: 'Clear', onPressed: _clear),
-        ],
-        controller: _input,
-        onChanged: (_) => setState(() {}),
-        placeholder: '# Heading 1',
+      first: _FileDropTargetRegion(
+        targetId: _dropTargetId,
+        onDropped: (paths) {
+          if (paths.isNotEmpty) unawaited(_loadFile(paths.first));
+        },
+        child: EditorPane(
+          label: 'Input',
+          actions: [
+            ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
+            ToolButton(label: 'Sample', onPressed: _setSample),
+            ToolButton(label: 'Clear', onPressed: _clear),
+          ],
+          controller: _input,
+          onChanged: (_) {
+            _sourceFileName = null;
+            setState(() {});
+          },
+          placeholder: 'Drop a .md file here or type Markdown...',
+          enableFileDrop: false,
+          overlay: _SourceFileControls(
+            onPickFile: _pickFile,
+            fileName: _sourceFileName,
+            tooltip: 'Choose Markdown file',
+          ),
+        ),
       ),
       second: _RenderedPreviewPane(
         label: 'Preview',
         html: markdownToHtmlForPreview(_input.text),
         badge: 'Rendered Markdown',
       ),
+    );
+    if (_error == null) return split;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(_error!, style: _errorToolTextStyle(context)),
+        const SizedBox(height: 8),
+        Expanded(child: split),
+      ],
     );
   }
 }
@@ -12427,6 +13317,272 @@ class _ColorConverterViewState extends State<_ColorConverterView> {
   }
 }
 
+Future<Color?> _showColorPickerDialog(BuildContext context, Color initial) {
+  return showDialog<Color>(
+    context: context,
+    builder: (context) => _ColorPickerDialog(initial: initial),
+  );
+}
+
+class _ColorPickerDialog extends StatefulWidget {
+  const _ColorPickerDialog({required this.initial});
+
+  final Color initial;
+
+  @override
+  State<_ColorPickerDialog> createState() => _ColorPickerDialogState();
+}
+
+class _ColorPickerDialogState extends State<_ColorPickerDialog> {
+  late HSVColor _hsv;
+  late final TextEditingController _hexField;
+
+  @override
+  void initState() {
+    super.initState();
+    _hsv = HSVColor.fromColor(widget.initial);
+    _hexField = TextEditingController(
+      text: _cssHex(widget.initial).toUpperCase(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _hexField.dispose();
+    super.dispose();
+  }
+
+  Color get _color => _hsv.toColor();
+
+  void _update(HSVColor next) {
+    setState(() {
+      _hsv = next;
+      _hexField.text = _cssHex(next.toColor()).toUpperCase();
+    });
+  }
+
+  void _applyHex(String text) {
+    final parsed = _parseColorValue(text);
+    if (parsed != null) {
+      setState(() => _hsv = HSVColor.fromColor(parsed));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Dialog(
+      backgroundColor: appColors.panelElevated,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 320),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AspectRatio(
+                aspectRatio: 1.5,
+                child: _SvPicker(hsv: _hsv, onChanged: _update),
+              ),
+              const SizedBox(height: 12),
+              _HueBar(
+                hue: _hsv.hue,
+                onChanged: (hue) => _update(_hsv.withHue(hue)),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: _color,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: appColors.border),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: _hexField,
+                      onChanged: _applyHex,
+                      onSubmitted: _applyHex,
+                      style: const TextStyle(fontFamily: 'Menlo', fontSize: 13),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 10,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(_color),
+                    child: const Text('Select'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SvPicker extends StatelessWidget {
+  const _SvPicker({required this.hsv, required this.onChanged});
+
+  final HSVColor hsv;
+  final ValueChanged<HSVColor> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final hueColor = HSVColor.fromAHSV(1, hsv.hue, 1, 1).toColor();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final height = constraints.maxHeight;
+        void handle(Offset position) {
+          final saturation = (position.dx / width).clamp(0.0, 1.0);
+          final value = (1 - position.dy / height).clamp(0.0, 1.0);
+          onChanged(hsv.withSaturation(saturation).withValue(value));
+        }
+
+        return GestureDetector(
+          onPanDown: (details) => handle(details.localPosition),
+          onPanUpdate: (details) => handle(details.localPosition),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: hueColor,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    gradient: const LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [Colors.white, Colors.transparent],
+                    ),
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, Colors.black],
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: hsv.saturation * width - 8,
+                top: (1 - hsv.value) * height - 8,
+                child: _PickerThumb(),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _HueBar extends StatelessWidget {
+  const _HueBar({required this.hue, required this.onChanged});
+
+  final double hue;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        void handle(Offset position) {
+          onChanged((position.dx / width * 360).clamp(0.0, 360.0));
+        }
+
+        return GestureDetector(
+          onPanDown: (details) => handle(details.localPosition),
+          onPanUpdate: (details) => handle(details.localPosition),
+          child: SizedBox(
+            height: 18,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(9),
+                      gradient: const LinearGradient(
+                        colors: [
+                          Color(0xFFFF0000),
+                          Color(0xFFFFFF00),
+                          Color(0xFF00FF00),
+                          Color(0xFF00FFFF),
+                          Color(0xFF0000FF),
+                          Color(0xFFFF00FF),
+                          Color(0xFFFF0000),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: hue / 360 * width - 8,
+                  top: 1,
+                  child: _PickerThumb(),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PickerThumb extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 16,
+      height: 16,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 3)],
+      ),
+    );
+  }
+}
+
 class _ColorPalettePanel extends StatelessWidget {
   const _ColorPalettePanel({
     required this.color,
@@ -12479,38 +13635,50 @@ class _ColorPalettePanel extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 10),
-              Container(
-                height: 104,
-                decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: appColors.border),
-                ),
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Text(
-                      hex.isEmpty ? '#000000' : hex.toUpperCase(),
-                      style: TextStyle(
-                        color: textColor,
-                        fontFamily: 'Menlo',
-                        fontSize: 24,
-                        fontWeight: FontWeight.w800,
+              MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: () async {
+                    final picked = await _showColorPickerDialog(context, color);
+                    if (picked != null) onColorChanged(picked);
+                  },
+                  child: Tooltip(
+                    message: 'Click to pick a color',
+                    child: Container(
+                      height: 104,
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: appColors.border),
+                      ),
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(
+                            hex.isEmpty ? '#000000' : hex.toUpperCase(),
+                            style: TextStyle(
+                              color: textColor,
+                              fontFamily: 'Menlo',
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            rgb,
+                            style: TextStyle(
+                              color: textColor.withAlpha(225),
+                              fontFamily: 'Menlo',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      rgb,
-                      style: TextStyle(
-                        color: textColor.withAlpha(225),
-                        fontFamily: 'Menlo',
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -13160,6 +14328,7 @@ class _SvgToCssViewState extends State<_SvgToCssView> {
                   },
                   placeholder: 'Drop an .svg file here or paste SVG source...',
                   showHeader: false,
+                  enableFileDrop: false,
                   overlay: _SourceFileControls(
                     onPickFile: _pickSvgFile,
                     fileName: _sourceFileName,
@@ -13727,13 +14896,50 @@ class _JsonToCodeView extends StatefulWidget {
 class _JsonToCodeViewState extends State<_JsonToCodeView> {
   final TextEditingController _input = TextEditingController();
   final TextEditingController _output = TextEditingController();
+  late final String _dropTargetScope = identityHashCode(this).toRadixString(16);
   String _lang = 'Swift';
+  bool _plainTypes = false;
+  bool _initializers = true;
+  bool _codingKeys = true;
+  String? _sourceFileName;
+  String? _error;
+
+  String get _dropTargetId => 'json-to-code-source-$_dropTargetScope';
 
   @override
   void dispose() {
+    FileDropService.unregisterTarget(_dropTargetId);
     _input.dispose();
     _output.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickFile() async {
+    final path = await FileDialogService.openFile(
+      allowedExtensions: const ['json', 'txt'],
+    );
+    if (path == null || !mounted) return;
+    await _loadFile(path);
+  }
+
+  Future<void> _loadFile(String path) async {
+    try {
+      final file = File(path);
+      if (!await file.exists()) {
+        throw const FileSystemException('JSON file does not exist');
+      }
+      final text = await file.readAsString();
+      if (!mounted) return;
+      setState(() {
+        _sourceFileName = p.basename(path);
+        _error = null;
+        _input.text = text;
+      });
+      _run();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = _friendlyFileReadError(error));
+    }
   }
 
   void _run() {
@@ -13745,8 +14951,16 @@ class _JsonToCodeViewState extends State<_JsonToCodeView> {
     }
     try {
       final decoded = jsonDecode(text);
-      _output.text =
-          '// $_lang output\n${const JsonEncoder.withIndent('  ').convert(decoded)}';
+      _output.text = _generateCodeFromJson(
+        _lang,
+        decoded,
+        _JsonCodeOptions(
+          plainTypes: _plainTypes,
+          initializers: _initializers,
+          codingKeys: _codingKeys,
+        ),
+      );
+      _error = null;
     } catch (e) {
       _output.text = 'Invalid JSON: $e';
     }
@@ -13755,81 +14969,133 @@ class _JsonToCodeViewState extends State<_JsonToCodeView> {
 
   @override
   Widget build(BuildContext context) {
+    final swiftSelected = _lang == 'Swift';
     final optionsPanel = Container(
       padding: const EdgeInsets.all(12),
       decoration: _toolSurfaceDecoration(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
-          Row(
-            children: [
-              ToolButton(label: 'Language'),
-              SizedBox(width: 8),
-              ToolButton(label: 'Other'),
-            ],
+        children: [
+          const Text(
+            'Options',
+            style: TextStyle(fontWeight: FontWeight.w600),
           ),
-          SizedBox(height: 8),
-          CheckboxListTile(
-            value: false,
-            onChanged: null,
-            title: Text('Plain types only'),
-            controlAffinity: ListTileControlAffinity.leading,
-            dense: true,
-          ),
-          CheckboxListTile(
-            value: true,
-            onChanged: null,
-            title: Text('Generate initializers and mutators'),
-            controlAffinity: ListTileControlAffinity.leading,
-            dense: true,
-          ),
-          CheckboxListTile(
-            value: true,
-            onChanged: null,
-            title: Text('Explicit CodingKey values in Codable types'),
-            controlAffinity: ListTileControlAffinity.leading,
-            dense: true,
-          ),
-          SizedBox(height: 8),
-          ToolButton(label: 'Reset to Defaults'),
+          const SizedBox(height: 8),
+          if (swiftSelected) ...[
+            CheckboxListTile(
+              value: _plainTypes,
+              onChanged: (value) {
+                setState(() => _plainTypes = value ?? false);
+                _run();
+              },
+              title: const Text('Plain types only (no Codable)'),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+            ),
+            CheckboxListTile(
+              value: _initializers,
+              onChanged: (value) {
+                setState(() => _initializers = value ?? false);
+                _run();
+              },
+              title: const Text('Generate memberwise initializers'),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+            ),
+            CheckboxListTile(
+              value: _codingKeys,
+              onChanged: _plainTypes
+                  ? null
+                  : (value) {
+                      setState(() => _codingKeys = value ?? false);
+                      _run();
+                    },
+              title: const Text('Explicit CodingKeys'),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+            ),
+            const SizedBox(height: 8),
+            ToolButton(
+              label: 'Reset to Defaults',
+              onPressed: () {
+                setState(() {
+                  _plainTypes = false;
+                  _initializers = true;
+                  _codingKeys = true;
+                });
+                _run();
+              },
+            ),
+          ] else
+            Text(
+              'No options for $_lang output.',
+              style: _mutedToolTextStyle(context, fontSize: 12),
+            ),
         ],
       ),
     );
-    return LayoutBuilder(
+    final body = LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 1100;
         final editors = _ResizableSplit(
           horizontal: true,
-          first: EditorPane(
-            label: 'Input',
-            actions: [
-              ToolButton(
-                label: 'Clipboard',
-                onPressed: () async {
-                  final text = await _readClipboardText();
-                  setState(() => _input.text = text);
-                  _run();
-                },
+          first: _FileDropTargetRegion(
+            targetId: _dropTargetId,
+            onDropped: (paths) {
+              if (paths.isNotEmpty) unawaited(_loadFile(paths.first));
+            },
+            child: EditorPane(
+              label: 'Input',
+              actions: [
+                ToolButton(
+                  label: 'Clipboard',
+                  onPressed: () async {
+                    final text = await _readClipboardText();
+                    setState(() {
+                      _sourceFileName = null;
+                      _input.text = text;
+                    });
+                    _run();
+                  },
+                ),
+                ToolButton(
+                  label: 'Sample',
+                  onPressed: () {
+                    setState(() {
+                      _sourceFileName = null;
+                      _input.text = '{"name":"DevUtils"}';
+                    });
+                    _run();
+                  },
+                ),
+                ToolButton(
+                  label: 'Clear',
+                  onPressed: () {
+                    setState(() {
+                      _sourceFileName = null;
+                      _input.clear();
+                    });
+                    _output.clear();
+                  },
+                ),
+                const SmallDropdown(items: ['JSON'], initialValue: 'JSON'),
+              ],
+              controller: _input,
+              onChanged: (_) {
+                _sourceFileName = null;
+                _run();
+              },
+              placeholder: 'Drop a .json file here or enter your text...',
+              enableFileDrop: false,
+              overlay: _SourceFileControls(
+                onPickFile: _pickFile,
+                fileName: _sourceFileName,
+                tooltip: 'Choose JSON file',
               ),
-              ToolButton(
-                label: 'Sample',
-                onPressed: () {
-                  setState(() => _input.text = '{"name":"DevUtils"}');
-                  _run();
-                },
-              ),
-              ToolButton(
-                label: 'Clear',
-                onPressed: () {
-                  setState(() => _input.clear());
-                  _output.clear();
-                },
-              ),
-              const SmallDropdown(items: ['JSON'], initialValue: 'JSON'),
-            ],
-            controller: _input,
-            onChanged: (_) => _run(),
-            placeholder: 'Enter your text...',
+            ),
           ),
           second: EditorPane(
             label: 'Output',
@@ -13872,7 +15138,1081 @@ class _JsonToCodeViewState extends State<_JsonToCodeView> {
         );
       },
     );
+
+    if (_error == null) return body;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(_error!, style: _errorToolTextStyle(context)),
+        const SizedBox(height: 8),
+        Expanded(child: body),
+      ],
+    );
   }
+}
+
+// ---------------------------------------------------------------------------
+// JSON -> source code generation (Swift / TypeScript / Kotlin)
+// ---------------------------------------------------------------------------
+
+class _JsonCodeOptions {
+  const _JsonCodeOptions({
+    this.plainTypes = false,
+    this.initializers = true,
+    this.codingKeys = true,
+  });
+
+  final bool plainTypes;
+  final bool initializers;
+  final bool codingKeys;
+}
+
+class _JsonIrType {
+  _JsonIrType._(this.kind, {this.scalar, this.objectName, this.element});
+
+  factory _JsonIrType.scalar(String scalar) =>
+      _JsonIrType._('scalar', scalar: scalar);
+  factory _JsonIrType.object(String name) =>
+      _JsonIrType._('object', objectName: name);
+  factory _JsonIrType.list(_JsonIrType element) =>
+      _JsonIrType._('list', element: element);
+  factory _JsonIrType.any() => _JsonIrType._('any');
+
+  final String kind;
+  final String? scalar;
+  final String? objectName;
+  final _JsonIrType? element;
+}
+
+class _JsonIrField {
+  _JsonIrField(this.jsonKey, this.type, this.optional);
+  final String jsonKey;
+  final _JsonIrType type;
+  final bool optional;
+}
+
+class _JsonIrObject {
+  _JsonIrObject(this.name);
+  final String name;
+  final List<_JsonIrField> fields = [];
+}
+
+class _JsonCodeModel {
+  final List<_JsonIrObject> objects = [];
+  final Set<String> _names = {};
+  bool usedLooseType = false;
+
+  String reserveName(String base) {
+    final root = base.isEmpty ? 'Root' : base;
+    if (_names.add(root)) return root;
+    var i = 2;
+    while (!_names.add('$root$i')) {
+      i++;
+    }
+    return '$root$i';
+  }
+}
+
+String _generateCodeFromJson(
+  String lang,
+  Object? root,
+  _JsonCodeOptions options,
+) {
+  final model = _JsonCodeModel();
+  final rootType = _buildJsonIr([root], 'Root', model);
+  if (model.objects.isEmpty) {
+    return '// Top-level JSON is not an object.\n'
+        '// Inferred type: ${_jsonTypeRef(lang, rootType)}';
+  }
+
+  String body;
+  switch (lang) {
+    case 'TypeScript':
+      body = _emitTypeScript(model);
+      break;
+    case 'Kotlin':
+      body = _emitKotlin(model);
+      break;
+    case 'Swift':
+    default:
+      body = _emitSwift(model, options);
+      break;
+  }
+
+  final prefix = StringBuffer();
+  if (model.usedLooseType) {
+    prefix.writeln(
+      '// Note: some fields were null/empty/mixed and were typed loosely.',
+    );
+  }
+  if (rootType.kind == 'list') {
+    final inner = _jsonTypeRef(lang, rootType.element!);
+    final alias = switch (lang) {
+      'TypeScript' => 'export type Root = $inner[];',
+      'Kotlin' => 'typealias Root = List<$inner>',
+      _ => 'typealias Root = [$inner]',
+    };
+    prefix.writeln(alias);
+    prefix.writeln();
+  }
+  return '${prefix.toString()}$body'.trimRight();
+}
+
+_JsonIrType _buildJsonIr(
+  List<Object?> values,
+  String nameHint,
+  _JsonCodeModel model,
+) {
+  final nonNull = values.where((v) => v != null).toList();
+  if (nonNull.isEmpty) {
+    model.usedLooseType = true;
+    return _JsonIrType.any();
+  }
+  if (nonNull.every((v) => v is Map)) {
+    return _buildJsonObjectIr(nonNull.cast<Map>(), nameHint, model);
+  }
+  if (nonNull.every((v) => v is List)) {
+    final merged = <Object?>[];
+    for (final list in nonNull) {
+      merged.addAll(list as List);
+    }
+    return _JsonIrType.list(
+      _buildJsonIr(merged, _singularName(nameHint), model),
+    );
+  }
+  return _scalarJsonIr(nonNull, model);
+}
+
+_JsonIrType _buildJsonObjectIr(
+  List<Map> maps,
+  String nameHint,
+  _JsonCodeModel model,
+) {
+  final object = _JsonIrObject(model.reserveName(_pascalCaseIdent(nameHint)));
+  model.objects.add(object);
+  final keys = <String>[];
+  for (final map in maps) {
+    for (final key in map.keys) {
+      final keyString = key.toString();
+      if (!keys.contains(keyString)) keys.add(keyString);
+    }
+  }
+  for (final key in keys) {
+    final present = maps.where((m) => m.containsKey(key)).toList();
+    final values = present.map((m) => m[key]).toList();
+    final optional =
+        present.length != maps.length || values.any((v) => v == null);
+    final fieldType = _buildJsonIr(values, key, model);
+    object.fields.add(_JsonIrField(key, fieldType, optional));
+  }
+  return _JsonIrType.object(object.name);
+}
+
+_JsonIrType _scalarJsonIr(List<Object?> values, _JsonCodeModel model) {
+  var allBool = true, allInt = true, allNum = true, allString = true;
+  for (final value in values) {
+    if (value is! bool) allBool = false;
+    if (value is! int) allInt = false;
+    if (value is! num) allNum = false;
+    if (value is! String) allString = false;
+  }
+  if (allBool) return _JsonIrType.scalar('Bool');
+  if (allInt) return _JsonIrType.scalar('Int');
+  if (allNum) return _JsonIrType.scalar('Double');
+  if (allString) return _JsonIrType.scalar('String');
+  model.usedLooseType = true;
+  return _JsonIrType.any();
+}
+
+String _jsonTypeRef(String lang, _JsonIrType type) {
+  switch (lang) {
+    case 'TypeScript':
+      switch (type.kind) {
+        case 'scalar':
+          return const {
+            'String': 'string',
+            'Int': 'number',
+            'Double': 'number',
+            'Bool': 'boolean',
+          }[type.scalar]!;
+        case 'object':
+          return type.objectName!;
+        case 'list':
+          return '${_jsonTypeRef(lang, type.element!)}[]';
+        default:
+          return 'any';
+      }
+    case 'Kotlin':
+      switch (type.kind) {
+        case 'scalar':
+          return const {
+            'String': 'String',
+            'Int': 'Int',
+            'Double': 'Double',
+            'Bool': 'Boolean',
+          }[type.scalar]!;
+        case 'object':
+          return type.objectName!;
+        case 'list':
+          return 'List<${_jsonTypeRef(lang, type.element!)}>';
+        default:
+          return 'Any';
+      }
+    case 'Swift':
+    default:
+      switch (type.kind) {
+        case 'scalar':
+          return type.scalar!;
+        case 'object':
+          return type.objectName!;
+        case 'list':
+          return '[${_jsonTypeRef(lang, type.element!)}]';
+        default:
+          return 'String';
+      }
+  }
+}
+
+String _emitSwift(_JsonCodeModel model, _JsonCodeOptions options) {
+  final buffer = StringBuffer();
+  for (var i = 0; i < model.objects.length; i++) {
+    final object = model.objects[i];
+    if (i > 0) buffer.writeln();
+    final conformance = options.plainTypes ? '' : ': Codable';
+    buffer.writeln('struct ${object.name}$conformance {');
+    for (final field in object.fields) {
+      final name = _camelCaseIdent(field.jsonKey);
+      final type = _jsonTypeRef('Swift', field.type);
+      buffer.writeln('    let $name: $type${field.optional ? '?' : ''}');
+    }
+    final needsKeys =
+        !options.plainTypes &&
+        options.codingKeys &&
+        object.fields.any((f) => _camelCaseIdent(f.jsonKey) != f.jsonKey);
+    if (needsKeys) {
+      buffer.writeln();
+      buffer.writeln('    enum CodingKeys: String, CodingKey {');
+      for (final field in object.fields) {
+        final name = _camelCaseIdent(field.jsonKey);
+        if (name == field.jsonKey) {
+          buffer.writeln('        case $name');
+        } else {
+          buffer.writeln('        case $name = "${field.jsonKey}"');
+        }
+      }
+      buffer.writeln('    }');
+    }
+    if (options.initializers && object.fields.isNotEmpty) {
+      buffer.writeln();
+      final params = object.fields
+          .map((f) {
+            final name = _camelCaseIdent(f.jsonKey);
+            final type = _jsonTypeRef('Swift', f.type) + (f.optional ? '?' : '');
+            return '$name: $type';
+          })
+          .join(', ');
+      buffer.writeln('    init($params) {');
+      for (final field in object.fields) {
+        final name = _camelCaseIdent(field.jsonKey);
+        buffer.writeln('        self.$name = $name');
+      }
+      buffer.writeln('    }');
+    }
+    buffer.writeln('}');
+  }
+  return buffer.toString();
+}
+
+String _emitTypeScript(_JsonCodeModel model) {
+  final buffer = StringBuffer();
+  for (var i = 0; i < model.objects.length; i++) {
+    final object = model.objects[i];
+    if (i > 0) buffer.writeln();
+    buffer.writeln('export interface ${object.name} {');
+    for (final field in object.fields) {
+      final key = _isValidIdent(field.jsonKey)
+          ? field.jsonKey
+          : "'${field.jsonKey}'";
+      final type = _jsonTypeRef('TypeScript', field.type);
+      buffer.writeln('  $key${field.optional ? '?' : ''}: $type;');
+    }
+    buffer.writeln('}');
+  }
+  return buffer.toString();
+}
+
+String _emitKotlin(_JsonCodeModel model) {
+  final buffer = StringBuffer();
+  var usedSerializedName = false;
+  final body = StringBuffer();
+  for (var i = 0; i < model.objects.length; i++) {
+    final object = model.objects[i];
+    if (i > 0) body.writeln();
+    body.writeln('data class ${object.name}(');
+    for (var j = 0; j < object.fields.length; j++) {
+      final field = object.fields[j];
+      final name = _camelCaseIdent(field.jsonKey);
+      final type = _jsonTypeRef('Kotlin', field.type);
+      final annotation = name != field.jsonKey
+          ? '@SerializedName("${field.jsonKey}") '
+          : '';
+      if (annotation.isNotEmpty) usedSerializedName = true;
+      final suffix = field.optional ? '? = null' : '';
+      final comma = j == object.fields.length - 1 ? '' : ',';
+      body.writeln('    ${annotation}val $name: $type$suffix$comma');
+    }
+    body.writeln(')');
+  }
+  if (usedSerializedName) {
+    buffer.writeln('import com.google.gson.annotations.SerializedName');
+    buffer.writeln();
+  }
+  buffer.write(body.toString());
+  return buffer.toString();
+}
+
+String _camelCaseIdent(String key) {
+  final parts = key
+      .split(RegExp(r'[^A-Za-z0-9]+'))
+      .where((part) => part.isNotEmpty)
+      .toList();
+  if (parts.isEmpty) return 'field';
+  final head = parts.first;
+  final buffer = StringBuffer(head[0].toLowerCase() + head.substring(1));
+  for (final part in parts.skip(1)) {
+    buffer.write(part[0].toUpperCase() + part.substring(1));
+  }
+  var result = buffer.toString();
+  if (RegExp(r'^[0-9]').hasMatch(result)) result = 'n$result';
+  return result;
+}
+
+String _pascalCaseIdent(String key) {
+  final camel = _camelCaseIdent(key);
+  return camel[0].toUpperCase() + camel.substring(1);
+}
+
+String _singularName(String name) {
+  if (name.length > 1 && name.endsWith('s') && !name.endsWith('ss')) {
+    return name.substring(0, name.length - 1);
+  }
+  return name;
+}
+
+bool _isValidIdent(String value) =>
+    RegExp(r'^[A-Za-z_$][\w$]*$').hasMatch(value);
+
+// ---------------------------------------------------------------------------
+// PHP serialize() / unserialize()
+// ---------------------------------------------------------------------------
+
+String _phpSerialize(Object? value) {
+  if (value == null) return 'N;';
+  if (value is bool) return 'b:${value ? 1 : 0};';
+  if (value is int) return 'i:$value;';
+  if (value is double) {
+    return 'd:${value == value.roundToDouble() ? value.toStringAsFixed(1) : value};';
+  }
+  if (value is num) return 'd:$value;';
+  if (value is String) {
+    return 's:${utf8.encode(value).length}:"$value";';
+  }
+  if (value is List) {
+    final buffer = StringBuffer('a:${value.length}:{');
+    for (var i = 0; i < value.length; i++) {
+      buffer.write('i:$i;');
+      buffer.write(_phpSerialize(value[i]));
+    }
+    buffer.write('}');
+    return buffer.toString();
+  }
+  if (value is Map) {
+    final buffer = StringBuffer('a:${value.length}:{');
+    value.forEach((key, element) {
+      buffer.write(_phpSerializeKey(key));
+      buffer.write(_phpSerialize(element));
+    });
+    buffer.write('}');
+    return buffer.toString();
+  }
+  return 'N;';
+}
+
+String _phpSerializeKey(Object? key) {
+  final keyString = key.toString();
+  final asInt = int.tryParse(keyString);
+  if (asInt != null && asInt.toString() == keyString) return 'i:$asInt;';
+  return 's:${utf8.encode(keyString).length}:"$keyString";';
+}
+
+Object? _phpUnserialize(String input) {
+  final (value, next) = _phpParse(input, 0);
+  final rest = input.substring(next).trim();
+  if (rest.isNotEmpty) {
+    throw FormatException('Unexpected trailing data at offset $next');
+  }
+  return value;
+}
+
+(Object?, int) _phpParse(String source, int index) {
+  if (index >= source.length) {
+    throw const FormatException('Unexpected end of input');
+  }
+  final type = source[index];
+  switch (type) {
+    case 'N':
+      _expect(source, index + 1, ';');
+      return (null, index + 2);
+    case 'b':
+      final semi = source.indexOf(';', index);
+      if (semi == -1) throw const FormatException('Malformed boolean');
+      return (source.substring(index + 2, semi) == '1', semi + 1);
+    case 'i':
+      final semi = source.indexOf(';', index);
+      if (semi == -1) throw const FormatException('Malformed integer');
+      return (int.parse(source.substring(index + 2, semi)), semi + 1);
+    case 'd':
+      final semi = source.indexOf(';', index);
+      if (semi == -1) throw const FormatException('Malformed double');
+      return (double.parse(source.substring(index + 2, semi)), semi + 1);
+    case 's':
+      final colon1 = source.indexOf(':', index);
+      final colon2 = source.indexOf(':', colon1 + 1);
+      final length = int.parse(source.substring(colon1 + 1, colon2));
+      final start = colon2 + 2; // skip :"
+      var consumed = 0;
+      var cursor = start;
+      while (cursor < source.length && consumed < length) {
+        consumed += utf8.encode(source[cursor]).length;
+        cursor++;
+      }
+      final text = source.substring(start, cursor);
+      _expect(source, cursor, '"');
+      _expect(source, cursor + 1, ';');
+      return (text, cursor + 2);
+    case 'a':
+      final colon1 = source.indexOf(':', index);
+      final colon2 = source.indexOf(':', colon1 + 1);
+      final count = int.parse(source.substring(colon1 + 1, colon2));
+      var cursor = colon2 + 2; // skip :{
+      final entries = <Object?, Object?>{};
+      var isList = true;
+      for (var n = 0; n < count; n++) {
+        final (key, afterKey) = _phpParse(source, cursor);
+        final (element, afterValue) = _phpParse(source, afterKey);
+        entries[key] = element;
+        if (key != n) isList = false;
+        cursor = afterValue;
+      }
+      _expect(source, cursor, '}');
+      cursor += 1;
+      if (isList) return (entries.values.toList(), cursor);
+      final map = <String, Object?>{};
+      entries.forEach((key, element) => map[key.toString()] = element);
+      return (map, cursor);
+    default:
+      throw FormatException('Unsupported PHP type "$type" at offset $index');
+  }
+}
+
+void _expect(String source, int index, String expected) {
+  if (index >= source.length || source[index] != expected) {
+    throw FormatException('Expected "$expected" at offset $index');
+  }
+}
+
+class _PhpSerializerView extends StatefulWidget {
+  const _PhpSerializerView({required this.serialize});
+
+  /// `true` for the serializer (JSON -> PHP), `false` for the unserializer.
+  final bool serialize;
+
+  @override
+  State<_PhpSerializerView> createState() => _PhpSerializerViewState();
+}
+
+class _PhpSerializerViewState extends State<_PhpSerializerView> {
+  final TextEditingController _input = TextEditingController();
+  final TextEditingController _output = TextEditingController();
+
+  @override
+  void dispose() {
+    _input.dispose();
+    _output.dispose();
+    super.dispose();
+  }
+
+  void _run() {
+    final text = _input.text.trim();
+    if (text.isEmpty) {
+      setState(() => _output.clear());
+      return;
+    }
+    try {
+      if (widget.serialize) {
+        final decoded = jsonDecode(text);
+        _output.text = _phpSerialize(decoded);
+      } else {
+        final value = _phpUnserialize(text);
+        _output.text = const JsonEncoder.withIndent('  ').convert(value);
+      }
+    } catch (error) {
+      _output.text = widget.serialize
+          ? 'Invalid JSON input: $error'
+          : 'Invalid PHP serialized input: $error';
+    }
+    setState(() {});
+  }
+
+  Future<void> _pasteClipboard() async {
+    final text = await _readClipboardText();
+    setState(() => _input.text = text);
+    _run();
+  }
+
+  void _setSample() {
+    setState(() {
+      _input.text = widget.serialize
+          ? '{"name":"DevUtils","tags":["json","php"],"count":3,"active":true}'
+          : 'a:3:{s:4:"name";s:8:"DevUtils";s:5:"count";i:3;s:6:"active";b:1;}';
+    });
+    _run();
+  }
+
+  void _clear() {
+    setState(() {
+      _input.clear();
+      _output.clear();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return buildSplitEditors(
+      inputActions: [
+        ToolButton(label: 'Go', onPressed: _run),
+        ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
+        ToolButton(label: 'Sample', onPressed: _setSample),
+        ToolButton(label: 'Clear', onPressed: _clear),
+      ],
+      outputActions: [
+        ToolButton(
+          label: 'Copy',
+          onPressed: () =>
+              Clipboard.setData(ClipboardData(text: _output.text)),
+        ),
+      ],
+      inputController: _input,
+      outputController: _output,
+      onInputChanged: (_) => _run(),
+      inputPlaceholder: widget.serialize
+          ? 'Paste JSON to serialize into a PHP string...'
+          : 'Paste a PHP serialized string to decode...',
+      outputPlaceholder: widget.serialize
+          ? 'PHP serialized output...'
+          : 'Decoded JSON output...',
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// XML / ERB beautify + minify
+// ---------------------------------------------------------------------------
+
+String _beautifyXml(String xml, String indent) {
+  final trimmed = xml.trim();
+  if (trimmed.isEmpty) return '';
+  final tokens = RegExp(
+    r'<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<[^>]+>|[^<]+',
+  ).allMatches(trimmed);
+  final lines = <String>[];
+  var level = 0;
+  String pad() => List.filled(level, indent).join();
+  for (final match in tokens) {
+    final token = match.group(0) ?? '';
+    final trimmedToken = token.trim();
+    if (trimmedToken.isEmpty) continue;
+    if (trimmedToken.startsWith('<')) {
+      final isComment = trimmedToken.startsWith('<!--');
+      final isCdata = trimmedToken.startsWith('<![CDATA[');
+      final isDeclaration =
+          trimmedToken.startsWith('<?') || trimmedToken.startsWith('<!');
+      final isClosing = trimmedToken.startsWith('</');
+      final isSelfClosing =
+          trimmedToken.endsWith('/>') || isComment || isCdata || isDeclaration;
+      if (isClosing) level = max(0, level - 1);
+      lines.add('${pad()}$trimmedToken');
+      if (!isClosing && !isSelfClosing) level += 1;
+    } else {
+      final text = trimmedToken.replaceAll(RegExp(r'\s+'), ' ');
+      if (text.isNotEmpty) lines.add('${pad()}$text');
+    }
+  }
+  return lines.join('\n');
+}
+
+String _minifyXml(String xml, bool keepComments) {
+  var output = xml;
+  if (!keepComments) {
+    output = output.replaceAll(RegExp(r'<!--[\s\S]*?-->'), '');
+  }
+  output = output.replaceAll(RegExp(r'>\s+<'), '><');
+  output = output.replaceAll(RegExp(r'\s{2,}'), ' ');
+  return output.trim();
+}
+
+// Re-indents Ruby source by keyword/`end` block structure. Each line is
+// trimmed and re-indented from a running level, so it works on flat input.
+String _beautifyRuby(String source, String indent) {
+  if (source.trim().isEmpty) return '';
+  final lines = source.split('\n');
+  final out = <String>[];
+  var level = 0;
+  for (final raw in lines) {
+    final line = raw.trim();
+    if (line.isEmpty) {
+      out.add('');
+      continue;
+    }
+    final closes = RegExp(r'^(end\b|\}|\]|\))').hasMatch(line);
+    final continuation =
+        RegExp(r'^(else\b|elsif\b|when\b|in\b|rescue\b|ensure\b)').hasMatch(line);
+    if (closes || continuation) level = max(0, level - 1);
+    out.add('${List.filled(level, indent).join()}$line');
+    if (continuation) {
+      level += 1;
+    } else if (!closes && _rubyOpensBlock(line)) {
+      level += 1;
+    }
+  }
+  return out.join('\n').trimRight();
+}
+
+bool _rubyOpensBlock(String line) {
+  // Strip a trailing line comment that isn't inside a string.
+  final code = line.replaceFirst(RegExp(r'\s+#(?![{]).*$'), '').trimRight();
+  if (RegExp(r'^(def|class|module|begin)\b').hasMatch(code)) return true;
+  if (RegExp(r'^(if|unless|while|until|for|case)\b').hasMatch(code)) {
+    // Exclude one-line forms like `if x then y end`.
+    return !RegExp(r'\bend\b').hasMatch(code);
+  }
+  if (RegExp(r'\bdo\b(\s*\|[^|]*\|)?\s*$').hasMatch(code)) return true;
+  if (code.endsWith('{') || RegExp(r'\{\s*\|[^|]*\|\s*$').hasMatch(code)) {
+    return true;
+  }
+  return false;
+}
+
+String _minifyRuby(String source, bool keepComments) {
+  // Ruby is newline-significant, so "minify" just strips blank lines, full-line
+  // comments, and leading/trailing whitespace.
+  final lines = source.split('\n');
+  final out = <String>[];
+  for (final raw in lines) {
+    final line = raw.trim();
+    if (line.isEmpty) continue;
+    if (!keepComments && line.startsWith('#')) continue;
+    out.add(line);
+  }
+  return out.join('\n');
+}
+
+class _MarkupBeautifyMinifyView extends StatefulWidget {
+  const _MarkupBeautifyMinifyView({
+    required this.language,
+    required this.beautify,
+    required this.minify,
+    this.showComments = false,
+  });
+
+  final String language;
+  final String Function(String source, String indent) beautify;
+  final String Function(String source, bool keepComments) minify;
+  final bool showComments;
+
+  @override
+  State<_MarkupBeautifyMinifyView> createState() =>
+      _MarkupBeautifyMinifyViewState();
+}
+
+class _MarkupBeautifyMinifyViewState extends State<_MarkupBeautifyMinifyView> {
+  final TextEditingController _input = TextEditingController();
+  final TextEditingController _output = TextEditingController();
+  String _format = 'Beautify';
+  String _indent = '2 spaces';
+  bool _keepComments = true;
+
+  @override
+  void dispose() {
+    _input.dispose();
+    _output.dispose();
+    super.dispose();
+  }
+
+  void _run() {
+    final text = _input.text;
+    _output.text = _format == 'Minify'
+        ? widget.minify(text, _keepComments)
+        : widget.beautify(text, _indentFor(_indent));
+    setState(() {});
+  }
+
+  void _setSample() {
+    setState(() {
+      _input.text = widget.language == 'XML'
+          ? '<?xml version="1.0"?><note><to>DevUtils</to><body>Hello<br/>World</body></note>'
+          : 'class User\ndef initialize(name)\n@name = name\nend\ndef greet\nif @name\nputs "Hello #{@name}"\nelse\nputs "Hello"\nend\nend\nend';
+    });
+    _run();
+  }
+
+  void _clear() {
+    setState(() {
+      _input.clear();
+      _output.clear();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controls = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SmallDropdown(
+          items: const ['Beautify', 'Minify'],
+          initialValue: _format,
+          onChanged: (value) {
+            setState(() => _format = value);
+            _run();
+          },
+        ),
+        if (_format == 'Beautify') ...[
+          const SizedBox(width: 6),
+          SmallDropdown(
+            items: const ['2 spaces', '4 spaces', 'Tabs'],
+            initialValue: _indent,
+            onChanged: (value) {
+              setState(() => _indent = value);
+              _run();
+            },
+          ),
+        ],
+        if (_format == 'Minify' && widget.showComments) ...[
+          const SizedBox(width: 6),
+          SmallDropdown(
+            items: const ['Keep comments', 'Strip comments'],
+            initialValue: _keepComments ? 'Keep comments' : 'Strip comments',
+            onChanged: (value) {
+              setState(() => _keepComments = value == 'Keep comments');
+              _run();
+            },
+          ),
+        ],
+      ],
+    );
+
+    return buildSplitEditors(
+      inputActions: [
+        ToolButton(label: 'Sample', onPressed: _setSample),
+        ToolButton(label: 'Clear', onPressed: _clear),
+      ],
+      outputActions: [
+        ToolButton(
+          label: 'Copy',
+          onPressed: () =>
+              Clipboard.setData(ClipboardData(text: _output.text)),
+        ),
+      ],
+      inputController: _input,
+      outputController: _output,
+      onInputChanged: (_) => _run(),
+      inputPlaceholder: 'Paste ${widget.language} here...',
+      outputPlaceholder: 'Output...',
+      showInputHeader: false,
+      showOutputHeader: false,
+      outputOverlay: controls,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// X.509 certificate decoding (minimal self-contained DER/ASN.1 parser)
+// ---------------------------------------------------------------------------
+
+class _Asn1Node {
+  _Asn1Node(this.tag, this.content, this.children);
+  final int tag;
+  final Uint8List content;
+  final List<_Asn1Node> children;
+}
+
+class _DerParser {
+  _DerParser(this.bytes);
+  final Uint8List bytes;
+  int _pos = 0;
+
+  _Asn1Node parse() => _parseNode();
+
+  _Asn1Node _parseNode() {
+    if (_pos + 2 > bytes.length) {
+      throw const FormatException('Truncated DER data');
+    }
+    final tag = bytes[_pos++];
+    var length = bytes[_pos++];
+    if ((length & 0x80) != 0) {
+      final count = length & 0x7f;
+      if (count == 0 || count > 4) {
+        throw const FormatException('Unsupported DER length');
+      }
+      length = 0;
+      for (var i = 0; i < count; i++) {
+        length = (length << 8) | bytes[_pos++];
+      }
+    }
+    final contentStart = _pos;
+    final contentEnd = contentStart + length;
+    if (contentEnd > bytes.length) {
+      throw const FormatException('DER length exceeds data');
+    }
+    final content = Uint8List.sublistView(bytes, contentStart, contentEnd);
+    final children = <_Asn1Node>[];
+    final constructed = (tag & 0x20) != 0;
+    if (constructed) {
+      while (_pos < contentEnd) {
+        children.add(_parseNode());
+      }
+    } else {
+      _pos = contentEnd;
+    }
+    return _Asn1Node(tag, content, children);
+  }
+}
+
+const _x509Oids = <String, String>{
+  '2.5.4.3': 'CN',
+  '2.5.4.4': 'SN',
+  '2.5.4.5': 'serialNumber',
+  '2.5.4.6': 'C',
+  '2.5.4.7': 'L',
+  '2.5.4.8': 'ST',
+  '2.5.4.9': 'street',
+  '2.5.4.10': 'O',
+  '2.5.4.11': 'OU',
+  '1.2.840.113549.1.9.1': 'email',
+  '1.2.840.113549.1.1.1': 'RSA',
+  '1.2.840.113549.1.1.5': 'sha1WithRSA',
+  '1.2.840.113549.1.1.11': 'sha256WithRSA',
+  '1.2.840.113549.1.1.12': 'sha384WithRSA',
+  '1.2.840.113549.1.1.13': 'sha512WithRSA',
+  '1.2.840.10045.2.1': 'EC',
+  '1.2.840.10045.4.3.2': 'ecdsa-with-SHA256',
+  '1.2.840.10045.4.3.3': 'ecdsa-with-SHA384',
+  '1.2.840.10045.3.1.7': 'P-256',
+  '1.3.132.0.34': 'P-384',
+  '1.3.132.0.35': 'P-521',
+  '2.5.29.14': 'Subject Key Identifier',
+  '2.5.29.15': 'Key Usage',
+  '2.5.29.17': 'Subject Alternative Name',
+  '2.5.29.19': 'Basic Constraints',
+  '2.5.29.31': 'CRL Distribution Points',
+  '2.5.29.32': 'Certificate Policies',
+  '2.5.29.35': 'Authority Key Identifier',
+  '2.5.29.37': 'Extended Key Usage',
+  '1.3.6.1.5.5.7.1.1': 'Authority Information Access',
+};
+
+String _decodeAsn1Oid(Uint8List bytes) {
+  if (bytes.isEmpty) return '';
+  final parts = <int>[bytes[0] ~/ 40, bytes[0] % 40];
+  var value = 0;
+  for (var i = 1; i < bytes.length; i++) {
+    value = (value << 7) | (bytes[i] & 0x7f);
+    if ((bytes[i] & 0x80) == 0) {
+      parts.add(value);
+      value = 0;
+    }
+  }
+  return parts.join('.');
+}
+
+BigInt _bytesToBigInt(Uint8List bytes) {
+  var result = BigInt.zero;
+  for (final byte in bytes) {
+    result = (result << 8) | BigInt.from(byte);
+  }
+  return result;
+}
+
+String _hexColons(Uint8List bytes) =>
+    bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(':');
+
+String _decodeAsn1Name(_Asn1Node name) {
+  final parts = <String>[];
+  for (final rdn in name.children) {
+    for (final atv in rdn.children) {
+      if (atv.children.length >= 2) {
+        final oid = _decodeAsn1Oid(atv.children[0].content);
+        final key = _x509Oids[oid] ?? oid;
+        final value = _decodeAsn1String(atv.children[1]);
+        parts.add('$key=$value');
+      }
+    }
+  }
+  return parts.isEmpty ? '(none)' : parts.join(', ');
+}
+
+String _decodeAsn1String(_Asn1Node node) {
+  try {
+    return utf8.decode(node.content);
+  } catch (_) {
+    return latin1.decode(node.content);
+  }
+}
+
+String _decodeAsn1Time(_Asn1Node node) {
+  final raw = ascii.decode(node.content);
+  try {
+    if (node.tag == 0x17) {
+      // UTCTime: YYMMDDHHMMSSZ
+      final yy = int.parse(raw.substring(0, 2));
+      final year = yy >= 50 ? 1900 + yy : 2000 + yy;
+      return '$year-${raw.substring(2, 4)}-${raw.substring(4, 6)} '
+          '${raw.substring(6, 8)}:${raw.substring(8, 10)}:${raw.substring(10, 12)} UTC';
+    }
+    // GeneralizedTime: YYYYMMDDHHMMSSZ
+    return '${raw.substring(0, 4)}-${raw.substring(4, 6)}-${raw.substring(6, 8)} '
+        '${raw.substring(8, 10)}:${raw.substring(10, 12)}:${raw.substring(12, 14)} UTC';
+  } catch (_) {
+    return raw;
+  }
+}
+
+String _decodeX509Certificate(String input) {
+  final cleaned = input
+      .replaceAll(RegExp(r'-----(BEGIN|END)[^-]*-----'), '')
+      .replaceAll(RegExp(r'\s'), '');
+  if (cleaned.isEmpty) {
+    throw const FormatException('No certificate data found');
+  }
+  final der = base64.decode(cleaned);
+  final root = _DerParser(Uint8List.fromList(der)).parse();
+  if (root.children.length < 3) {
+    throw const FormatException('Not a valid X.509 certificate structure');
+  }
+  final tbs = root.children[0];
+  final signatureAlgorithm = root.children[1];
+
+  var index = 0;
+  var version = 1;
+  if (tbs.children.isNotEmpty && (tbs.children[0].tag & 0xff) == 0xA0) {
+    final versionNode = tbs.children[0].children.isNotEmpty
+        ? tbs.children[0].children[0]
+        : null;
+    if (versionNode != null) {
+      version = _bytesToBigInt(versionNode.content).toInt() + 1;
+    }
+    index = 1;
+  }
+
+  final serial = tbs.children[index++];
+  index++; // inner signature algorithm (same as outer)
+  final issuer = tbs.children[index++];
+  final validity = tbs.children[index++];
+  final subject = tbs.children[index++];
+  final spki = tbs.children[index++];
+
+  _Asn1Node? extensionsNode;
+  for (var i = index; i < tbs.children.length; i++) {
+    if ((tbs.children[i].tag & 0xff) == 0xA3) {
+      extensionsNode = tbs.children[i];
+    }
+  }
+
+  final sigOid = _decodeAsn1Oid(signatureAlgorithm.children.first.content);
+  final notBefore = validity.children.isNotEmpty
+      ? _decodeAsn1Time(validity.children[0])
+      : '?';
+  final notAfter = validity.children.length > 1
+      ? _decodeAsn1Time(validity.children[1])
+      : '?';
+
+  final buffer = StringBuffer();
+  buffer.writeln('Version: v$version');
+  buffer.writeln('Serial Number: ${_hexColons(serial.content)}');
+  buffer.writeln('Signature Algorithm: ${_x509Oids[sigOid] ?? sigOid}');
+  buffer.writeln();
+  buffer.writeln('Issuer: ${_decodeAsn1Name(issuer)}');
+  buffer.writeln('Subject: ${_decodeAsn1Name(subject)}');
+  buffer.writeln();
+  buffer.writeln('Not Before: $notBefore');
+  buffer.writeln('Not After:  $notAfter');
+  buffer.writeln();
+  buffer.writeln('Public Key: ${_describePublicKey(spki)}');
+
+  if (extensionsNode != null && extensionsNode.children.isNotEmpty) {
+    final extensionList = extensionsNode.children[0];
+    final sans = <String>[];
+    final names = <String>[];
+    for (final ext in extensionList.children) {
+      if (ext.children.isEmpty) continue;
+      final oid = _decodeAsn1Oid(ext.children[0].content);
+      names.add(_x509Oids[oid] ?? oid);
+      if (oid == '2.5.29.17') {
+        try {
+          final inner = _DerParser(
+            Uint8List.fromList(ext.children.last.content),
+          ).parse();
+          for (final generalName in inner.children) {
+            if ((generalName.tag & 0x1f) == 2) {
+              sans.add(ascii.decode(generalName.content));
+            }
+          }
+        } catch (_) {
+          // Ignore malformed SAN.
+        }
+      }
+    }
+    buffer.writeln();
+    if (sans.isNotEmpty) {
+      buffer.writeln('Subject Alternative Names: ${sans.join(', ')}');
+    }
+    if (names.isNotEmpty) {
+      buffer.writeln('Extensions: ${names.join(', ')}');
+    }
+  }
+
+  return buffer.toString().trimRight();
+}
+
+String _describePublicKey(_Asn1Node spki) {
+  if (spki.children.length < 2) return 'Unknown';
+  final algorithm = spki.children[0];
+  final algOid = _decodeAsn1Oid(algorithm.children.first.content);
+  if (algOid == '1.2.840.113549.1.1.1') {
+    try {
+      final bitString = spki.children[1];
+      final inner = _DerParser(
+        Uint8List.fromList(bitString.content.sublist(1)),
+      ).parse();
+      if (inner.children.isNotEmpty) {
+        final modulus = inner.children[0].content;
+        var bits = modulus.length * 8;
+        if (modulus.isNotEmpty && modulus[0] == 0) bits -= 8;
+        return 'RSA $bits-bit';
+      }
+    } catch (_) {
+      // fall through
+    }
+    return 'RSA';
+  }
+  if (algOid == '1.2.840.10045.2.1') {
+    if (algorithm.children.length > 1 && algorithm.children[1].tag == 0x06) {
+      final curveOid = _decodeAsn1Oid(algorithm.children[1].content);
+      return 'EC (${_x509Oids[curveOid] ?? curveOid})';
+    }
+    return 'EC';
+  }
+  return _x509Oids[algOid] ?? algOid;
 }
 
 class _CertificateDecoderView extends StatefulWidget {
@@ -13895,7 +16235,16 @@ class _CertificateDecoderViewState extends State<_CertificateDecoderView> {
   }
 
   void _run() {
-    _output.text = 'Unexpected Error:\nThe operation could not be completed.';
+    final text = _input.text.trim();
+    if (text.isEmpty) {
+      setState(() => _output.clear());
+      return;
+    }
+    try {
+      _output.text = _decodeX509Certificate(text);
+    } catch (error) {
+      _output.text = 'Could not decode certificate: $error';
+    }
     setState(() {});
   }
 
@@ -13915,7 +16264,7 @@ class _CertificateDecoderViewState extends State<_CertificateDecoderView> {
         ToolButton(
           label: 'Sample',
           onPressed: () {
-            setState(() => _input.text = '-----BEGIN CERTIFICATE-----');
+            setState(() => _input.text = _sampleCertificate);
             _run();
           },
         ),
@@ -13926,7 +16275,6 @@ class _CertificateDecoderViewState extends State<_CertificateDecoderView> {
             _output.clear();
           },
         ),
-        const ToolIconButton(icon: Icons.settings),
       ],
       outputActions: [
         ToolButton(
@@ -13936,23 +16284,37 @@ class _CertificateDecoderViewState extends State<_CertificateDecoderView> {
       ],
       inputController: _input,
       outputController: _output,
-      outputPlaceholder:
-          'Unexpected Error:\nThe operation could not be completed.',
+      onInputChanged: (_) => _run(),
+      inputPlaceholder: 'Paste a PEM certificate (-----BEGIN CERTIFICATE-----)...',
+      outputPlaceholder: 'Decoded certificate details...',
     );
   }
 }
 
-class _PhpJsonConverterView extends StatefulWidget {
-  const _PhpJsonConverterView();
+const _sampleCertificate = '''-----BEGIN CERTIFICATE-----
+MIIB7DCCAZOgAwIBAgIUVoA8oGwVpSjBzBTZcGW+bY77CmswCgYIKoZIzj0EAwIw
+ODEWMBQGA1UEAwwNRGV2VXRpbHMgRGVtbzERMA8GA1UECgwIRGV2VXRpbHMxCzAJ
+BgNVBAYTAlVTMB4XDTI2MDUzMDE2NDc1MFoXDTM2MDUyNzE2NDc1MFowODEWMBQG
+A1UEAwwNRGV2VXRpbHMgRGVtbzERMA8GA1UECgwIRGV2VXRpbHMxCzAJBgNVBAYT
+AlVTMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE7XbscG+Ek23v6rDBkdnGa1OE
+3rI7vDAyBcAUqZnU1p4LZiCMNlVdVFt6bjqVjBxbWOwBwnYswRy8YJ4i6ZOMnaN7
+MHkwHQYDVR0OBBYEFJrW+aR5bA8mT7OWm0E73Ygwmh3MMB8GA1UdIwQYMBaAFJrW
++aR5bA8mT7OWm0E73Ygwmh3MMA8GA1UdEwEB/wQFMAMBAf8wJgYDVR0RBB8wHYIO
+ZGV2dXRpbHMubG9jYWyCC2V4YW1wbGUuY29tMAoGCCqGSM49BAMCA0cAMEQCIHAo
+w6Cw52/VHxNACem1bTn7QXTHGITl/14Yw2rHvmblAiBkFlK4UR9TuVb5xhfbDlGf
+P5PAClqna/CMiQUAYnkaxQ==
+-----END CERTIFICATE-----''';
+
+class _PhpToJsView extends StatefulWidget {
+  const _PhpToJsView();
 
   @override
-  State<_PhpJsonConverterView> createState() => _PhpJsonConverterViewState();
+  State<_PhpToJsView> createState() => _PhpToJsViewState();
 }
 
-class _PhpJsonConverterViewState extends State<_PhpJsonConverterView> {
+class _PhpToJsViewState extends State<_PhpToJsView> {
   final TextEditingController _input = TextEditingController();
   final TextEditingController _output = TextEditingController();
-  bool _phpToJson = true;
   String? _error;
 
   @override
@@ -13971,313 +16333,92 @@ class _PhpJsonConverterViewState extends State<_PhpJsonConverterView> {
       });
       return;
     }
-
     try {
-      if (_phpToJson) {
-        final decoded = _parsePhpDataLiteral(text);
-        _output.text = const JsonEncoder.withIndent('  ').convert(decoded);
-      } else {
-        final decoded = jsonDecode(text);
-        _output.text = "<?php\nreturn ${_jsonToPhpLiteral(decoded)};\n";
-      }
-      setState(() => _error = null);
+      _output.text = PhpToJsConverter.convert(_input.text);
+      _error = null;
     } catch (error) {
-      setState(() {
-        _error = error.toString();
-        _output.clear();
-      });
+      _output.clear();
+      _error = 'Could not convert: $error';
     }
+    setState(() {});
+  }
+
+  void _setSample() {
+    setState(() {
+      _input.text = r'''<?php
+
+class UserCard {
+    public $name;
+    private $createdAt;
+
+    public function __construct($name) {
+        $this->name = $name;
+        $this->createdAt = new Date();
+    }
+
+    public function greet($times = 1) {
+        $message = "";
+        foreach ($this->items as $key => $item) {
+            $message .= "Hello $item! ";
+        }
+        return $message;
+    }
+}
+''';
+    });
+    _run();
   }
 
   @override
   Widget build(BuildContext context) {
-    return buildSplitEditors(
-      inputActions: [
-        ToolButton(
-          label: 'Sample',
-          onPressed: () {
-            setState(
-              () => _input.text = _phpToJson
-                  ? "<?php\nreturn ['name' => 'DevUtils', 'enabled' => true];"
-                  : '{"store": {"book": []}}',
-            );
-            _run();
-          },
-        ),
-        ToolButton(
-          label: 'Clear',
-          onPressed: () {
-            setState(() => _input.clear());
-            _output.clear();
-          },
-        ),
-        SegmentedToggle(
-          options: const ['PHP → JSON', 'JSON → PHP'],
-          initialIndex: _phpToJson ? 0 : 1,
-          onChanged: (index) {
-            setState(() => _phpToJson = index == 0);
-            _run();
-          },
-        ),
-      ],
-      outputActions: [
-        if (_error != null)
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Text(
-              _error!,
-              overflow: TextOverflow.ellipsis,
-              style: _errorToolTextStyle(context, fontSize: 12),
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_error != null) ...[
+          Text(_error!, style: _errorToolTextStyle(context)),
+          const SizedBox(height: 8),
+        ],
+        Expanded(
+          child: buildSplitEditors(
+            horizontal: true,
+            inputController: _input,
+            outputController: _output,
+            onInputChanged: (_) => _run(),
+            inputActions: [
+              ToolButton(label: 'Sample', onPressed: _setSample),
+              ToolButton(
+                label: 'Clear',
+                onPressed: () {
+                  setState(() {
+                    _input.clear();
+                    _output.clear();
+                    _error = null;
+                  });
+                },
+              ),
+            ],
+            outputActions: [
+              ToolButton(
+                label: 'Copy',
+                onPressed: () =>
+                    Clipboard.setData(ClipboardData(text: _output.text)),
+              ),
+            ],
+            inputPlaceholder: '<?php\n\$name = "DevUtils";\necho "Hello \$name";',
+            outputPlaceholder: 'JavaScript output...',
+            showInputHeader: false,
+            showOutputHeader: false,
           ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Heuristic transpile (token state machine, ported from '
+          'Danack/PHP-to-Javascript) — review output for complex code.',
+          style: _mutedToolTextStyle(context, fontSize: 12),
+        ),
       ],
-      inputController: _input,
-      outputController: _output,
-      onInputChanged: (_) => _run(),
-      inputPlaceholder: _phpToJson
-          ? "<?php\nreturn ['name' => 'DevUtils'];"
-          : '{"store": {}}',
-      outputPlaceholder: _phpToJson
-          ? '{\n  "name": "DevUtils"\n}'
-          : '<?php\nreturn [',
-      showInputHeader: false,
-      showOutputHeader: false,
     );
   }
-}
-
-dynamic _parsePhpDataLiteral(String input) {
-  var source = input.trim();
-  source = source.replaceAll(RegExp(r'^<\?php\s*', caseSensitive: false), '');
-  source = source.replaceAll(RegExp(r'\?>\s*$'), '').trim();
-  source = source.replaceFirst(RegExp(r'^return\s+', caseSensitive: false), '');
-  source = source.replaceFirst(RegExp(r'^\$[A-Za-z_][A-Za-z0-9_]*\s*=\s*'), '');
-  source = source.trim();
-  if (source.endsWith(';')) source = source.substring(0, source.length - 1);
-
-  if (RegExp(
-    r'\b(function|class|echo|switch|case|if|for|foreach|while|require|include)\b',
-    caseSensitive: false,
-  ).hasMatch(source)) {
-    throw const FormatException(
-      'Paste a PHP array or value. Executable PHP scripts are not evaluated.',
-    );
-  }
-
-  final parser = _PhpLiteralParser(source);
-  final value = parser.parseValue();
-  parser.expectEnd();
-  return value;
-}
-
-class _PhpLiteralParser {
-  _PhpLiteralParser(this.source);
-
-  final String source;
-  var index = 0;
-
-  dynamic parseValue() {
-    _skipWhitespace();
-    if (_match('(object)')) {
-      _skipWhitespace();
-      return parseValue();
-    }
-    if (_peekWord('array')) return _parseArrayKeyword();
-    final char = _peek();
-    if (char == '[') return _parseArray('[', ']');
-    if (char == '"' || char == "'") return _parseString();
-    if (char == '-' || RegExp(r'\d').hasMatch(char)) return _parseNumber();
-    return _parseIdentifier();
-  }
-
-  void expectEnd() {
-    _skipWhitespace();
-    if (index != source.length) {
-      throw FormatException('Unexpected token at offset $index.');
-    }
-  }
-
-  dynamic _parseArrayKeyword() {
-    _consumeWord('array');
-    _skipWhitespace();
-    return _parseArray('(', ')');
-  }
-
-  dynamic _parseArray(String open, String close) {
-    _expect(open);
-    final list = <dynamic>[];
-    final map = <String, dynamic>{};
-    var hasKeys = false;
-
-    while (true) {
-      _skipWhitespace();
-      if (_tryConsume(close)) break;
-      final first = parseValue();
-      _skipWhitespace();
-      if (_tryConsume('=>')) {
-        hasKeys = true;
-        final value = parseValue();
-        map['$first'] = value;
-      } else if (hasKeys) {
-        map['${list.length}'] = first;
-      } else {
-        list.add(first);
-      }
-      _skipWhitespace();
-      _tryConsume(',');
-    }
-
-    if (hasKeys) {
-      for (var i = 0; i < list.length; i++) {
-        map['$i'] = list[i];
-      }
-      return map;
-    }
-    return list;
-  }
-
-  String _parseString() {
-    final quote = _peek();
-    _expect(quote);
-    final buffer = StringBuffer();
-    while (index < source.length) {
-      final char = source[index++];
-      if (char == quote) return buffer.toString();
-      if (char == '\\' && index < source.length) {
-        final escaped = source[index++];
-        switch (escaped) {
-          case 'n':
-            buffer.write('\n');
-            break;
-          case 'r':
-            buffer.write('\r');
-            break;
-          case 't':
-            buffer.write('\t');
-            break;
-          default:
-            buffer.write(escaped);
-        }
-      } else {
-        buffer.write(char);
-      }
-    }
-    throw const FormatException('Unterminated PHP string.');
-  }
-
-  num _parseNumber() {
-    final start = index;
-    if (_peek() == '-') index++;
-    while (index < source.length && RegExp(r'\d').hasMatch(source[index])) {
-      index++;
-    }
-    if (index < source.length && source[index] == '.') {
-      index++;
-      while (index < source.length && RegExp(r'\d').hasMatch(source[index])) {
-        index++;
-      }
-      return double.parse(source.substring(start, index));
-    }
-    return int.parse(source.substring(start, index));
-  }
-
-  dynamic _parseIdentifier() {
-    final start = index;
-    while (index < source.length &&
-        RegExp(r'[A-Za-z0-9_\\]').hasMatch(source[index])) {
-      index++;
-    }
-    final value = source.substring(start, index).toLowerCase();
-    switch (value) {
-      case 'true':
-        return true;
-      case 'false':
-        return false;
-      case 'null':
-        return null;
-      default:
-        throw FormatException('Unsupported PHP value at offset $start.');
-    }
-  }
-
-  String _peek() {
-    if (index >= source.length) {
-      throw const FormatException('Unexpected end of PHP data literal.');
-    }
-    return source[index];
-  }
-
-  bool _peekWord(String word) {
-    return source.substring(index).toLowerCase().startsWith(word) &&
-        (index + word.length >= source.length ||
-            !RegExp(r'[A-Za-z0-9_]').hasMatch(source[index + word.length]));
-  }
-
-  bool _match(String value) {
-    _skipWhitespace();
-    if (!source.substring(index).toLowerCase().startsWith(value)) return false;
-    index += value.length;
-    return true;
-  }
-
-  void _consumeWord(String word) {
-    if (!_peekWord(word)) {
-      throw FormatException('Expected $word at offset $index.');
-    }
-    index += word.length;
-  }
-
-  void _skipWhitespace() {
-    while (index < source.length && RegExp(r'\s').hasMatch(source[index])) {
-      index++;
-    }
-  }
-
-  void _expect(String value) {
-    if (!_tryConsume(value)) {
-      throw FormatException('Expected "$value" at offset $index.');
-    }
-  }
-
-  bool _tryConsume(String value) {
-    _skipWhitespace();
-    if (!source.startsWith(value, index)) return false;
-    index += value.length;
-    return true;
-  }
-}
-
-String _jsonToPhpLiteral(dynamic value, {int level = 0}) {
-  final indent = '  ' * level;
-  final childIndent = '  ' * (level + 1);
-  if (value is Map) {
-    if (value.isEmpty) return '[]';
-    final entries = value.entries
-        .map((entry) {
-          final key = _phpStringLiteral('${entry.key}');
-          final phpValue = _jsonToPhpLiteral(entry.value, level: level + 1);
-          return '$childIndent$key => $phpValue,';
-        })
-        .join('\n');
-    return "[\n$entries\n$indent]";
-  }
-  if (value is List) {
-    if (value.isEmpty) return '[]';
-    final entries = value
-        .map((entry) {
-          return '$childIndent${_jsonToPhpLiteral(entry, level: level + 1)},';
-        })
-        .join('\n');
-    return "[\n$entries\n$indent]";
-  }
-  if (value is String) return _phpStringLiteral(value);
-  if (value is bool) return value ? 'true' : 'false';
-  if (value == null) return 'null';
-  return '$value';
-}
-
-String _phpStringLiteral(String value) {
-  return "'${value.replaceAll('\\', r'\\').replaceAll("'", r"\'")}'";
 }
 
 class _HexAsciiConverterView extends StatefulWidget {
@@ -15480,17 +17621,38 @@ class _JsonCsvConverterViewState extends State<_JsonCsvConverterView> {
     JsonToolStatus.empty,
   );
   bool _csvToJson = true;
+  bool _outputWrap = true;
   String _indent = '2 spaces';
   double _inputRatio = 0.5;
+  Timer? _debounce;
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _input.dispose();
     _output.dispose();
     _inputScroll.dispose();
     _outputScroll.dispose();
     _status.dispose();
     super.dispose();
+  }
+
+  void _scheduleRun() {
+    // Debounce conversion while typing so large documents aren't re-parsed and
+    // re-serialized on every keystroke.
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 250), _run);
+  }
+
+  Future<void> _export() async {
+    if (_output.text.isEmpty) return;
+    final extension = _csvToJson ? 'json' : 'csv';
+    final path = await FileDialogService.saveFile(
+      suggestedName: 'export.$extension',
+      allowedExtensions: [extension],
+    );
+    if (path == null) return;
+    await File(path).writeAsString(_output.text);
   }
 
   void _run() {
@@ -15556,8 +17718,9 @@ class _JsonCsvConverterViewState extends State<_JsonCsvConverterView> {
       outputScrollController: _outputScroll,
       inputMarkedLines: const <int>{},
       inputRatio: _inputRatio,
+      outputSoftWrap: _outputWrap,
       onInputRatioChanged: (value) => setState(() => _inputRatio = value),
-      onInputChanged: (_) => _run(),
+      onInputChanged: (_) => _scheduleRun(),
       inputPlaceholder: _csvToJson ? 'id,name,note' : '{"data":[{"id":1}]}',
       outputPlaceholder: _csvToJson ? '[]' : 'id,name',
       inputActions: const [],
@@ -15574,11 +17737,14 @@ class _JsonCsvConverterViewState extends State<_JsonCsvConverterView> {
       outputOverlay: _JsonCsvOutputOverlay(
         csvToJson: _csvToJson,
         indent: _indent,
+        wrap: _outputWrap,
         statusListenable: _status,
         onIndentChanged: (value) {
           setState(() => _indent = value);
           _run();
         },
+        onWrapChanged: (value) => setState(() => _outputWrap = value),
+        onExport: _export,
       ),
     );
   }
@@ -15618,14 +17784,20 @@ class _JsonCsvOutputOverlay extends StatelessWidget {
   const _JsonCsvOutputOverlay({
     required this.csvToJson,
     required this.indent,
+    required this.wrap,
     required this.statusListenable,
     required this.onIndentChanged,
+    required this.onWrapChanged,
+    required this.onExport,
   });
 
   final bool csvToJson;
   final String indent;
+  final bool wrap;
   final ValueListenable<JsonToolStatus> statusListenable;
   final ValueChanged<String> onIndentChanged;
+  final ValueChanged<bool> onWrapChanged;
+  final VoidCallback onExport;
 
   @override
   Widget build(BuildContext context) {
@@ -15633,6 +17805,12 @@ class _JsonCsvOutputOverlay extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Flexible(child: _JsonStatusPill(statusListenable: statusListenable)),
+        const SizedBox(width: 8),
+        SmallDropdown(
+          items: const ['Wrap', 'No wrap'],
+          initialValue: wrap ? 'Wrap' : 'No wrap',
+          onChanged: (value) => onWrapChanged(value == 'Wrap'),
+        ),
         if (csvToJson) ...[
           const SizedBox(width: 8),
           SmallDropdown(
@@ -15641,6 +17819,12 @@ class _JsonCsvOutputOverlay extends StatelessWidget {
             onChanged: onIndentChanged,
           ),
         ],
+        const SizedBox(width: 8),
+        ToolButton(
+          label: csvToJson ? 'Export JSON' : 'Export CSV',
+          icon: Icons.download,
+          onPressed: onExport,
+        ),
       ],
     );
   }
@@ -23732,8 +25916,15 @@ Widget buildHtmlBeautifyMinify(String language) {
   if (language == 'HTML') {
     return const _HtmlBeautifyMinifyView();
   }
-  if (language == 'CSS' || language == 'SCSS' || language == 'LESS') {
+  if (language == 'CSS') {
     return _StyleBeautifyMinifyView(language: language);
+  }
+  if (language == 'RB') {
+    return const _MarkupBeautifyMinifyView(
+      language: 'RB',
+      beautify: _beautifyRuby,
+      minify: _minifyRuby,
+    );
   }
   return _SimplePassThroughView(
     inputPlaceholder: 'Paste $language here...',
@@ -23742,10 +25933,11 @@ Widget buildHtmlBeautifyMinify(String language) {
 }
 
 Widget buildXmlBeautifyMinify() {
-  return _SimplePassThroughView(
-    inputPlaceholder: 'Paste XML here...',
-    showIndent: true,
-    showIncludeComments: true,
+  return const _MarkupBeautifyMinifyView(
+    language: 'XML',
+    beautify: _beautifyXml,
+    minify: _minifyXml,
+    showComments: true,
   );
 }
 
@@ -23830,22 +26022,337 @@ Widget buildColorConverter() {
 }
 
 Widget buildPhpTool(String title) {
-  return buildSplitEditors(
-    inputActions: const [
-      ToolButton(label: 'Go'),
-      ToolButton(label: 'Clipboard'),
-      ToolButton(label: 'Sample'),
-      ToolButton(label: 'Clear'),
-      ToolIconButton(icon: Icons.settings),
-    ],
-    outputActions: const [ToolButton(label: 'Copy')],
-    inputPlaceholder: 'Paste $title input...',
-    outputPlaceholder: 'Scripts Runtime for this tool is missing (php)',
-  );
+  return _PhpSerializerView(serialize: !title.toLowerCase().contains('unserial'));
 }
 
-Widget buildPhpJsonConverter() {
-  return const _PhpJsonConverterView();
+class _LocalServerView extends StatefulWidget {
+  const _LocalServerView();
+
+  @override
+  State<_LocalServerView> createState() => _LocalServerViewState();
+}
+
+class _LocalServerViewState extends State<_LocalServerView> {
+  final LocalServerService _service = LocalServerService();
+  final TextEditingController _port = TextEditingController(text: '8080');
+  final ScrollController _logScroll = ScrollController();
+  final List<ServerLogEntry> _logs = [];
+  static const int _maxLogs = 1000;
+  String? _folder;
+  bool _localOnly = true;
+  bool _running = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _service.stop();
+    _port.dispose();
+    _logScroll.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickFolder() async {
+    final path = await FileDialogService.openDirectory();
+    if (path == null || !mounted) return;
+    setState(() => _folder = path);
+  }
+
+  Future<void> _toggle() async {
+    if (_running) {
+      await _service.stop();
+      if (!mounted) return;
+      setState(() => _running = false);
+    } else {
+      final folder = _folder;
+      if (folder == null) {
+        setState(() => _error = 'Choose a folder to serve first.');
+        return;
+      }
+      final port = int.tryParse(_port.text.trim());
+      if (port == null || port < 1 || port > 65535) {
+        setState(() => _error = 'Enter a valid port (1–65535).');
+        return;
+      }
+      try {
+        await _service.start(
+          root: folder,
+          port: port,
+          localOnly: _localOnly,
+          onLog: _onLog,
+        );
+        if (!mounted) return;
+        setState(() {
+          _running = true;
+          _error = null;
+        });
+      } catch (error) {
+        if (!mounted) return;
+        setState(() => _error = _friendlyServerError(error, port));
+      }
+    }
+  }
+
+  void _onLog(ServerLogEntry entry) {
+    if (!mounted) return;
+    final atBottom = !_logScroll.hasClients ||
+        _logScroll.position.pixels >= _logScroll.position.maxScrollExtent - 40;
+    setState(() {
+      _logs.add(entry);
+      if (_logs.length > _maxLogs) {
+        _logs.removeRange(0, _logs.length - _maxLogs);
+      }
+    });
+    if (atBottom) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_logScroll.hasClients) {
+          _logScroll.jumpTo(_logScroll.position.maxScrollExtent);
+        }
+      });
+    }
+  }
+
+  String _friendlyServerError(Object error, int port) {
+    if (error is SocketException) {
+      final message = error.osError?.message ?? error.message;
+      return 'Could not start server on port $port: $message';
+    }
+    return 'Could not start server: $error';
+  }
+
+  String get _url => 'http://localhost:${_port.text.trim()}/';
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          decoration: _toolSurfaceDecoration(context),
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.folder_outlined, size: 16, color: appColors.mutedText),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _folder ?? 'No folder selected',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Menlo',
+                        fontSize: 12,
+                        color: _folder == null
+                            ? appColors.mutedText
+                            : appColors.editorText,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ToolButton(
+                    label: 'Choose Folder',
+                    icon: Icons.folder_open,
+                    onPressed: _running ? null : _pickFolder,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Text('Port', style: TextStyle(color: appColors.mutedText)),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 96,
+                    child: TextField(
+                      controller: _port,
+                      enabled: !_running,
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(fontFamily: 'Menlo', fontSize: 13),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  _CompactCheck(
+                    label: 'Local only',
+                    value: _localOnly,
+                    onChanged: _running
+                        ? (_) {}
+                        : (value) => setState(() => _localOnly = value),
+                  ),
+                  const Spacer(),
+                  ToolButton(
+                    label: _running ? 'Stop' : 'Start',
+                    icon: _running ? Icons.stop : Icons.play_arrow,
+                    onPressed: _toggle,
+                  ),
+                ],
+              ),
+              if (_running) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Icon(Icons.circle, size: 9, color: appColors.success),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Serving at $_url',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Menlo',
+                          fontSize: 12,
+                          color: appColors.editorText,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    ToolIconButton(
+                      icon: Icons.copy,
+                      tooltip: 'Copy URL',
+                      onPressed: () =>
+                          Clipboard.setData(ClipboardData(text: _url)),
+                    ),
+                    Text(
+                      _localOnly ? 'local only' : 'network accessible',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: _localOnly ? appColors.mutedText : appColors.warning,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                Text(_error!, style: _errorToolTextStyle(context, fontSize: 12)),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Text(
+              'Access log',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: appColors.editorText,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text('(${_logs.length})',
+                style: TextStyle(color: appColors.mutedText, fontSize: 12)),
+            const Spacer(),
+            if (_logs.isNotEmpty)
+              ToolButton(
+                label: 'Clear log',
+                onPressed: () => setState(_logs.clear),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Expanded(
+          child: Container(
+            decoration: _toolSurfaceDecoration(context),
+            child: _logs.isEmpty
+                ? Center(
+                    child: Text(
+                      _running
+                          ? 'Waiting for requests…'
+                          : 'Start the server to see access logs here.',
+                      style: _mutedToolTextStyle(context),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _logScroll,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    itemCount: _logs.length,
+                    itemBuilder: (context, index) =>
+                        _ServerLogRow(entry: _logs[index]),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ServerLogRow extends StatelessWidget {
+  const _ServerLogRow({required this.entry});
+
+  final ServerLogEntry entry;
+
+  String _two(int v) => v.toString().padLeft(2, '0');
+
+  String get _time =>
+      '${_two(entry.time.hour)}:${_two(entry.time.minute)}:${_two(entry.time.second)}';
+
+  String get _size {
+    if (entry.bytes < 1024) return '${entry.bytes} B';
+    if (entry.bytes < 1024 * 1024) {
+      return '${(entry.bytes / 1024).toStringAsFixed(1)} KB';
+    }
+    return '${(entry.bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    final Color statusColor;
+    if (entry.status < 300) {
+      statusColor = appColors.success;
+    } else if (entry.status < 400) {
+      statusColor = appColors.accent;
+    } else if (entry.status < 500) {
+      statusColor = appColors.warning;
+    } else {
+      statusColor = appColors.error;
+    }
+    final style = TextStyle(fontFamily: 'Menlo', fontSize: 12, color: appColors.editorText);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(_time, style: TextStyle(fontFamily: 'Menlo', fontSize: 12, color: appColors.mutedText)),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 36,
+            child: Text(entry.status.toString(),
+                style: style.copyWith(color: statusColor, fontWeight: FontWeight.w700)),
+          ),
+          SizedBox(
+            width: 48,
+            child: Text(entry.method, style: style.copyWith(color: appColors.mutedText)),
+          ),
+          Expanded(
+            child: Text(entry.path, style: style, overflow: TextOverflow.ellipsis),
+          ),
+          const SizedBox(width: 10),
+          Text(_size, style: style.copyWith(color: appColors.mutedText)),
+          const SizedBox(width: 10),
+          Text(entry.client, style: style.copyWith(color: appColors.mutedText)),
+        ],
+      ),
+    );
+  }
+}
+
+Widget buildPhpToJs() {
+  return const _PhpToJsView();
+}
+
+Widget buildLocalServer() {
+  return const _LocalServerView();
 }
 
 Widget buildRandomStringGenerator() {
@@ -23913,7 +26420,7 @@ class _PrefCheckbox extends StatelessWidget {
 
   final String label;
   final bool value;
-  final ValueChanged<bool?> onChanged;
+  final ValueChanged<bool?>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -23993,6 +26500,13 @@ class _PreferencesViewState extends State<_PreferencesView> {
     }
   }
 
+  void _applyAppearance() {
+    AppAppearanceService.apply(
+      showStatusBar: _showStatusBar,
+      showDock: _showDock,
+    );
+  }
+
   @override
   void dispose() {
     _whitelist.dispose();
@@ -24058,17 +26572,28 @@ class _PreferencesViewState extends State<_PreferencesView> {
         _PrefCheckbox(
           label: 'Show status bar icon',
           value: _showStatusBar,
-          onChanged: (value) {
-            setState(() => _showStatusBar = value ?? true);
-            _setPref('pref_show_status_bar', _showStatusBar);
-          },
+          // When the Dock icon is hidden the app is menu-bar-only, so the
+          // status bar icon must stay on; the box is locked on in that case.
+          onChanged: _showDock
+              ? (value) {
+                  setState(() => _showStatusBar = value ?? true);
+                  _setPref('pref_show_status_bar', _showStatusBar);
+                  _applyAppearance();
+                }
+              : null,
         ),
         _PrefCheckbox(
           label: 'Show Dock icon',
           value: _showDock,
           onChanged: (value) {
-            setState(() => _showDock = value ?? true);
+            final next = value ?? true;
+            setState(() {
+              _showDock = next;
+              if (!next) _showStatusBar = true;
+            });
             _setPref('pref_show_dock', _showDock);
+            if (!next) _setPref('pref_show_status_bar', true);
+            _applyAppearance();
           },
         ),
         const SizedBox(height: 8),

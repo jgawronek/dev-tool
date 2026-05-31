@@ -1,7 +1,12 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
+import 'package:re_editor/re_editor.dart';
 
+import '../services/file_dialog_service.dart';
 import 'app_colors.dart';
 
 class ToolButton extends StatelessWidget {
@@ -255,6 +260,8 @@ class EditorPane extends StatelessWidget {
     this.markedLines = const <int>{},
     this.showHeader = true,
     this.overlay,
+    this.enableFileDrop = true,
+    this.softWrap = true,
   });
 
   final String label;
@@ -271,6 +278,16 @@ class EditorPane extends StatelessWidget {
   final Set<int> markedLines;
   final bool showHeader;
   final Widget? overlay;
+
+  /// Whether dropping a text file onto this editor loads its contents.
+  /// Auto-enabled for editable inputs that own a controller; set to `false`
+  /// for editors that already wrap themselves in a dedicated drop target so
+  /// the same region isn't registered twice.
+  final bool enableFileDrop;
+
+  /// When `false`, a read-only editor renders each line without soft-wrapping
+  /// and scrolls horizontally instead, so long rows stay on one line.
+  final bool softWrap;
 
   @override
   Widget build(BuildContext context) {
@@ -299,7 +316,7 @@ class EditorPane extends StatelessWidget {
         (!showHeader && headerActions.isNotEmpty
             ? _EditorOverlayControls(actions: headerActions)
             : null);
-    return Column(
+    final pane = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (showHeader) ...[
@@ -350,6 +367,7 @@ class EditorPane extends StatelessWidget {
               scrollController: scrollController,
               markedLines: markedLines,
               overlay: resolvedOverlay,
+              softWrap: softWrap,
               exampleAction: readOnly ? null : exampleAction,
               clearAction: readOnly ? null : clearAction,
             ),
@@ -368,11 +386,85 @@ class EditorPane extends StatelessWidget {
               scrollController: scrollController,
               markedLines: markedLines,
               overlay: resolvedOverlay,
+              softWrap: softWrap,
               exampleAction: readOnly ? null : exampleAction,
               clearAction: readOnly ? null : clearAction,
             ),
           ),
       ],
+    );
+
+    final dropController = controller;
+    if (!enableFileDrop || readOnly || dropController == null) return pane;
+    return _EditorFileDropRegion(
+      controller: dropController,
+      onChanged: onChanged,
+      child: pane,
+    );
+  }
+}
+
+/// Wraps an editable [EditorPane] so dropping a text file replaces the
+/// editor's contents. Registers a coordinate-addressed target with
+/// [FileDropService]; binary or oversized files are ignored silently.
+class _EditorFileDropRegion extends StatefulWidget {
+  const _EditorFileDropRegion({
+    required this.controller,
+    required this.onChanged,
+    required this.child,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String>? onChanged;
+  final Widget child;
+
+  @override
+  State<_EditorFileDropRegion> createState() => _EditorFileDropRegionState();
+}
+
+class _EditorFileDropRegionState extends State<_EditorFileDropRegion> {
+  static const _maxFileBytes = 20 * 1024 * 1024;
+  final GlobalKey _dropKey = GlobalKey();
+  late final String _targetId =
+      'editor-drop-${identityHashCode(this).toRadixString(16)}';
+
+  @override
+  void initState() {
+    super.initState();
+    FileDropService.registerTarget(
+      _targetId,
+      key: _dropKey,
+      handler: _onDropped,
+    );
+  }
+
+  @override
+  void dispose() {
+    FileDropService.unregisterTarget(_targetId);
+    super.dispose();
+  }
+
+  Future<void> _onDropped(List<String> paths) async {
+    if (paths.isEmpty) return;
+    try {
+      final file = File(paths.first);
+      if (!await file.exists()) return;
+      if (await file.length() > _maxFileBytes) return;
+      final text = await file.readAsString();
+      if (!mounted) return;
+      widget.controller.text = text;
+      widget.onChanged?.call(text);
+    } catch (_) {
+      // Non-text/binary file or read failure: leave the editor untouched.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => FileDropService.setActiveTarget(_targetId),
+      onExit: (_) => FileDropService.setActiveTarget(null),
+      child: KeyedSubtree(key: _dropKey, child: widget.child),
     );
   }
 }
@@ -422,6 +514,7 @@ class _EditorField extends StatelessWidget {
     this.scrollController,
     this.markedLines = const <int>{},
     this.overlay,
+    this.softWrap = true,
     this.exampleAction,
     this.clearAction,
   });
@@ -436,6 +529,7 @@ class _EditorField extends StatelessWidget {
   final ScrollController? scrollController;
   final Set<int> markedLines;
   final Widget? overlay;
+  final bool softWrap;
   final VoidCallback? exampleAction;
   final VoidCallback? clearAction;
 
@@ -481,25 +575,15 @@ class _EditorField extends StatelessWidget {
       }
     }
 
-    Widget textField = TextField(
-      readOnly: readOnly,
+    // Virtualized editor (re_editor) renders only visible lines, so large
+    // documents stay responsive. It bridges to the [TextEditingController]
+    // that tools already use, so the public API is unchanged.
+    Widget textField = _CodeEditorField(
       controller: controller,
-      scrollController: scrollController,
+      readOnly: readOnly,
+      placeholder: placeholder,
+      wordWrap: softWrap,
       onChanged: onChanged,
-      maxLines: null,
-      expands: true,
-      decoration: InputDecoration(
-        hintText: placeholder,
-        border: InputBorder.none,
-        isDense: true,
-        filled: false,
-        hintStyle: TextStyle(color: appColors.mutedText),
-      ),
-      style: TextStyle(
-        fontFamily: 'Menlo',
-        fontSize: 12,
-        color: appColors.editorText,
-      ),
     );
 
     // Wrap with keyboard handler if onSubmit is provided
@@ -558,14 +642,16 @@ class _EditorField extends StatelessWidget {
                     ),
                   ),
                 ),
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  markedLines.isEmpty ? 8 : 12,
-                  6,
-                  rightPadding,
-                  6,
+              Positioned.fill(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    markedLines.isEmpty ? 8 : 12,
+                    6,
+                    rightPadding,
+                    6,
+                  ),
+                  child: textField,
                 ),
-                child: textField,
               ),
               if (overlay != null)
                 Positioned(
@@ -593,6 +679,136 @@ class _EditorField extends StatelessWidget {
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A virtualized text editor (re_editor) that bridges to a Flutter
+/// [TextEditingController] so existing tools keep their `controller.text` API.
+/// Only visible lines are laid out, so large documents stay responsive.
+class _CodeEditorField extends StatefulWidget {
+  const _CodeEditorField({
+    required this.controller,
+    required this.readOnly,
+    required this.placeholder,
+    required this.wordWrap,
+    required this.onChanged,
+  });
+
+  final TextEditingController? controller;
+  final bool readOnly;
+  final String placeholder;
+  final bool wordWrap;
+  final ValueChanged<String>? onChanged;
+
+  @override
+  State<_CodeEditorField> createState() => _CodeEditorFieldState();
+}
+
+class _CodeEditorFieldState extends State<_CodeEditorField> {
+  late final CodeLineEditingController _code;
+  String _lastText = '';
+  bool _syncingToText = false;
+  bool _applyingExternal = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastText = widget.controller?.text ?? '';
+    _code = CodeLineEditingController.fromText(_lastText);
+    _code.addListener(_onCodeChanged);
+    widget.controller?.addListener(_onExternalTextChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _CodeEditorField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller?.removeListener(_onExternalTextChanged);
+      widget.controller?.addListener(_onExternalTextChanged);
+      final next = widget.controller?.text ?? '';
+      if (_code.text != next) {
+        _applyingExternal = true;
+        _code.text = next;
+        _applyingExternal = false;
+      }
+      _lastText = next;
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller?.removeListener(_onExternalTextChanged);
+    _code.removeListener(_onCodeChanged);
+    _code.dispose();
+    super.dispose();
+  }
+
+  // Tool wrote to the TextEditingController (Sample/Clear/conversion output).
+  void _onExternalTextChanged() {
+    final controller = widget.controller;
+    if (controller == null || _syncingToText) return;
+    if (_code.text != controller.text) {
+      _applyingExternal = true;
+      _code.text = controller.text;
+      _applyingExternal = false;
+      _lastText = controller.text;
+    }
+  }
+
+  // User edited inside the editor.
+  void _onCodeChanged() {
+    if (_applyingExternal) return;
+    final text = _code.text;
+    if (text == _lastText) return; // selection-only change
+    _lastText = text;
+    final controller = widget.controller;
+    if (controller != null && controller.text != text) {
+      _syncingToText = true;
+      controller.text = text;
+      _syncingToText = false;
+    }
+    widget.onChanged?.call(text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return ScrollbarTheme(
+      data: ScrollbarThemeData(
+        thumbVisibility: const WidgetStatePropertyAll(true),
+        thickness: const WidgetStatePropertyAll(8),
+        radius: const Radius.circular(4),
+        thumbColor: WidgetStatePropertyAll(appColors.mutedText.withAlpha(140)),
+      ),
+      child: CodeEditor(
+        controller: _code,
+        readOnly: widget.readOnly,
+        wordWrap: widget.wordWrap,
+        hint: widget.placeholder,
+        autocompleteSymbols: false,
+        padding: EdgeInsets.zero,
+        // We don't show fold indicators, so skip the default code-folding
+        // analysis — it's wasted work on large documents.
+        chunkAnalyzer: const NonCodeChunkAnalyzer(),
+        // Cap per-line render length so a huge single line (e.g. minified
+        // JSON) doesn't freeze the Skia text engine. Full text is preserved.
+        maxLengthSingleLineRendering: 2000,
+        scrollbarBuilder: (context, child, details) => Scrollbar(
+          controller: details.controller,
+          thumbVisibility: true,
+          child: child,
+        ),
+        style: CodeEditorStyle(
+          fontSize: 12,
+          fontFamily: 'Menlo',
+          textColor: appColors.editorText,
+          hintTextColor: appColors.mutedText,
+          backgroundColor: Colors.transparent,
+          cursorColor: appColors.accent,
+          selectionColor: appColors.accentSoft,
         ),
       ),
     );

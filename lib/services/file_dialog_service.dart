@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -76,7 +77,15 @@ class FileDropService {
       final args = call.arguments;
       final paths = _pathsFromArguments(args);
       if (paths.isEmpty) return null;
-      final targetId = _targetIdForArguments(args) ?? _activeTargetId;
+      // When the native side reports drop coordinates (it always does), resolve
+      // the target purely from those — the mouse pointer isn't tracked during
+      // an OS drag, so `_activeTargetId` would be stale. Only fall back to the
+      // active target when coordinates are unavailable.
+      final hasCoordinates =
+          args is Map && args['x'] is num && args['y'] is num;
+      final targetId = hasCoordinates
+          ? _targetIdForArguments(args)
+          : _activeTargetId;
       if (targetId == null) return null;
       _targets[targetId]?.handler(paths);
       return null;
@@ -98,15 +107,47 @@ class FileDropService {
     final y = arguments['y'];
     if (x is! num || y is! num) return null;
     final position = Offset(x.toDouble(), y.toDouble());
+
+    // Primary: a real render-tree hit test. `result.path` is ordered front to
+    // back, so the topmost (visually on top) panel under the point wins even
+    // when panels overlap — fixing drops landing in an occluded panel.
+    final views = RendererBinding.instance.renderViews;
+    if (views.isNotEmpty) {
+      final result = BoxHitTestResult();
+      views.first.hitTest(result, position: position);
+      for (final entry in result.path) {
+        final entryTarget = entry.target;
+        RenderObject? node = entryTarget is RenderObject ? entryTarget : null;
+        while (node != null) {
+          for (final candidate in _targets.entries) {
+            final renderObject = candidate.value.key.currentContext
+                ?.findRenderObject();
+            if (renderObject != null && identical(renderObject, node)) {
+              return candidate.key;
+            }
+          }
+          final parent = node.parent;
+          node = parent is RenderObject ? parent : null;
+        }
+      }
+    }
+
+    // Fallback: smallest containing rect (most specific) if hit testing missed.
+    String? bestId;
+    double bestArea = double.infinity;
     for (final entry in _targets.entries) {
-      final context = entry.value.key.currentContext;
-      if (context == null) continue;
-      final renderObject = context.findRenderObject();
+      final renderObject = entry.value.key.currentContext?.findRenderObject();
       if (renderObject is! RenderBox || !renderObject.attached) continue;
       final rect = renderObject.localToGlobal(Offset.zero) & renderObject.size;
-      if (rect.inflate(10).contains(position)) return entry.key;
+      if (rect.inflate(10).contains(position)) {
+        final area = rect.width * rect.height;
+        if (area < bestArea) {
+          bestArea = area;
+          bestId = entry.key;
+        }
+      }
     }
-    return null;
+    return bestId;
   }
 }
 

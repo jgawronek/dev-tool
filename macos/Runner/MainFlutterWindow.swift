@@ -3,6 +3,7 @@ import FlutterMacOS
 
 class MainFlutterWindow: NSWindow, NSDraggingDestination {
   private var fileDropChannel: FlutterMethodChannel?
+  private var statusItem: NSStatusItem?
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
@@ -22,8 +23,81 @@ class MainFlutterWindow: NSWindow, NSDraggingDestination {
     RegisterGeneratedPlugins(registry: flutterViewController)
     configureFileDialogs(flutterViewController)
     configureFileDrop(flutterViewController)
+    configureAppearance(flutterViewController)
 
     super.awakeFromNib()
+  }
+
+  private func configureAppearance(_ flutterViewController: FlutterViewController) {
+    let channel = FlutterMethodChannel(
+      name: "devutils/app_appearance",
+      binaryMessenger: flutterViewController.engine.binaryMessenger)
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard let self else {
+        result(nil)
+        return
+      }
+      if call.method == "apply", let args = call.arguments as? [String: Any] {
+        let showStatusBar = args["showStatusBar"] as? Bool ?? true
+        let showDock = args["showDock"] as? Bool ?? true
+        self.setStatusBarVisible(showStatusBar)
+        self.setDockVisible(showDock)
+        result(nil)
+      } else {
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  private func setStatusBarVisible(_ visible: Bool) {
+    if visible {
+      if statusItem != nil { return }
+      let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+      if let button = item.button {
+        if #available(macOS 11.0, *),
+          let image = NSImage(
+            systemSymbolName: "curlybraces", accessibilityDescription: "DevUtils")
+        {
+          image.isTemplate = true
+          button.image = image
+        } else {
+          button.title = "{ }"
+        }
+      }
+      let menu = NSMenu()
+      let showItem = NSMenuItem(
+        title: "Show DevUtils", action: #selector(showMainWindow), keyEquivalent: "")
+      showItem.target = self
+      let quitItem = NSMenuItem(
+        title: "Quit DevUtils", action: #selector(quitApp), keyEquivalent: "q")
+      quitItem.target = self
+      menu.addItem(showItem)
+      menu.addItem(NSMenuItem.separator())
+      menu.addItem(quitItem)
+      item.menu = menu
+      statusItem = item
+    } else {
+      if let item = statusItem {
+        NSStatusBar.system.removeStatusItem(item)
+        statusItem = nil
+      }
+    }
+  }
+
+  private func setDockVisible(_ visible: Bool) {
+    NSApp.setActivationPolicy(visible ? .regular : .accessory)
+    if visible {
+      NSApp.activate(ignoringOtherApps: true)
+    }
+  }
+
+  @objc private func showMainWindow() {
+    makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
+  }
+
+  @objc private func quitApp() {
+    NSApp.terminate(nil)
   }
 
   private func configureFileDialogs(_ flutterViewController: FlutterViewController) {

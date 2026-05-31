@@ -117,8 +117,8 @@ class WorkspaceState {
     }
   }
 
-  static const double minPanelWidth = 520;
-  static const double minPanelHeight = 360;
+  static const double minPanelWidth = 480;
+  static const double minPanelHeight = 280;
   static const double minTiledPanelWidth = 280;
   static const double minTiledPanelHeight = 220;
   static const double defaultPanelWidth = 760;
@@ -204,17 +204,29 @@ class WorkspaceState {
     }
 
     final offset = (panels.value.length % 6) * 34.0;
+    // Size new panels to a fraction of the current canvas so there's always
+    // room to drag them in both axes (a panel as tall as the canvas can only
+    // slide horizontally). Falls back to the default size before the canvas
+    // has been measured.
+    final canvas = _lastCanvasSize;
+    var width = defaultPanelWidth;
+    var height = defaultPanelHeight;
+    if (canvas != null && canvas.width > 0 && canvas.height > 0) {
+      final fitWidth = canvas.width * 0.82;
+      final fitHeight = canvas.height * 0.72;
+      width = (fitWidth < defaultPanelWidth ? fitWidth : defaultPanelWidth)
+          .clamp(minPanelWidth, defaultPanelWidth)
+          .toDouble();
+      height = (fitHeight < defaultPanelHeight ? fitHeight : defaultPanelHeight)
+          .clamp(minPanelHeight, defaultPanelHeight)
+          .toDouble();
+    }
     final instance = ToolInstance(
       instanceId:
           'tool-${DateTime.now().microsecondsSinceEpoch}-${_nextInstanceNumber++}',
       toolId: tool.id,
       title: ToolRegistry.defaultPanelTitle(tool.id),
-      bounds: Rect.fromLTWH(
-        28 + offset,
-        28 + offset,
-        defaultPanelWidth,
-        defaultPanelHeight,
-      ),
+      bounds: Rect.fromLTWH(28 + offset, 28 + offset, width, height),
       dockMode: PanelDockMode.floating,
       zIndex: ++_nextZIndex,
       isMinimized: false,
