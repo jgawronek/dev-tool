@@ -24,6 +24,39 @@ import 'package:dev_tool/state/workspace_state.dart';
 import 'package:dev_tool/ui/app_colors.dart';
 import 'package:dev_tool/ui/tool_views.dart'
     show convertJavaScriptToTypeScriptForPreview, markdownToHtmlForPreview;
+import 'package:dev_tool/ui/widgets.dart' show EditorPane;
+
+// ---------------------------------------------------------------------------
+// Editor test helpers.
+//
+// Editors render with re_editor's CodeEditor (via EditorPane), which is NOT a
+// Flutter TextField/EditableText — so `find.byType(TextField)` + `enterText`
+// don't apply. Tests drive an editor through the EditorPane public API,
+// locating the pane by its placeholder (hint) text.
+// ---------------------------------------------------------------------------
+
+Finder editorPaneWithHint(String hint) =>
+    find.byWidgetPredicate((w) => w is EditorPane && w.placeholder == hint);
+
+EditorPane _paneWithHint(WidgetTester tester, String hint) =>
+    tester.widget<EditorPane>(editorPaneWithHint(hint));
+
+/// Sets an editor's text (mirrors a user edit: updates the bound controller and
+/// fires the pane's onChanged so live tools recompute).
+Future<void> enterEditorText(
+  WidgetTester tester,
+  String hint,
+  String text,
+) async {
+  final pane = _paneWithHint(tester, hint);
+  pane.controller!.text = text;
+  pane.onChanged?.call(text);
+  // Advance past any input debounce (live tools recompute on a ~200ms timer).
+  await tester.pump(const Duration(milliseconds: 250));
+}
+
+String editorText(WidgetTester tester, String hint) =>
+    _paneWithHint(tester, hint).controller!.text;
 
 void main() {
   test('Preferences are registered as one combined tool', () {
@@ -664,6 +697,8 @@ void main() {
   testWidgets('Dock tab groups render one active panel at a time', (
     WidgetTester tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final state = ToolState.inMemory();
     final jwt = state.workspace.openTool('jwt_debugger', forceNew: true);
     final regexp = state.workspace.openTool('regexp_tester', forceNew: true);
@@ -722,10 +757,7 @@ void main() {
     expect(find.byIcon(Icons.clear), findsNothing);
     expect(find.byTooltip('Clear'), findsNothing);
 
-    final inputFinder = find.byWidgetPredicate(
-      (widget) =>
-          widget is TextField && widget.decoration?.hintText == 'Paste JSON...',
-    );
+    final inputFinder = editorPaneWithHint('Paste JSON...');
     await tester.tapAt(
       tester.getCenter(inputFinder),
       buttons: kSecondaryMouseButton,
@@ -738,8 +770,7 @@ void main() {
     await tester.tap(find.text('Example'));
     await tester.pumpAndSettle();
 
-    var inputField = tester.widget<TextField>(inputFinder);
-    expect(inputField.controller?.text, contains('"name":"DevUtils"'));
+    expect(editorText(tester, 'Paste JSON...'), contains('"name":"DevUtils"'));
 
     await tester.tapAt(
       tester.getCenter(inputFinder),
@@ -749,20 +780,14 @@ void main() {
     await tester.tap(find.text('Clear'));
     await tester.pumpAndSettle();
 
-    inputField = tester.widget<TextField>(inputFinder);
-    expect(inputField.controller?.text, isEmpty);
+    expect(editorText(tester, 'Paste JSON...'), isEmpty);
 
-    await tester.enterText(inputFinder, '{"name":"DevUtils"}');
-    await tester.pump();
+    await enterEditorText(tester, 'Paste JSON...', '{"name":"DevUtils"}');
 
-    final outputField = tester.widget<TextField>(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField &&
-            widget.decoration?.hintText == 'Formatted JSON...',
-      ),
+    expect(
+      editorText(tester, 'Formatted JSON...'),
+      contains('"name": "DevUtils"'),
     );
-    expect(outputField.controller?.text, contains('"name": "DevUtils"'));
   });
 
   testWidgets('JSON CSV panel converts live without action buttons', (
@@ -780,20 +805,11 @@ void main() {
     expect(find.text('CSV → JSON'), findsOneWidget);
     expect(find.text('JSON → CSV'), findsOneWidget);
 
-    final inputFinder = find.byWidgetPredicate(
-      (widget) =>
-          widget is TextField && widget.decoration?.hintText == 'id,name,note',
-    );
-    await tester.enterText(inputFinder, 'id,name\n1,DevUtils');
-    await tester.pump();
+    await enterEditorText(tester, 'id,name,note', 'id,name\n1,DevUtils');
 
-    final outputField = tester.widget<TextField>(
-      find.byWidgetPredicate(
-        (widget) => widget is TextField && widget.decoration?.hintText == '[]',
-      ),
-    );
-    expect(outputField.controller?.text, contains('"id": "1"'));
-    expect(outputField.controller?.text, contains('"name": "DevUtils"'));
+    final output = editorText(tester, '[]');
+    expect(output, contains('"id": "1"'));
+    expect(output, contains('"name": "DevUtils"'));
   });
 
   testWidgets('Base64 converter updates live with compact editor controls', (
@@ -809,13 +825,8 @@ void main() {
     expect(find.text('Clear'), findsNothing);
     expect(find.text('Copy'), findsNothing);
 
-    final inputFinder = find.byWidgetPredicate(
-      (widget) =>
-          widget is TextField && widget.decoration?.hintText == 'SGVsbG8=',
-    );
-    final outputFinder = find.byWidgetPredicate(
-      (widget) => widget is TextField && widget.decoration?.hintText == 'Hello',
-    );
+    final inputFinder = editorPaneWithHint('SGVsbG8=');
+    final outputFinder = editorPaneWithHint('Hello');
     final inputHeight = tester.getSize(inputFinder).height;
     final outputHeight = tester.getSize(outputFinder).height;
 
@@ -828,11 +839,9 @@ void main() {
     expect(tester.getSize(inputFinder).height, greaterThan(inputHeight));
     expect(tester.getSize(outputFinder).height, lessThan(outputHeight));
 
-    await tester.enterText(inputFinder, 'SGVsbG8=');
-    await tester.pump();
+    await enterEditorText(tester, 'SGVsbG8=', 'SGVsbG8=');
 
-    final outputField = tester.widget<TextField>(outputFinder);
-    expect(outputField.controller?.text, 'Hello');
+    expect(editorText(tester, 'Hello'), 'Hello');
   });
 
   testWidgets('Number base converter handles BigInt values and inspector', (
@@ -892,15 +901,11 @@ void main() {
     await tester.pumpWidget(DevToolApp(state: state));
     await tester.pumpAndSettle();
 
-    await tester.enterText(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField &&
-            widget.decoration?.hintText == 'Paste HTML here...',
-      ),
+    await enterEditorText(
+      tester,
+      'Paste HTML here...',
       '<h1>Hello</h1><p><strong>Rendered</strong> preview</p>',
     );
-    await tester.pump();
 
     await tester.tap(find.byType(DropdownButton<String>).first);
     await tester.pumpAndSettle();
@@ -918,12 +923,9 @@ void main() {
     await tester.pumpWidget(DevToolApp(state: state));
     await tester.pumpAndSettle();
 
-    await tester.enterText(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField &&
-            widget.decoration?.hintText == 'Paste CSS here...',
-      ),
+    await enterEditorText(
+      tester,
+      'Drop a .css file here or paste CSS...',
       '''
 html,
 body {
@@ -938,24 +940,18 @@ body {
   background-color: #2f3542;
 }''',
     );
-    await tester.pump();
 
     await tester.tap(find.byType(DropdownButton<String>).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Minify').last);
     await tester.pumpAndSettle();
 
-    final outputField = tester.widget<TextField>(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField && widget.decoration?.hintText == 'Output...',
-      ),
-    );
+    final output = editorText(tester, 'Output...');
     expect(
-      outputField.controller?.text,
+      output,
       'html,body{margin:0}*{box-sizing:border-box}body{background-color:#2f3542}',
     );
-    expect(outputField.controller?.text, isNot(contains(r'$1')));
+    expect(output, isNot(contains(r'$1')));
   });
 
   testWidgets('SVG to CSS accepts typed source and exposes Finder loading', (
@@ -968,28 +964,18 @@ body {
 
     expect(find.byTooltip('Choose SVG file'), findsOneWidget);
 
-    await tester.enterText(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField &&
-            widget.decoration?.hintText ==
-                'Drop an .svg file here or paste SVG source...',
-      ),
+    await enterEditorText(
+      tester,
+      'Drop an .svg file here or paste SVG source...',
       '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="4" cy="4" r="4"/></svg>',
     );
-    await tester.pump();
 
-    final outputField = tester.widget<TextField>(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField && widget.decoration?.hintText == 'Output...',
-      ),
-    );
+    final output = editorText(tester, 'Output...');
     expect(
-      outputField.controller?.text,
+      output,
       startsWith("background-image: url('data:image/svg+xml,"),
     );
-    expect(outputField.controller?.text, contains('%3Csvg'));
+    expect(output, contains('%3Csvg'));
   });
 
   testWidgets('Color converter uses a compact palette picker', (
@@ -1163,19 +1149,12 @@ body {
     await tester.tap(find.text('Check embedded data'));
     await tester.pumpAndSettle();
 
-    final resultField = tester.widget<TextField>(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField &&
-            widget.decoration?.hintText ==
-                'Embed, check, or decode encrypted files inside PNG, JPG, or PDF carriers...',
-      ),
+    final result = editorText(
+      tester,
+      'Embed, check, or decode encrypted files inside PNG, JPG, or PDF carriers...',
     );
-    expect(resultField.controller?.text, contains('Encrypted payload found.'));
-    expect(
-      resultField.controller?.text,
-      contains('Checked: ${outputFile.path}'),
-    );
+    expect(result, contains('Encrypted payload found.'));
+    expect(result, contains('Checked: ${outputFile.path}'));
   });
 
   testWidgets('HTML to JSX converts comments attributes styles and roots', (
@@ -1195,24 +1174,9 @@ body {
 </div>
 <p>Enter your HTML here</p>''';
 
-    await tester.enterText(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField &&
-            widget.decoration?.hintText == 'Paste HTML here...',
-      ),
-      html,
-    );
-    await tester.pump();
+    await enterEditorText(tester, 'Paste HTML here...', html);
 
-    final outputField = tester.widget<TextField>(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField &&
-            widget.decoration?.hintText == 'JSX output...',
-      ),
-    );
-    expect(outputField.controller?.text, '''
+    expect(editorText(tester, 'JSX output...'), '''
 <div>
   {/* Hello world */}
   <div className="awesome" style={{ border: '1px solid red' }}>
@@ -1281,13 +1245,9 @@ module.exports = { greet, Sub };''';
 
     expect(find.byTooltip('Choose JavaScript file'), findsOneWidget);
 
-    await tester.enterText(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField &&
-            widget.decoration?.hintText ==
-                'Choose a .js/.jsx file or paste JavaScript...',
-      ),
+    await enterEditorText(
+      tester,
+      'Choose a .js/.jsx file or paste JavaScript...',
       '''
 /** @param {string} name @returns {string} */
 function greet(name) {
@@ -1295,20 +1255,10 @@ function greet(name) {
 }
 module.exports = greet;''',
     );
-    await tester.pump();
 
-    final outputField = tester.widget<TextField>(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField &&
-            widget.decoration?.hintText == 'TypeScript output...',
-      ),
-    );
-    expect(
-      outputField.controller?.text,
-      contains('function greet(name: string): string {'),
-    );
-    expect(outputField.controller?.text, contains('export default greet;'));
+    final output = editorText(tester, 'TypeScript output...');
+    expect(output, contains('function greet(name: string): string {'));
+    expect(output, contains('export default greet;'));
   });
 
   testWidgets('Text encryption updates output without a Go button', (
@@ -1331,24 +1281,9 @@ module.exports = greet;''',
       ),
       'secret',
     );
-    await tester.enterText(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField &&
-            widget.decoration?.hintText == 'Enter text to encrypt...',
-      ),
-      'hello',
-    );
-    await tester.pump();
+    await enterEditorText(tester, 'Enter text to encrypt...', 'hello');
 
-    final outputField = tester.widget<TextField>(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField &&
-            widget.decoration?.hintText == 'Encrypted output appears here...',
-      ),
-    );
-    expect(outputField.controller?.text, isNotEmpty);
+    expect(editorText(tester, 'Encrypted output appears here...'), isNotEmpty);
   });
 
   testWidgets('String case converter applies selected output case', (
@@ -1360,22 +1295,14 @@ module.exports = greet;''',
     await tester.pumpWidget(DevToolApp(state: state));
     await tester.pumpAndSettle();
 
-    await tester.enterText(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField &&
-            widget.decoration?.hintText == 'Enter text...',
-      ),
-      'requestURLDecoderID',
-    );
-    await tester.pump();
+    await enterEditorText(tester, 'Enter text...', 'requestURLDecoderID');
 
     await tester.tap(find.byType(DropdownButton<String>).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('CONSTANT_CASE').last);
     await tester.pumpAndSettle();
 
-    expect(find.text('REQUEST_URL_DECODER_ID'), findsOneWidget);
+    expect(editorText(tester, 'Output...'), contains('REQUEST_URL_DECODER_ID'));
   });
 
   testWidgets('HTML and Markdown preview tools render preview panes', (
@@ -1386,15 +1313,7 @@ module.exports = greet;''',
 
     await tester.pumpWidget(DevToolApp(state: state));
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField &&
-            widget.decoration?.hintText == '<html>...</html>',
-      ),
-      '<h1>Hello</h1>',
-    );
-    await tester.pump();
+    await enterEditorText(tester, '<html>...</html>', '<h1>Hello</h1>');
 
     expect(find.byKey(const ValueKey('html-rendered-preview')), findsOneWidget);
     expect(find.text('Rendered HTML'), findsOneWidget);
@@ -1407,14 +1326,11 @@ module.exports = greet;''',
 
     await tester.pumpWidget(DevToolApp(state: state));
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField && widget.decoration?.hintText == '# Heading 1',
-      ),
+    await enterEditorText(
+      tester,
+      'Drop a .md file here or type Markdown...',
       '# Hello\n\n**Rendered** markdown',
     );
-    await tester.pump();
 
     expect(find.byKey(const ValueKey('html-rendered-preview')), findsOneWidget);
     expect(find.text('Rendered Markdown'), findsOneWidget);
@@ -1451,15 +1367,7 @@ module.exports = greet;''',
     await tester.pumpWidget(DevToolApp(state: state));
     await tester.pumpAndSettle();
 
-    await tester.enterText(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField &&
-            widget.decoration?.hintText == 'Enter text to hash...',
-      ),
-      'abc',
-    );
-    await tester.pump();
+    await enterEditorText(tester, 'Enter text to hash...', 'abc');
 
     expect(find.text('HMAC key'), findsNothing);
     expect(
@@ -1503,8 +1411,9 @@ module.exports = greet;''',
     await tester.tap(find.text('Local crack'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('1 of 1 hash matched'), findsOneWidget);
-    expect(find.textContaining('plaintext: abc'), findsOneWidget);
+    final report = editorText(tester, 'Hash analysis and crack results...');
+    expect(report, contains('1 of 1 hash matched'));
+    expect(report, contains('plaintext: abc'));
   });
 
   testWidgets('tool helper text stays readable in light and dark mode', (

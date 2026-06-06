@@ -133,9 +133,13 @@ void main() {
         .evaluate()
         .length;
 
-    // A single tap + settle must select (8 handles), every time.
+    // A single tap + settle must select (8 handles), every time. The note body
+    // renders via RichText, so match it with findRichText.
     for (var i = 0; i < 4; i++) {
-      await tester.tap(find.text('test').first, warnIfMissed: false);
+      await tester.tap(
+        find.text('test', findRichText: true).first,
+        warnIfMissed: false,
+      );
       await tester.pumpAndSettle();
       tester.takeException();
       expect(handleCount(), 8, reason: 'tap $i should keep the note selected');
@@ -177,7 +181,9 @@ db --> papi
     );
   });
 
-  testWidgets('architecture group body can be dragged', (tester) async {
+  testWidgets('architecture group can be dragged by its title bar', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
     await tester.pumpWidget(
       MaterialApp(home: Scaffold(body: buildUmlClassDiagram())),
@@ -199,24 +205,22 @@ api --> data
     await tester.pumpAndSettle();
 
     final before = pane.controller!.text;
-    final client = tester.getRect(find.text('Client API').first);
-    final data = tester.getRect(find.text('Platform data stores').first);
-    final groupBodyGap = Offset(
-      (client.right + data.left) / 2,
-      client.center.dy,
-    );
     final groupBox = find
         .byWidgetPredicate((w) => w.runtimeType.toString() == '_UmlGroupBox')
         .first;
-
-    expect(tester.getRect(groupBox).contains(groupBodyGap), isTrue);
-    await tester.dragFrom(groupBodyGap, const Offset(90, 60));
+    // Only the title bar is draggable (the body is click-through so it doesn't
+    // block selecting elements beneath overlapping groups). Tap to select, then
+    // drag the title to move the group and its children.
+    final titlePoint = tester.getRect(groupBox).topLeft + const Offset(40, 12);
+    await tester.tapAt(titlePoint);
+    await tester.pumpAndSettle();
+    await tester.dragFrom(titlePoint, const Offset(90, 60));
     await tester.pumpAndSettle();
 
     expect(
       pane.controller!.text,
       isNot(before),
-      reason: 'dragging the group body should move its children, not pan only',
+      reason: 'dragging the group title should move its children',
     );
   });
 
