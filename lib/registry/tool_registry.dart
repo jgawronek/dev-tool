@@ -216,6 +216,13 @@ class ToolRegistry {
       category: 'Text',
     ),
     DevTool(
+      id: 'string_case_converter',
+      name: 'String Case Converter',
+      icon: Icons.text_fields,
+      builder: (_) => buildStringCaseConverter(),
+      category: 'Text',
+    ),
+    DevTool(
       id: 'json_csv_converter',
       name: 'JSON ↔ CSV',
       icon: Icons.table_chart,
