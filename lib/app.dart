@@ -47,9 +47,9 @@ ThemeData _buildLightTheme(String colorTheme) {
     scaffoldBackgroundColor: colors.canvas,
     cardColor: colors.panel,
     textTheme: const TextTheme(
-      bodyMedium: TextStyle(fontSize: 13, color: Color(0xFF1F2328)),
+      bodyMedium: TextStyle(fontSize: 12, color: Color(0xFF1F2328)),
       titleMedium: TextStyle(
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: FontWeight.w600,
         color: Color(0xFF1F2328),
       ),
@@ -74,9 +74,9 @@ ThemeData _buildDarkTheme(String colorTheme) {
     scaffoldBackgroundColor: colors.canvas,
     cardColor: colors.panel,
     textTheme: const TextTheme(
-      bodyMedium: TextStyle(fontSize: 13, color: Color(0xFFE7EDF3)),
+      bodyMedium: TextStyle(fontSize: 12, color: Color(0xFFE7EDF3)),
       titleMedium: TextStyle(
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: FontWeight.w600,
         color: Color(0xFFE7EDF3),
       ),

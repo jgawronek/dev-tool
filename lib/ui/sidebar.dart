@@ -76,17 +76,34 @@ class _SidebarState extends State<Sidebar> {
             )
           else
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
               child: TextField(
                 controller: _searchController,
                 onChanged: widget.onSearch,
+                style: const TextStyle(fontSize: 12.5),
                 decoration: InputDecoration(
                   hintText: 'Search tools',
-                  prefixIcon: const Icon(Icons.search, size: 18),
+                  hintStyle: const TextStyle(fontSize: 12.5),
+                  // Tighten the field vertically (the global input padding is
+                  // roomier than a sidebar search needs).
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
+                  prefixIcon: const Icon(Icons.search, size: 16),
+                  prefixIconConstraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 0,
+                  ),
                   suffixIcon: widget.searchQuery.isEmpty
                       ? null
                       : IconButton(
                           icon: const Icon(Icons.clear, size: 16),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 0,
+                          ),
                           onPressed: () {
                             _searchController.clear();
                             widget.onSearch('');
@@ -191,10 +208,10 @@ class _SidebarItem extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               hoverColor: appColors.hover,
               child: Container(
-                height: compact ? 38 : null,
+                height: compact ? 34 : null,
                 padding: compact
-                    ? const EdgeInsets.symmetric(horizontal: 6, vertical: 6)
-                    : const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    ? const EdgeInsets.symmetric(horizontal: 6, vertical: 5)
+                    : const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 child: compact
                     ? Stack(
                         alignment: Alignment.center,
@@ -224,15 +241,15 @@ class _SidebarItem extends StatelessWidget {
                         children: [
                           Icon(
                             tool.icon,
-                            size: 18,
+                            size: 16,
                             color: appColors.editorText,
                           ),
-                          const SizedBox(width: 10),
+                          const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               tool.name,
                               style: TextStyle(
-                                fontSize: 12.5,
+                                fontSize: 12,
                                 color: appColors.editorText,
                                 fontWeight: selected
                                     ? FontWeight.w600

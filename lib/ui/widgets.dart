@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -33,14 +34,12 @@ class ToolButton extends StatelessWidget {
       return ElevatedButton(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          minimumSize: const Size(0, 32),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          minimumSize: const Size(0, 28),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           backgroundColor: appColors.success,
           foregroundColor: Colors.white,
-          textStyle: const TextStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w600,
-          ),
+          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
         ),
         child: const Text('Go'),
       );
@@ -51,12 +50,13 @@ class ToolButton extends StatelessWidget {
     return OutlinedButton(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        minimumSize: const Size(0, 32),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        minimumSize: const Size(0, 28),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         side: BorderSide(color: appColors.border),
         backgroundColor: appColors.panelElevated,
         foregroundColor: appColors.editorText,
-        textStyle: const TextStyle(fontSize: 12.5),
+        textStyle: const TextStyle(fontSize: 12),
       ),
       child: child,
     );
@@ -69,11 +69,15 @@ class ToolIconButton extends StatelessWidget {
     required this.icon,
     this.onPressed,
     this.tooltip,
+    this.color,
   });
 
   final IconData icon;
   final VoidCallback? onPressed;
   final String? tooltip;
+
+  /// Optional icon tint; defaults to the icon theme color when null.
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -85,11 +89,11 @@ class ToolIconButton extends StatelessWidget {
 
     return IconButton(
       onPressed: onPressed,
-      icon: Icon(icon, size: 20),
+      icon: Icon(icon, size: 18, color: color),
       tooltip: tooltip,
-      padding: const EdgeInsets.all(6),
-      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-      splashRadius: 18,
+      padding: const EdgeInsets.all(5),
+      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+      splashRadius: 16,
     );
   }
 }
@@ -185,7 +189,7 @@ class _SmallDropdownState extends State<SmallDropdown> {
             isDense: true,
             isExpanded: true,
             dropdownColor: appColors.panelElevated,
-            style: TextStyle(color: appColors.editorText, fontSize: 13),
+            style: TextStyle(color: appColors.editorText, fontSize: 12),
             iconEnabledColor: appColors.mutedText,
           ),
         ),
@@ -235,9 +239,9 @@ class _SegmentedToggleState extends State<SegmentedToggle> {
         widget.onChanged?.call(index);
       },
       borderRadius: BorderRadius.circular(6),
-      constraints: const BoxConstraints(minHeight: 30, minWidth: 60),
+      constraints: const BoxConstraints(minHeight: 28, minWidth: 56),
       children: widget.options
-          .map((label) => Text(label, style: const TextStyle(fontSize: 12)))
+          .map((label) => Text(label, style: const TextStyle(fontSize: 11.5)))
           .toList(),
     );
   }
@@ -262,6 +266,8 @@ class EditorPane extends StatelessWidget {
     this.overlay,
     this.enableFileDrop = true,
     this.softWrap = true,
+    this.revealLine,
+    this.highlightTheme,
   });
 
   final String label;
@@ -279,6 +285,10 @@ class EditorPane extends StatelessWidget {
   final bool showHeader;
   final Widget? overlay;
 
+  /// When set, changing this notifier's value selects and scrolls to that
+  /// 0-based line in the editor (used to link a selection to its source).
+  final ValueListenable<int?>? revealLine;
+
   /// Whether dropping a text file onto this editor loads its contents.
   /// Auto-enabled for editable inputs that own a controller; set to `false`
   /// for editors that already wrap themselves in a dedicated drop target so
@@ -288,6 +298,9 @@ class EditorPane extends StatelessWidget {
   /// When `false`, a read-only editor renders each line without soft-wrapping
   /// and scrolls horizontally instead, so long rows stay on one line.
   final bool softWrap;
+
+  /// Optional syntax-highlight theme for the underlying code editor.
+  final CodeHighlightTheme? highlightTheme;
 
   @override
   Widget build(BuildContext context) {
@@ -320,36 +333,36 @@ class EditorPane extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (showHeader) ...[
-          ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 32),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Row(
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            for (var i = 0; i < headerActions.length; i++) ...[
-                              if (i > 0) const SizedBox(width: 6),
-                              headerActions[i],
-                            ],
+          Container(
+            // Fixed height with centered content so the label lines up with an
+            // adjacent pane's header whether or not action buttons are present.
+            height: 38,
+            alignment: Alignment.centerLeft,
+            child: Row(
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (var i = 0; i < headerActions.length; i++) ...[
+                            if (i > 0) const SizedBox(width: 6),
+                            headerActions[i],
                           ],
-                        ),
+                        ],
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 6),
@@ -370,6 +383,8 @@ class EditorPane extends StatelessWidget {
               softWrap: softWrap,
               exampleAction: readOnly ? null : exampleAction,
               clearAction: readOnly ? null : clearAction,
+              revealLine: revealLine,
+              highlightTheme: highlightTheme,
             ),
           )
         else
@@ -389,6 +404,8 @@ class EditorPane extends StatelessWidget {
               softWrap: softWrap,
               exampleAction: readOnly ? null : exampleAction,
               clearAction: readOnly ? null : clearAction,
+              revealLine: revealLine,
+              highlightTheme: highlightTheme,
             ),
           ),
       ],
@@ -517,6 +534,8 @@ class _EditorField extends StatelessWidget {
     this.softWrap = true,
     this.exampleAction,
     this.clearAction,
+    this.revealLine,
+    this.highlightTheme,
   });
 
   final String label;
@@ -532,11 +551,17 @@ class _EditorField extends StatelessWidget {
   final bool softWrap;
   final VoidCallback? exampleAction;
   final VoidCallback? clearAction;
+  final ValueListenable<int?>? revealLine;
+  final CodeHighlightTheme? highlightTheme;
 
   @override
   Widget build(BuildContext context) {
     final appColors = context.appColors;
-    final rightPadding = copyAction != null ? 50.0 : 8.0;
+    // Keep the editor (and its right-edge scrollbar) flush with the container;
+    // reserve room for the floating copy button as *content* padding instead,
+    // so the scrollbar isn't pushed inward by the button.
+    final reserveForCopy = overlay == null && copyAction != null;
+    final contentRightPad = reserveForCopy ? 30.0 : 0.0;
     final hasContextActions =
         !readOnly && (exampleAction != null || clearAction != null);
 
@@ -584,6 +609,9 @@ class _EditorField extends StatelessWidget {
       placeholder: placeholder,
       wordWrap: softWrap,
       onChanged: onChanged,
+      revealLine: revealLine,
+      contentRightPad: contentRightPad,
+      highlightTheme: highlightTheme,
     );
 
     // Wrap with keyboard handler if onSubmit is provided
@@ -647,7 +675,7 @@ class _EditorField extends StatelessWidget {
                   padding: EdgeInsets.fromLTRB(
                     markedLines.isEmpty ? 8 : 12,
                     6,
-                    rightPadding,
+                    8,
                     6,
                   ),
                   child: textField,
@@ -666,15 +694,27 @@ class _EditorField extends StatelessWidget {
                 Positioned(
                   top: 6,
                   right: 6,
-                  child: TextButton(
-                    onPressed: copyAction,
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      minimumSize: const Size(0, 24),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      textStyle: const TextStyle(fontSize: 11),
+                  child: Tooltip(
+                    message: 'Copy',
+                    child: Material(
+                      color: appColors.panelElevated.withAlpha(210),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                        side: BorderSide(color: appColors.border),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: copyAction,
+                        child: Padding(
+                          padding: const EdgeInsets.all(5),
+                          child: Icon(
+                            Icons.copy,
+                            size: 15,
+                            color: appColors.mutedText,
+                          ),
+                        ),
+                      ),
                     ),
-                    child: const Text('Copy'),
                   ),
                 ),
             ],
@@ -695,6 +735,9 @@ class _CodeEditorField extends StatefulWidget {
     required this.placeholder,
     required this.wordWrap,
     required this.onChanged,
+    this.revealLine,
+    this.contentRightPad = 0,
+    this.highlightTheme,
   });
 
   final TextEditingController? controller;
@@ -702,6 +745,15 @@ class _CodeEditorField extends StatefulWidget {
   final String placeholder;
   final bool wordWrap;
   final ValueChanged<String>? onChanged;
+  final ValueListenable<int?>? revealLine;
+
+  /// Right padding applied to the code content (not the scrollbar) so text
+  /// clears a floating copy button while the scrollbar stays flush right.
+  final double contentRightPad;
+
+  /// Optional syntax-highlight theme (language grammar + colors). When null the
+  /// editor renders plain monospace text.
+  final CodeHighlightTheme? highlightTheme;
 
   @override
   State<_CodeEditorField> createState() => _CodeEditorFieldState();
@@ -720,6 +772,7 @@ class _CodeEditorFieldState extends State<_CodeEditorField> {
     _code = CodeLineEditingController.fromText(_lastText);
     _code.addListener(_onCodeChanged);
     widget.controller?.addListener(_onExternalTextChanged);
+    widget.revealLine?.addListener(_onRevealLine);
   }
 
   @override
@@ -736,11 +789,33 @@ class _CodeEditorFieldState extends State<_CodeEditorField> {
       }
       _lastText = next;
     }
+    if (!identical(oldWidget.revealLine, widget.revealLine)) {
+      oldWidget.revealLine?.removeListener(_onRevealLine);
+      widget.revealLine?.addListener(_onRevealLine);
+    }
+  }
+
+  // A linked view (e.g. a diagram canvas) asked to reveal a source line:
+  // select it and scroll it into view.
+  void _onRevealLine() {
+    final line = widget.revealLine?.value;
+    if (line == null || line < 0) return;
+    try {
+      if (line >= _code.codeLines.length) return;
+      _code.selectLine(line);
+      _code.makePositionCenterIfInvisible(
+        CodeLinePosition(index: line, offset: 0),
+      );
+    } catch (_) {
+      // Editor not laid out yet / transient index race — never let a reveal
+      // throw and tear down the linked canvas.
+    }
   }
 
   @override
   void dispose() {
     widget.controller?.removeListener(_onExternalTextChanged);
+    widget.revealLine?.removeListener(_onRevealLine);
     _code.removeListener(_onCodeChanged);
     _code.dispose();
     super.dispose();
@@ -789,7 +864,11 @@ class _CodeEditorFieldState extends State<_CodeEditorField> {
         wordWrap: widget.wordWrap,
         hint: widget.placeholder,
         autocompleteSymbols: false,
-        padding: EdgeInsets.zero,
+        padding: EdgeInsets.only(right: widget.contentRightPad),
+        // Enables the built-in find (⌘F); the panel renders zero-height when
+        // closed so it doesn't reserve editor space.
+        findBuilder: (context, controller, readOnly) =>
+            _EditorFindPanel(controller: controller),
         // We don't show fold indicators, so skip the default code-folding
         // analysis — it's wasted work on large documents.
         chunkAnalyzer: const NonCodeChunkAnalyzer(),
@@ -809,8 +888,182 @@ class _CodeEditorFieldState extends State<_CodeEditorField> {
           backgroundColor: Colors.transparent,
           cursorColor: appColors.accent,
           selectionColor: appColors.accentSoft,
+          codeTheme: widget.highlightTheme,
         ),
       ),
+    );
+  }
+}
+
+/// Compact find bar shown over the top-right of a [CodeEditor] when find mode
+/// (⌘F) is active. Reports a zero-height [preferredSize] when closed so re_editor
+/// reserves no top inset; renders the bar (find field, match count, case/regex
+/// toggles, prev/next, close) when open.
+class _EditorFindPanel extends StatelessWidget implements PreferredSizeWidget {
+  const _EditorFindPanel({required this.controller});
+
+  final CodeFindController controller;
+
+  bool get _active => controller.value != null;
+
+  @override
+  Size get preferredSize => _active ? const Size.fromHeight(42) : Size.zero;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_active) return const SizedBox.shrink();
+    final appColors = context.appColors;
+    return Align(
+      alignment: Alignment.topRight,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 6, right: 6),
+        child: Material(
+          elevation: 4,
+          color: appColors.panelElevated,
+          shadowColor: appColors.shadow,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: BorderSide(color: appColors.border),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: AnimatedBuilder(
+              animation: controller,
+              builder: (context, _) {
+                final value = controller.value;
+                final result = value?.result;
+                final total = result?.matches.length ?? 0;
+                final pos = (result == null || result.matches.isEmpty)
+                    ? 0
+                    : result.index + 1;
+                final pattern = value?.option.pattern ?? '';
+                final label = value?.searching == true
+                    ? '…'
+                    : pattern.isEmpty
+                        ? ''
+                        : total == 0
+                            ? 'No results'
+                            : '$pos/$total';
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 170,
+                      height: 30,
+                      child: TextField(
+                        controller: controller.findInputController,
+                        focusNode: controller.findInputFocusNode,
+                        autofocus: true,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: appColors.editorText,
+                        ),
+                        textAlignVertical: TextAlignVertical.center,
+                        onSubmitted: (_) => controller.nextMatch(),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          hintText: 'Find',
+                          hintStyle: TextStyle(
+                            color: appColors.mutedText,
+                            fontSize: 12.5,
+                          ),
+                          filled: true,
+                          fillColor: appColors.editorBackground,
+                          contentPadding:
+                              const EdgeInsets.symmetric(horizontal: 8),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(6),
+                            borderSide: BorderSide(color: appColors.border),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(6),
+                            borderSide: BorderSide(color: appColors.accent),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    SizedBox(
+                      width: 58,
+                      child: Text(
+                        label,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: appColors.mutedText,
+                        ),
+                      ),
+                    ),
+                    _findToggle(appColors, 'Aa', value?.option.caseSensitive ?? false,
+                        controller.toggleCaseSensitive, 'Match case'),
+                    _findToggle(appColors, '.*', value?.option.regex ?? false,
+                        controller.toggleRegex, 'Regular expression'),
+                    _findIcon(appColors, Icons.keyboard_arrow_up,
+                        controller.previousMatch, 'Previous match'),
+                    _findIcon(appColors, Icons.keyboard_arrow_down,
+                        controller.nextMatch, 'Next match'),
+                    _findIcon(appColors, Icons.close, controller.close, 'Close'),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _findToggle(
+    AppColors c,
+    String label,
+    bool active,
+    VoidCallback onTap,
+    String tooltip,
+  ) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(5),
+        child: Container(
+          width: 28,
+          height: 26,
+          alignment: Alignment.center,
+          margin: const EdgeInsets.symmetric(horizontal: 1),
+          decoration: BoxDecoration(
+            color: active ? c.accentSoft : Colors.transparent,
+            borderRadius: BorderRadius.circular(5),
+            border: Border.all(
+              color: active ? c.accent : Colors.transparent,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: active ? c.accent : c.mutedText,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _findIcon(
+    AppColors c,
+    IconData icon,
+    VoidCallback onTap,
+    String tooltip,
+  ) {
+    return IconButton(
+      icon: Icon(icon, size: 18),
+      onPressed: onTap,
+      tooltip: tooltip,
+      color: c.mutedText,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+      splashRadius: 16,
     );
   }
 }
@@ -854,10 +1107,10 @@ class LabeledField extends StatelessWidget {
   Widget build(BuildContext context) {
     final appColors = context.appColors;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          SizedBox(width: 160, child: Text(label)),
+          SizedBox(width: 150, child: Text(label, style: const TextStyle(fontSize: 12))),
           Expanded(
             child: Container(
               decoration: BoxDecoration(
@@ -896,12 +1149,12 @@ class SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final appColors = context.appColors;
     return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 2),
+      padding: const EdgeInsets.only(top: 6, bottom: 2),
       child: Text(
         title,
         style: TextStyle(
           fontWeight: FontWeight.w600,
-          fontSize: 11,
+          fontSize: 10.5,
           letterSpacing: 0.4,
           color: appColors.mutedText,
         ),

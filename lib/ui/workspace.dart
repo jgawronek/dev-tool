@@ -23,18 +23,11 @@ class WorkspaceView extends StatefulWidget {
 class _WorkspaceViewState extends State<WorkspaceView> {
   final Map<String, JsonToolSession> _jsonSessions = {};
   Size _canvasSize = const Size(1200, 800);
-  JsonCompareMode _jsonCompareMode = JsonCompareMode.normalized;
-  bool _jsonLinkedScroll = false;
-  String? _linkedLeftId;
-  String? _linkedRightId;
-  VoidCallback? _unlinkJsonScroll;
-  bool _syncingScroll = false;
 
   WorkspaceState get _workspace => widget.state.workspace;
 
   @override
   void dispose() {
-    _unlinkJsonScroll?.call();
     for (final session in _jsonSessions.values) {
       session.dispose();
     }
@@ -60,18 +53,7 @@ class _WorkspaceViewState extends State<WorkspaceView> {
         autofocus: true,
         child: Column(
           children: [
-            _WorkspaceToolbar(
-              state: widget.state,
-              canvasSize: _canvasSize,
-              compareMode: _jsonCompareMode,
-              linkedScroll: _jsonLinkedScroll,
-              onCompareModeChanged: (mode) {
-                setState(() => _jsonCompareMode = mode);
-              },
-              onLinkedScrollChanged: (value) {
-                setState(() => _jsonLinkedScroll = value);
-              },
-            ),
+            _WorkspaceToolbar(state: widget.state, canvasSize: _canvasSize),
             Expanded(
               child: ValueListenableBuilder<List<ToolInstance>>(
                 valueListenable: _workspace.panels,
@@ -90,38 +72,40 @@ class _WorkspaceViewState extends State<WorkspaceView> {
                           : compareJsonSessions(
                               _jsonSessionFor(jsonPair.first.instanceId),
                               _jsonSessionFor(jsonPair.last.instanceId),
-                              _jsonCompareMode,
+                              JsonCompareMode.normalized,
                             );
-                      _syncJsonScrollIfNeeded(jsonPair);
                       final minimizedPanels = panels
                           .where((panel) => panel.isMinimized)
                           .toList();
-                      final canvas = _WorkspaceCanvas(
-                        panels: panels,
-                        focusedPanelId: focusedPanelId,
-                        jsonPair: jsonPair,
-                        jsonCompare: jsonCompare,
-                        compareMode: _jsonCompareMode,
-                        linkedScroll: _jsonLinkedScroll,
-                        onSizeChanged: (size) {
-                          if (_canvasSize != size) {
-                            setState(() => _canvasSize = size);
-                          }
-                          _workspace.updateCanvasSize(size);
-                        },
-                        onOpenTool: (id) {
-                          widget.state.selectedToolId.value = id;
-                          _workspace.openTool(id);
-                        },
-                        onBuildTool: _buildToolContent,
-                        workspace: _workspace,
+                      final canvas = ValueListenableBuilder<Set<String>>(
+                        valueListenable: widget.state.favorites,
+                        builder: (context, favorites, _) => _WorkspaceCanvas(
+                          panels: panels,
+                          focusedPanelId: focusedPanelId,
+                          jsonPair: jsonPair,
+                          jsonCompare: jsonCompare,
+                          onSizeChanged: (size) {
+                            if (_canvasSize != size) {
+                              setState(() => _canvasSize = size);
+                            }
+                            _workspace.updateCanvasSize(size);
+                          },
+                          onOpenTool: (id) {
+                            widget.state.selectedToolId.value = id;
+                            _workspace.openTool(id);
+                          },
+                          onBuildTool: _buildToolContent,
+                          workspace: _workspace,
+                          favorites: favorites,
+                          onToggleFavorite: widget.state.toggleFavorite,
+                        ),
                       );
                       return Column(
                         children: [
                           Expanded(child: canvas),
                           if (minimizedPanels.isNotEmpty)
                             Padding(
-                              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                              padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
                               child: _MinimizedDock(
                                 panels: minimizedPanels,
                                 onRestore: _workspace.restorePanel,
@@ -197,193 +181,69 @@ class _WorkspaceViewState extends State<WorkspaceView> {
       _jsonSessions.remove(instanceId)?.dispose();
     }
   }
-
-  void _syncJsonScrollIfNeeded(List<ToolInstance>? pair) {
-    if (!_jsonLinkedScroll || pair == null) {
-      _unlinkJsonScroll?.call();
-      _unlinkJsonScroll = null;
-      _linkedLeftId = null;
-      _linkedRightId = null;
-      return;
-    }
-    final leftId = pair.first.instanceId;
-    final rightId = pair.last.instanceId;
-    if (_linkedLeftId == leftId && _linkedRightId == rightId) return;
-
-    _unlinkJsonScroll?.call();
-    _linkedLeftId = leftId;
-    _linkedRightId = rightId;
-    final left = _jsonSessionFor(leftId).inputScroll;
-    final right = _jsonSessionFor(rightId).inputScroll;
-
-    void sync(ScrollController source, ScrollController target) {
-      if (_syncingScroll || !source.hasClients || !target.hasClients) return;
-      _syncingScroll = true;
-      final next = source.offset.clamp(
-        target.position.minScrollExtent,
-        target.position.maxScrollExtent,
-      );
-      target.jumpTo(next.toDouble());
-      _syncingScroll = false;
-    }
-
-    void leftListener() => sync(left, right);
-    void rightListener() => sync(right, left);
-    left.addListener(leftListener);
-    right.addListener(rightListener);
-    _unlinkJsonScroll = () {
-      left.removeListener(leftListener);
-      right.removeListener(rightListener);
-    };
-  }
 }
 
 class _WorkspaceToolbar extends StatelessWidget {
-  const _WorkspaceToolbar({
-    required this.state,
-    required this.canvasSize,
-    required this.compareMode,
-    required this.linkedScroll,
-    required this.onCompareModeChanged,
-    required this.onLinkedScrollChanged,
-  });
+  const _WorkspaceToolbar({required this.state, required this.canvasSize});
 
   final ToolState state;
   final Size canvasSize;
-  final JsonCompareMode compareMode;
-  final bool linkedScroll;
-  final ValueChanged<JsonCompareMode> onCompareModeChanged;
-  final ValueChanged<bool> onLinkedScrollChanged;
 
   @override
   Widget build(BuildContext context) {
     final appColors = context.appColors;
     return Container(
-      height: 48,
+      height: 32,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       color: appColors.statusBar,
-      child: ValueListenableBuilder<String>(
-        valueListenable: state.selectedToolId,
-        builder: (context, selectedToolId, _) {
-          final selectedTool = ToolRegistry.byId(selectedToolId);
-          return SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                Text(
-                  'Workspace',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: appColors.editorText,
-                  ),
+      // Compact tap targets so the toggle/buttons fit a slim bar without their
+      // default 48px material padding ballooning the toolbar height.
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              Text(
+                'Workspace',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: appColors.editorText,
                 ),
-                const SizedBox(width: 12),
-                ToolButton(
-                  label: 'New Panel',
-                  icon: Icons.add_box_outlined,
-                  onPressed: selectedTool == null
-                      ? null
-                      : () => state.workspace.openTool(
-                          selectedTool.id,
-                          forceNew: true,
-                        ),
-                ),
-                const SizedBox(width: 8),
-                ToolIconButton(
-                  icon: Icons.control_point_duplicate,
-                  tooltip: 'Duplicate focused panel',
-                  onPressed: state.workspace.duplicateFocusedPanel,
-                ),
-                ToolIconButton(
-                  icon: Icons.view_column_outlined,
-                  tooltip: 'Tile visible panels',
-                  onPressed: () =>
-                      state.workspace.tileVisiblePanels(canvasSize),
-                ),
-                ToolIconButton(
-                  icon: Icons.close,
-                  tooltip: 'Close focused panel',
-                  onPressed: state.workspace.closeFocusedPanel,
-                ),
-                const SizedBox(width: 8),
-                _CompareControls(
-                  compareMode: compareMode,
-                  linkedScroll: linkedScroll,
-                  onCompareModeChanged: onCompareModeChanged,
-                  onLinkedScrollChanged: onLinkedScrollChanged,
-                ),
-                const SizedBox(width: 16),
-                ValueListenableBuilder<bool>(
-                  valueListenable: state.darkMode,
-                  builder: (context, darkMode, _) {
-                    return Tooltip(
-                      message: darkMode
-                          ? 'Switch to light mode'
-                          : 'Switch to dark mode',
-                      child: Switch(
-                        value: darkMode,
-                        onChanged: (value) => state.darkMode.value = value,
-                      ),
-                    );
-                  },
-                ),
-                ToolIconButton(
-                  icon: Icons.delete_sweep_outlined,
-                  tooltip: 'Clear workspace',
-                  onPressed: state.workspace.clearWorkspace,
-                ),
-              ],
-            ),
-          );
-        },
+              ),
+              const SizedBox(width: 12),
+              ToolIconButton(
+                icon: Icons.view_column_outlined,
+                tooltip: 'Tile visible panels',
+                onPressed: () => state.workspace.tileVisiblePanels(canvasSize),
+              ),
+              const SizedBox(width: 16),
+              ValueListenableBuilder<bool>(
+                valueListenable: state.darkMode,
+                builder: (context, darkMode, _) {
+                  return Tooltip(
+                    message: darkMode
+                        ? 'Switch to light mode'
+                        : 'Switch to dark mode',
+                    child: Switch(
+                      value: darkMode,
+                      onChanged: (value) => state.darkMode.value = value,
+                    ),
+                  );
+                },
+              ),
+              ToolIconButton(
+                icon: Icons.delete_sweep_outlined,
+                tooltip: 'Clear workspace',
+                onPressed: state.workspace.clearWorkspace,
+              ),
+            ],
+          ),
+        ),
       ),
-    );
-  }
-}
-
-class _CompareControls extends StatelessWidget {
-  const _CompareControls({
-    required this.compareMode,
-    required this.linkedScroll,
-    required this.onCompareModeChanged,
-    required this.onLinkedScrollChanged,
-  });
-
-  final JsonCompareMode compareMode;
-  final bool linkedScroll;
-  final ValueChanged<JsonCompareMode> onCompareModeChanged;
-  final ValueChanged<bool> onLinkedScrollChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final appColors = context.appColors;
-    return Row(
-      children: [
-        Text('Compare', style: TextStyle(color: appColors.mutedText)),
-        const SizedBox(width: 8),
-        ToggleButtons(
-          isSelected: [
-            compareMode == JsonCompareMode.normalized,
-            compareMode == JsonCompareMode.raw,
-          ],
-          onPressed: (index) => onCompareModeChanged(
-            index == 0 ? JsonCompareMode.normalized : JsonCompareMode.raw,
-          ),
-          borderRadius: BorderRadius.circular(6),
-          constraints: const BoxConstraints(minHeight: 30, minWidth: 84),
-          children: const [Text('Normalized'), Text('Raw')],
-        ),
-        const SizedBox(width: 8),
-        Tooltip(
-          message: 'Linked Scroll',
-          child: FilterChip(
-            label: const Text('Linked Scroll'),
-            selected: linkedScroll,
-            onSelected: onLinkedScrollChanged,
-            visualDensity: VisualDensity.compact,
-          ),
-        ),
-      ],
     );
   }
 }
@@ -457,20 +317,18 @@ class _WorkspaceCanvas extends StatelessWidget {
     required this.focusedPanelId,
     required this.jsonPair,
     required this.jsonCompare,
-    required this.compareMode,
-    required this.linkedScroll,
     required this.onSizeChanged,
     required this.onOpenTool,
     required this.onBuildTool,
     required this.workspace,
+    required this.favorites,
+    required this.onToggleFavorite,
   });
 
   final List<ToolInstance> panels;
   final String? focusedPanelId;
   final List<ToolInstance>? jsonPair;
   final JsonCompareSummary? jsonCompare;
-  final JsonCompareMode compareMode;
-  final bool linkedScroll;
   final ValueChanged<Size> onSizeChanged;
   final ValueChanged<String> onOpenTool;
   final Widget Function(
@@ -480,6 +338,8 @@ class _WorkspaceCanvas extends StatelessWidget {
   )
   onBuildTool;
   final WorkspaceState workspace;
+  final Set<String> favorites;
+  final ValueChanged<String> onToggleFavorite;
 
   @override
   Widget build(BuildContext context) {
@@ -502,11 +362,7 @@ class _WorkspaceCanvas extends StatelessWidget {
                 Positioned(
                   top: 12,
                   left: max(16, size.width / 2 - 210),
-                  child: _JsonCompareBar(
-                    mode: compareMode,
-                    summary: jsonCompare!,
-                    linkedScroll: linkedScroll,
-                  ),
+                  child: _JsonCompareBar(summary: jsonCompare!),
                 ),
               for (final panel in displayed)
                 _ToolPanel(
@@ -553,6 +409,8 @@ class _WorkspaceCanvas extends StatelessWidget {
                     size,
                   ),
                   onSelectDockTab: workspace.focusPanel,
+                  isFavorite: favorites.contains(panel.toolId),
+                  onToggleFavorite: () => onToggleFavorite(panel.toolId),
                   child: onBuildTool(context, panel, _compareForPanel(panel)),
                 ),
             ],
@@ -570,14 +428,12 @@ class _WorkspaceCanvas extends StatelessWidget {
       return JsonPanelCompareDetails(
         summary: compare,
         changedLines: compare.leftChangedLines,
-        linkedScroll: linkedScroll,
       );
     }
     if (panel.instanceId == pair.last.instanceId) {
       return JsonPanelCompareDetails(
         summary: compare,
         changedLines: compare.rightChangedLines,
-        linkedScroll: linkedScroll,
       );
     }
     return null;
@@ -698,6 +554,8 @@ class _ToolPanel extends StatelessWidget {
     required this.onSnapRight,
     required this.onMaximize,
     required this.onSelectDockTab,
+    required this.isFavorite,
+    required this.onToggleFavorite,
     required this.child,
   });
 
@@ -717,6 +575,8 @@ class _ToolPanel extends StatelessWidget {
   final VoidCallback onSnapRight;
   final VoidCallback onMaximize;
   final ValueChanged<String> onSelectDockTab;
+  final bool isFavorite;
+  final VoidCallback onToggleFavorite;
   final Widget child;
 
   @override
@@ -751,6 +611,8 @@ class _ToolPanel extends StatelessWidget {
                       tool: tool,
                       focused: focused,
                       compare: compare,
+                      isFavorite: isFavorite,
+                      onToggleFavorite: onToggleFavorite,
                       onMove: onMove,
                       onFocus: onFocus,
                       onClose: onClose,
@@ -769,7 +631,7 @@ class _ToolPanel extends StatelessWidget {
                     Expanded(
                       child: Container(
                         color: appColors.panel,
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(10),
                         child: child,
                       ),
                     ),
@@ -807,13 +669,13 @@ class _DockTabStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final appColors = context.appColors;
     return Container(
-      height: 34,
+      height: 30,
       decoration: BoxDecoration(
         color: appColors.panelElevated,
         border: Border(bottom: BorderSide(color: appColors.border)),
       ),
       child: ListView.separated(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         scrollDirection: Axis.horizontal,
         itemBuilder: (context, index) {
           final panel = tabs[index];
@@ -829,7 +691,7 @@ class _DockTabStrip extends StatelessWidget {
                 borderRadius: BorderRadius.circular(6),
                 onTap: () => onSelect(panel.instanceId),
                 child: Container(
-                  height: 26,
+                  height: 24,
                   padding: const EdgeInsets.symmetric(horizontal: 9),
                   decoration: BoxDecoration(
                     color: selected ? appColors.accentSoft : Colors.transparent,
@@ -962,6 +824,8 @@ class _PanelTitleBar extends StatelessWidget {
     required this.tool,
     required this.focused,
     required this.compare,
+    required this.isFavorite,
+    required this.onToggleFavorite,
     required this.onMove,
     required this.onFocus,
     required this.onClose,
@@ -976,6 +840,8 @@ class _PanelTitleBar extends StatelessWidget {
   final DevTool? tool;
   final bool focused;
   final JsonPanelCompareDetails? compare;
+  final bool isFavorite;
+  final VoidCallback onToggleFavorite;
   final ValueChanged<Offset> onMove;
   final VoidCallback onFocus;
   final VoidCallback onClose;
@@ -993,14 +859,14 @@ class _PanelTitleBar extends StatelessWidget {
       onPanStart: (_) => onFocus(),
       onPanUpdate: (details) => onMove(details.delta),
       child: Container(
-        height: 38,
+        height: 30,
         color: focused ? appColors.panelHeader : appColors.panelElevated,
         padding: const EdgeInsets.only(left: 10, right: 4),
         child: Row(
           children: [
             Icon(
               tool?.icon ?? Icons.extension,
-              size: 16,
+              size: 15,
               color: appColors.accent,
             ),
             const SizedBox(width: 8),
@@ -1008,13 +874,24 @@ class _PanelTitleBar extends StatelessWidget {
               child: Text(
                 instance.title,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w700),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12.5,
+                ),
               ),
             ),
             if (compare != null) ...[
               const SizedBox(width: 8),
               _PanelBadge(label: compare!.summary.label),
             ],
+            ToolIconButton(
+              icon: isFavorite ? Icons.star : Icons.star_border,
+              color: isFavorite ? appColors.warning : null,
+              tooltip: isFavorite
+                  ? 'Remove from favorites'
+                  : 'Add to favorites',
+              onPressed: onToggleFavorite,
+            ),
             ToolIconButton(
               icon: Icons.control_point_duplicate,
               tooltip: 'Duplicate panel',
@@ -1090,28 +967,22 @@ class _MirroredToolIconButton extends StatelessWidget {
     return IconButton(
       onPressed: onPressed,
       tooltip: tooltip,
-      padding: const EdgeInsets.all(6),
-      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-      splashRadius: 18,
+      padding: const EdgeInsets.all(5),
+      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+      splashRadius: 16,
       icon: Transform(
         alignment: Alignment.center,
         transform: Matrix4.diagonal3Values(-1.0, 1.0, 1.0),
-        child: Icon(icon, size: 20),
+        child: Icon(icon, size: 18),
       ),
     );
   }
 }
 
 class _JsonCompareBar extends StatelessWidget {
-  const _JsonCompareBar({
-    required this.mode,
-    required this.summary,
-    required this.linkedScroll,
-  });
+  const _JsonCompareBar({required this.summary});
 
-  final JsonCompareMode mode;
   final JsonCompareSummary summary;
-  final bool linkedScroll;
 
   @override
   Widget build(BuildContext context) {
@@ -1137,18 +1008,8 @@ class _JsonCompareBar extends StatelessWidget {
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
             const SizedBox(width: 10),
-            Text(
-              mode == JsonCompareMode.normalized
-                  ? 'Normalized Diff'
-                  : 'Raw Diff',
-              style: TextStyle(color: appColors.mutedText),
-            ),
             const Spacer(),
             Text(summary.label),
-            if (linkedScroll) ...[
-              const SizedBox(width: 8),
-              Icon(Icons.link, size: 14, color: appColors.success),
-            ],
           ],
         ),
       ),
@@ -1164,24 +1025,78 @@ class _MinimizedDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final appColors = context.appColors;
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: appColors.statusBar,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: appColors.border),
-      ),
+    return Align(
+      alignment: Alignment.centerLeft,
       child: Wrap(
-        spacing: 8,
+        spacing: 6,
+        runSpacing: 6,
         children: [
           for (final panel in panels)
-            ActionChip(
-              avatar: Icon(ToolRegistry.byId(panel.toolId)?.icon, size: 16),
-              label: Text(panel.title),
-              onPressed: () => onRestore(panel.instanceId),
+            _MinimizedChip(
+              icon: ToolRegistry.byId(panel.toolId)?.icon,
+              label: panel.title,
+              onRestore: () => onRestore(panel.instanceId),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// A slim taskbar pill for a single minimized panel. Click to restore.
+class _MinimizedChip extends StatelessWidget {
+  const _MinimizedChip({
+    required this.icon,
+    required this.label,
+    required this.onRestore,
+  });
+
+  final IconData? icon;
+  final String label;
+  final VoidCallback onRestore;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Tooltip(
+      message: 'Restore $label',
+      waitDuration: const Duration(milliseconds: 500),
+      child: Material(
+        color: appColors.statusBar,
+        borderRadius: BorderRadius.circular(6),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: onRestore,
+          child: Container(
+            height: 26,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: appColors.border),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 13, color: appColors.mutedText),
+                  const SizedBox(width: 6),
+                ],
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 160),
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1249,7 +1164,7 @@ class _WorkspaceStatusBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final appColors = context.appColors;
     return Container(
-      height: 28,
+      height: 24,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       color: appColors.statusBar,
       child: ValueListenableBuilder<List<ToolInstance>>(
@@ -1273,13 +1188,19 @@ class _WorkspaceStatusBar extends StatelessWidget {
                         child: Text(
                           focused?.title ?? 'No panel focused',
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: appColors.mutedText),
+                          style: TextStyle(
+                            color: appColors.mutedText,
+                            fontSize: 11.5,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 14),
                       Text(
                         '$visibleCount open',
-                        style: TextStyle(color: appColors.mutedText),
+                        style: TextStyle(
+                          color: appColors.mutedText,
+                          fontSize: 11.5,
+                        ),
                       ),
                       if (showShortcuts) ...[
                         const Spacer(),
@@ -1287,7 +1208,7 @@ class _WorkspaceStatusBar extends StatelessWidget {
                           'Cmd+N New Panel  •  Cmd+Shift+D Duplicate  •  Cmd+W Close',
                           style: TextStyle(
                             color: appColors.mutedText,
-                            fontSize: 12,
+                            fontSize: 11.5,
                           ),
                         ),
                       ],

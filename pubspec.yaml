@@ -44,6 +44,14 @@ dependencies:
   webview_flutter: ^4.13.1
   qr_flutter: ^4.1.0
   re_editor: ^0.8.0
+  # Used directly to define a lightweight PlantUML syntax-highlight Mode for the
+  # diagram source editor (also a transitive dep of re_editor).
+  re_highlight: ^0.0.3
+  flutter_svg: ^2.0.10+1
+  # Diagram export: build a PDF from a captured PNG and drive the native macOS
+  # print / "Save as PDF" dialog.
+  pdf: ^3.11.0
+  printing: ^5.13.0
 
 dev_dependencies:
   flutter_test:
@@ -67,10 +75,11 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  assets:
+    # ArchiMate element sprites (monochrome SVGs from the PlantUML project),
+    # tinted at render time and shown as a node's corner glyph when its
+    # <<stereotype>> matches an ArchiMate element name.
+    - assets/archimate/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

@@ -377,6 +377,13 @@ class ToolRegistry {
       category: 'Text',
     ),
     DevTool(
+      id: 'uml_class_diagram',
+      name: 'PlantUML Class Diagram',
+      icon: Icons.account_tree,
+      builder: (_) => buildUmlClassDiagram(),
+      category: 'Diagrams',
+    ),
+    DevTool(
       id: 'mime_types',
       name: 'MIME Types',
       icon: Icons.table_view,
