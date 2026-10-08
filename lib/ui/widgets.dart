@@ -19,9 +19,9 @@ class ToolButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (label == 'Clipboard' || label == 'Sample' || label == 'Clear') {
-      return const SizedBox.shrink();
-    }
+    // Note: EditorPane pulls 'Sample'/'Clear' into its context menu and hides
+    // 'Clipboard'/'Copy' from compact headers itself, so those labels render
+    // normally when a ToolButton is used outside an editor pane.
 
     final appColors = context.appColors;
     final Widget child;

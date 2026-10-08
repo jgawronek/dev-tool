@@ -1273,6 +1273,38 @@ module.exports = greet;''',
     expect(output, contains('export default greet;'));
   });
 
+  testWidgets('cURL builder scaffolds method and options into the command', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    final state = ToolState.inMemory();
+    state.workspace.openTool('curl_to_code');
+    await tester.pumpWidget(DevToolApp(state: state));
+    await tester.pumpAndSettle();
+
+    // Method dropdown (shows GET) → POST.
+    await tester.tap(find.text('GET').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('POST').last);
+    await tester.pumpAndSettle();
+    expect(editorText(tester, 'Enter text...'), contains('-X POST'));
+
+    // Options multi-select → Bearer token.
+    await tester.tap(find.text('Options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Bearer token').last);
+    await tester.pumpAndSettle();
+
+    expect(
+      editorText(tester, 'Enter text...'),
+      contains('Authorization: Bearer'),
+    );
+    // The generated code (NodeJS / Fetch) reflects the method and header.
+    final code = editorText(tester, 'Output...');
+    expect(code, contains("method: 'POST'"));
+    expect(code, contains('Authorization'));
+  });
+
   testWidgets('Text encryption updates output without a Go button', (
     WidgetTester tester,
   ) async {

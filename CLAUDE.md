@@ -59,8 +59,14 @@ dev-tool/
 │   ├── ui/
 │   │   ├── main_shell.dart    # Root shell/layout widget
 │   │   ├── sidebar.dart       # Left sidebar (search, categories, favorites)
-│   │   ├── tool_views.dart    # Individual tool UI implementations
-│   │   └── widgets.dart       # Reusable UI components
+│   │   ├── tool_views.dart    # Barrel re-exporting all tool builders
+│   │   ├── widgets.dart       # Reusable UI components
+│   │   └── tools/             # One file per tool, grouped by category
+│   │       ├── common/        # Shared helpers and split-editor layouts
+│   │       ├── ai/  converters/  encoders/  formatters/
+│   │       ├── generators/  network/  parsers/  preferences/
+│   │       ├── preview/  reference/  security/  text/
+│   │       └── diagrams/
 │   └── data/
 │       └── mime_types.dart    # MIME type constants and utilities
 ├── test/
@@ -81,7 +87,7 @@ DevUtils follows a **tool-registry pattern** designed for extensibility. The app
 **Tool Registry (Single Source of Truth)**
 - All available tools are registered in `ToolRegistry.tools` (lib/registry/tool_registry.dart)
 - Each tool is defined as a `DevTool` object containing: id, name, icon, builder (widget factory), category, and demo data
-- Adding a new tool requires only: (1) creating a builder function in `tool_views.dart`, (2) registering it in `ToolRegistry`
+- Adding a new tool requires only: (1) creating a builder function in a new file under `lib/ui/tools/<category>/`, (2) exporting it from the `lib/ui/tool_views.dart` barrel, (3) registering it in `ToolRegistry`
 
 **State Management via ValueNotifier**
 - `ToolState` (lib/state/tool_state.dart) manages reactive state without external dependencies
@@ -104,7 +110,7 @@ DevUtils follows a **tool-registry pattern** designed for extensibility. The app
 | Registry | `lib/registry/` | Central registry listing all available tools |
 | Services | `lib/services/` | External integrations (LLM, file system, network) |
 | UI - Widgets | `lib/ui/widgets.dart` | Reusable UI components (buttons, editors, dropdowns) |
-| UI - Tools | `lib/ui/tool_views.dart` | Tool-specific implementations (JSON formatter, Base64, etc.) |
+| UI - Tools | `lib/ui/tools/<category>/` | One file per tool (JSON formatter, Base64, etc.); `lib/ui/tool_views.dart` is the barrel |
 | UI - Shell | `lib/ui/main_shell.dart` | Root layout and navigation structure |
 | Data | `lib/data/` | Constants and utilities (MIME types) |
 
@@ -430,3 +436,9 @@ For frontend, mobile, desktop, CLI, form, dashboard, onboarding, account/setting
 - For changed interactive flows, define the state matrix before coding: loading, empty, error, disabled, pending, success, retry/recovery, and long-text cases.
 - Verify accessibility basics: labels, focus states, keyboard path, semantic controls, contrast, ARIA state for disclosure widgets, and non-hover-only guidance.
 - The final hook check is advisory and may warn about missing UI states, responsive constraints, or accessibility cues without blocking completion.
+
+
+
+
+
+
