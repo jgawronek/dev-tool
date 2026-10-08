@@ -142,6 +142,11 @@ class _StyleBeautifyMinifyViewState extends State<_StyleBeautifyMinifyView> {
     await _loadFile(path);
   }
 
+  Future<void> _copyOutput() async {
+    if (_output.text.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: _output.text));
+  }
+
   Future<void> _loadFile(String path) async {
     try {
       final file = File(path);
@@ -215,7 +220,7 @@ class _StyleBeautifyMinifyViewState extends State<_StyleBeautifyMinifyView> {
         ToolButton(label: 'Sample', onPressed: _setSample),
         ToolButton(label: 'Clear', onPressed: _clearInput),
       ],
-      outputActions: const [],
+      outputActions: [ToolButton(label: 'Copy', onPressed: _copyOutput)],
       inputOverlay: SourceFileControls(
         onPickFile: _pickFile,
         fileName: _sourceFileName,

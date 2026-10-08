@@ -10,6 +10,7 @@ Future<void> pumpPane(
   Widget? overlay,
   bool showHeader = false,
   VoidCallback? copyAction,
+  VoidCallback? pasteAction,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -22,6 +23,7 @@ Future<void> pumpPane(
             actions: actions,
             overlay: overlay,
             copyAction: copyAction,
+            pasteAction: pasteAction,
             showHeader: showHeader,
           ),
         ),
@@ -88,6 +90,69 @@ void main() {
         showHeader: true,
       );
       expect(find.byIcon(Icons.copy), findsOneWidget);
+    });
+  });
+
+  group('Clipboard action is honoured', () {
+    // Regression: 'Clipboard' was on the hidden-label list, so the paste
+    // button was discarded like Copy. Twenty-two tools request it.
+    testWidgets('a Clipboard ToolButton renders a paste affordance',
+        (tester) async {
+      await pumpPane(
+        tester,
+        actions: [ToolButton(label: 'Clipboard', onPressed: () {})],
+      );
+      expect(find.byIcon(Icons.content_paste), findsOneWidget);
+    });
+
+    testWidgets('tapping it invokes the callback', (tester) async {
+      var taps = 0;
+      await pumpPane(
+        tester,
+        actions: [ToolButton(label: 'Clipboard', onPressed: () => taps++)],
+      );
+      await tester.tap(find.byIcon(Icons.content_paste));
+      await tester.pump();
+      expect(taps, 1);
+    });
+
+    testWidgets('copy and paste appear together', (tester) async {
+      await pumpPane(
+        tester,
+        actions: [
+          ToolButton(label: 'Copy', onPressed: () {}),
+          ToolButton(label: 'Clipboard', onPressed: () {}),
+        ],
+      );
+      expect(find.byIcon(Icons.copy), findsOneWidget);
+      expect(find.byIcon(Icons.content_paste), findsOneWidget);
+    });
+
+    testWidgets('an explicit pasteAction takes precedence', (tester) async {
+      var explicit = 0;
+      var fromButton = 0;
+      await pumpPane(
+        tester,
+        actions: [ToolButton(label: 'Clipboard', onPressed: () => fromButton++)],
+        pasteAction: () => explicit++,
+      );
+      await tester.tap(find.byIcon(Icons.content_paste));
+      await tester.pump();
+      expect(explicit, 1);
+      expect(fromButton, 0);
+    });
+
+    testWidgets('it survives alongside a custom overlay', (tester) async {
+      var taps = 0;
+      await pumpPane(
+        tester,
+        actions: [ToolButton(label: 'Clipboard', onPressed: () => taps++)],
+        overlay: const Text('custom overlay'),
+      );
+      expect(find.text('custom overlay'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.content_paste));
+      await tester.pump();
+      expect(taps, 1);
     });
   });
 

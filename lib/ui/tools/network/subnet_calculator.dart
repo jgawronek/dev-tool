@@ -80,6 +80,9 @@ class _SubnetCalculatorViewState extends State<_SubnetCalculatorView> {
               ToolButton(label: 'Sample', onPressed: _setSample),
               ToolButton(label: 'Clear', onPressed: _clear),
             ],
+            outputActions: [
+              ToolButton(label: 'Copy', onPressed: _copyDetails),
+            ],
             inputController: _address,
             outputController: _details,
             onInputChanged: (_) => _calculate(),
@@ -88,14 +91,6 @@ class _SubnetCalculatorViewState extends State<_SubnetCalculatorView> {
             showInputHeader: false,
             showOutputHeader: false,
             inputOverlay: _buildSummary(context),
-            // EditorPane only renders outputActions without an overlay, so
-            // Copy is composed into the overlay row rather than passed here.
-            outputOverlay: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ToolButton(label: 'Copy', onPressed: _copyDetails),
-              ],
-            ),
           ),
         ),
         if (_error != null)

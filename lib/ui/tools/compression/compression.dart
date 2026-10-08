@@ -138,6 +138,10 @@ class _CompressionViewState extends State<_CompressionView> {
                 onChanged: _setMode,
               ),
             ],
+            outputActions: [
+              ToolButton(label: 'Copy', onPressed: _copyOutput),
+              ToolButton(label: 'Use as input', onPressed: _useAsInput),
+            ],
             inputController: _input,
             outputController: _output,
             onInputChanged: (_) => _run(),

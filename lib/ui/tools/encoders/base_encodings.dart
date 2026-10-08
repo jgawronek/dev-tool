@@ -135,6 +135,10 @@ class _BaseEncodingsViewState extends State<_BaseEncodingsView> {
                 onChanged: _setMode,
               ),
             ],
+            outputActions: [
+              ToolButton(label: 'Copy', onPressed: _copyOutput),
+              ToolButton(label: 'Use as input', onPressed: _useAsInput),
+            ],
             inputController: _input,
             outputController: _output,
             onInputChanged: (_) => _run(),
@@ -144,21 +148,10 @@ class _BaseEncodingsViewState extends State<_BaseEncodingsView> {
             outputPlaceholder: _encode
                 ? '${_encoding.label} output...'
                 : 'Decoded text...',
-            // EditorPane only renders outputActions without an overlay, so the
-            // codec control and the output buttons share one row.
-            outputOverlay: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SmallDropdown(
-                  items: labels,
-                  initialValue: _encoding.label,
-                  onChanged: _setEncoding,
-                ),
-                const SizedBox(width: 6),
-                ToolButton(label: 'Copy', onPressed: _copyOutput),
-                const SizedBox(width: 6),
-                ToolButton(label: 'Use as input', onPressed: _useAsInput),
-              ],
+            outputOverlay: SmallDropdown(
+              items: labels,
+              initialValue: _encoding.label,
+              onChanged: _setEncoding,
             ),
           ),
         ),

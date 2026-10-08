@@ -205,27 +205,16 @@ class _CipherDecoderViewState extends State<_CipherDecoderView> {
                 onChanged: _setMode,
               ),
             ],
+            outputActions: [
+              ToolButton(label: 'Copy', onPressed: _copyOutput),
+              ToolButton(label: 'Use as input', onPressed: _useAsInput),
+            ],
             inputController: _input,
             outputController: _output,
             onInputChanged: (_) => _run(),
             inputPlaceholder: 'Ciphertext...',
             outputPlaceholder: 'Plaintext...',
-            // No input overlay: supplying one would replace the toolbar and
-            // hide the mode toggle. The cipher controls sit with the output
-            // instead, which is where they take effect.
-            outputOverlay: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildControls(context, labels),
-                  const SizedBox(width: 6),
-                  ToolButton(label: 'Copy', onPressed: _copyOutput),
-                  const SizedBox(width: 6),
-                  ToolButton(label: 'Use as input', onPressed: _useAsInput),
-                ],
-              ),
-            ),
+            outputOverlay: _buildControls(context, labels),
           ),
         ),
         if (_candidates.length > 1) _buildCandidateList(context),

@@ -410,6 +410,7 @@ class _JsonCsvConverterView extends StatefulWidget {
 class _JsonCsvConverterViewState extends State<_JsonCsvConverterView> {
   final TextEditingController _input = TextEditingController();
   final TextEditingController _output = TextEditingController();
+
   final ScrollController _inputScroll = ScrollController();
   final ScrollController _outputScroll = ScrollController();
   final ValueNotifier<JsonToolStatus> _status = ValueNotifier<JsonToolStatus>(
@@ -437,6 +438,11 @@ class _JsonCsvConverterViewState extends State<_JsonCsvConverterView> {
     // re-serialized on every keystroke.
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 250), _run);
+  }
+
+  Future<void> _copyOutput() async {
+    if (_output.text.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: _output.text));
   }
 
   Future<void> _export() async {
@@ -519,7 +525,7 @@ class _JsonCsvConverterViewState extends State<_JsonCsvConverterView> {
       inputPlaceholder: _csvToJson ? 'id,name,note' : '{"data":[{"id":1}]}',
       outputPlaceholder: _csvToJson ? '[]' : 'id,name',
       inputActions: const [],
-      outputActions: const [],
+      outputActions: [ToolButton(label: 'Copy', onPressed: _copyOutput)],
       showInputHeader: false,
       showOutputHeader: false,
       inputOverlay: _CsvJsonDirectionOverlay(

@@ -259,6 +259,7 @@ class EditorPane extends StatelessWidget {
     this.controller,
     this.onChanged,
     this.copyAction,
+    this.pasteAction,
     this.onSubmit,
     this.scrollController,
     this.markedLines = const <int>{},
@@ -279,6 +280,7 @@ class EditorPane extends StatelessWidget {
   final TextEditingController? controller;
   final ValueChanged<String>? onChanged;
   final VoidCallback? copyAction;
+  final VoidCallback? pasteAction;
   final VoidCallback? onSubmit;
   final ScrollController? scrollController;
   final Set<int> markedLines;
@@ -308,6 +310,7 @@ class EditorPane extends StatelessWidget {
     VoidCallback? exampleAction;
     VoidCallback? clearAction;
     VoidCallback? promotedCopyAction;
+    VoidCallback? promotedPasteAction;
     for (final action in actions) {
       if (action is ToolButton) {
         if (action.label == 'Sample') {
@@ -325,6 +328,12 @@ class EditorPane extends StatelessWidget {
           promotedCopyAction ??= action.onPressed;
           continue;
         }
+        if (action.label == 'Clipboard') {
+          // Likewise for pasting: the button was filtered out and never
+          // rendered, so "paste from clipboard" was unreachable.
+          promotedPasteAction ??= action.onPressed;
+          continue;
+        }
         if (_isHiddenEditorAction(action.label, compact: !showHeader)) {
           continue;
         }
@@ -332,11 +341,13 @@ class EditorPane extends StatelessWidget {
       headerActions.add(action);
     }
     final resolvedCopyAction = copyAction ?? promotedCopyAction;
+    final resolvedPasteAction = pasteAction ?? promotedPasteAction;
     final resolvedOverlay = _resolveOverlay(
       overlay,
       headerActions,
       showHeader,
       resolvedCopyAction,
+      resolvedPasteAction,
     );
     final pane = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -385,6 +396,7 @@ class EditorPane extends StatelessWidget {
               controller: controller,
               onChanged: onChanged,
               copyAction: resolvedCopyAction,
+              pasteAction: resolvedPasteAction,
               onSubmit: onSubmit,
               scrollController: scrollController,
               markedLines: markedLines,
@@ -406,6 +418,7 @@ class EditorPane extends StatelessWidget {
               controller: controller,
               onChanged: onChanged,
               copyAction: resolvedCopyAction,
+              pasteAction: resolvedPasteAction,
               onSubmit: onSubmit,
               scrollController: scrollController,
               markedLines: markedLines,
@@ -505,6 +518,7 @@ Widget? _resolveOverlay(
   List<Widget> headerActions,
   bool showHeader,
   VoidCallback? copyAction,
+  VoidCallback? pasteAction,
 ) {
   final Widget? base;
   if (overlay != null) {
@@ -519,14 +533,56 @@ Widget? _resolveOverlay(
         ? _EditorOverlayControls(actions: headerActions)
         : null;
   }
+  if (base == null && copyAction == null && pasteAction == null) return null;
+
+  // With no caller-supplied overlay, an empty strip leaves room for the
+  // standalone copy/paste buttons that _EditorField positions for us.
   if (base == null) return null;
-  if (copyAction == null) return base;
-  // When a strip is present the copy button joins it; _EditorField only
-  // positions a standalone copy button when there is no strip at all.
+
+  final extras = <Widget>[
+    if (copyAction != null) _FloatingCopyButton(onPressed: copyAction),
+    if (pasteAction != null) _FloatingPasteButton(onPressed: pasteAction),
+  ];
+  if (extras.isEmpty) return base;
+  // When a strip is present the copy/paste buttons join it; _EditorField only
+  // positions standalone buttons when there is no strip at all.
   return Row(
     mainAxisSize: MainAxisSize.min,
-    children: [base, const SizedBox(width: 6), _FloatingCopyButton(onPressed: copyAction)],
+    children: [
+      base,
+      for (final extra in extras) ...[const SizedBox(width: 6), extra],
+    ],
   );
+}
+
+/// The compact icon button used to paste into a pane.
+class _FloatingPasteButton extends StatelessWidget {
+  const _FloatingPasteButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Tooltip(
+      message: 'Paste from clipboard',
+      child: Material(
+        color: appColors.panelElevated.withAlpha(210),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(6),
+          side: BorderSide(color: appColors.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.all(5),
+            child: Icon(Icons.content_paste, size: 15, color: appColors.mutedText),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// The compact icon button used to copy a pane's contents.
@@ -600,6 +656,7 @@ class _EditorField extends StatelessWidget {
     this.controller,
     this.onChanged,
     this.copyAction,
+    this.pasteAction,
     this.onSubmit,
     this.scrollController,
     this.markedLines = const <int>{},
@@ -617,6 +674,7 @@ class _EditorField extends StatelessWidget {
   final TextEditingController? controller;
   final ValueChanged<String>? onChanged;
   final VoidCallback? copyAction;
+  final VoidCallback? pasteAction;
   final VoidCallback? onSubmit;
   final ScrollController? scrollController;
   final Set<int> markedLines;
@@ -766,11 +824,21 @@ class _EditorField extends StatelessWidget {
                     ),
                   ),
                 )
-              else if (copyAction != null)
+              else if (copyAction != null || pasteAction != null)
                 Positioned(
                   top: 6,
                   right: 6,
-                  child: _FloatingCopyButton(onPressed: copyAction!),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (copyAction != null)
+                        _FloatingCopyButton(onPressed: copyAction!),
+                      if (copyAction != null && pasteAction != null)
+                        const SizedBox(width: 6),
+                      if (pasteAction != null)
+                        _FloatingPasteButton(onPressed: pasteAction!),
+                    ],
+                  ),
                 ),
             ],
           ),
@@ -1131,15 +1199,16 @@ bool _isClipboardIcon(IconData icon) {
       icon == Icons.copy_all;
 }
 
+/// Whether [label] should be hidden from the action strip.
+///
+/// Only the Go button is dropped, and only when the pane has no header to
+/// carry it. The other conventionally-labelled buttons used to be listed here
+/// and silently discarded; they are now handled explicitly above, where Copy
+/// and Clipboard become affordances and Sample/Clear become context-menu
+/// entries. Keeping this list to a single case means a new label cannot be
+/// dropped by accident.
 bool _isHiddenEditorAction(String label, {required bool compact}) {
-  if (label == 'Clipboard' ||
-      label == 'Copy' ||
-      label == 'Sample' ||
-      label == 'Clear') {
-    return true;
-  }
-  if (!compact) return false;
-  return label == 'Go';
+  return compact && label == 'Go';
 }
 
 class LabeledField extends StatelessWidget {
