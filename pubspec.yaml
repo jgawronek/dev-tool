@@ -43,7 +43,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   webview_flutter: ^4.13.1
   qr_flutter: ^4.1.0
-  re_editor: ^0.8.0
+  re_editor: ^0.10.0
   # Used directly to define a lightweight PlantUML syntax-highlight Mode for the
   # diagram source editor (also a transitive dep of re_editor).
   re_highlight: ^0.0.3

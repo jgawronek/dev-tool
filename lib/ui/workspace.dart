@@ -228,9 +228,14 @@ class _WorkspaceToolbar extends StatelessWidget {
                     message: darkMode
                         ? 'Switch to light mode'
                         : 'Switch to dark mode',
-                    child: Switch(
-                      value: darkMode,
-                      onChanged: (value) => state.darkMode.value = value,
+                    // Scaled down so the M3 switch's ~32px track fits the slim
+                    // toolbar instead of filling its full height.
+                    child: Transform.scale(
+                      scale: 0.72,
+                      child: Switch(
+                        value: darkMode,
+                        onChanged: (value) => state.darkMode.value = value,
+                      ),
                     ),
                   );
                 },
