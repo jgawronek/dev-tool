@@ -52,6 +52,10 @@ dependencies:
   # print / "Save as PDF" dialog.
   pdf: ^3.11.0
   printing: ^5.13.0
+  # Compress/decompress tool: GZip, Zlib, BZip2, Zip and Tar codecs.
+  archive: ^4.0.9
+  # Password hashing tool. Pure Dart, so bcrypt works on every desktop target.
+  bcrypt: ^1.2.0
 
 dev_dependencies:
   flutter_test:

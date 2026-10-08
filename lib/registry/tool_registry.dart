@@ -34,6 +34,20 @@ class ToolRegistry {
       category: 'Encoders',
     ),
     DevTool(
+      id: 'compression_codecs',
+      name: 'Compress / Decompress',
+      icon: Icons.compress,
+      builder: (_) => buildCompression(),
+      category: 'Compression',
+    ),
+    DevTool(
+      id: 'base_encodings',
+      name: 'Base32/58/62/85/Bech32',
+      icon: Icons.tag,
+      builder: (_) => buildBaseEncodings(),
+      category: 'Encoders',
+    ),
+    DevTool(
       id: 'jwt_debugger',
       name: 'JWT Debugger',
       icon: Icons.vpn_key,
@@ -81,6 +95,13 @@ class ToolRegistry {
       icon: Icons.domain_verification,
       builder: (_) => buildSubdomainTakeover(),
       category: 'Security',
+    ),
+    DevTool(
+      id: 'subnet_calculator',
+      name: 'Subnet Calculator',
+      icon: Icons.lan_outlined,
+      builder: (_) => buildSubnetCalculator(),
+      category: 'Network',
     ),
     DevTool(
       id: 'port_scanner',
@@ -202,11 +223,25 @@ class ToolRegistry {
       category: 'Generators',
     ),
     DevTool(
+      id: 'password_generator',
+      name: 'Password Generator',
+      icon: Icons.key,
+      builder: (_) => buildPasswordGenerator(),
+      category: 'Generators',
+    ),
+    DevTool(
       id: 'qr_code_reader_generator',
       name: 'QR Code Reader/Generator',
       icon: Icons.qr_code,
       builder: (_) => buildQrCode(),
       category: 'Generators',
+    ),
+    DevTool(
+      id: 'semver_calculator',
+      name: 'Semver Calculator',
+      icon: Icons.compare_arrows,
+      builder: (_) => buildSemVerCalculator(),
+      category: 'Text',
     ),
     DevTool(
       id: 'string_inspector',
@@ -230,6 +265,13 @@ class ToolRegistry {
       category: 'Converters',
     ),
     DevTool(
+      id: 'file_checksum',
+      name: 'File Checksum',
+      icon: Icons.verified_outlined,
+      builder: (_) => buildFileChecksum(),
+      category: 'Security',
+    ),
+    DevTool(
       id: 'hash_generator',
       name: 'Hash Generator',
       icon: Icons.fingerprint,
@@ -241,6 +283,13 @@ class ToolRegistry {
       name: 'Text Encryption/Decryption',
       icon: Icons.lock,
       builder: (_) => buildTextEncryption(),
+      category: 'Security',
+    ),
+    DevTool(
+      id: 'password_hashing',
+      name: 'Password Hashing',
+      icon: Icons.password,
+      builder: (_) => buildPasswordHashing(),
       category: 'Security',
     ),
     DevTool(
@@ -363,6 +412,13 @@ class ToolRegistry {
       category: 'Generators',
     ),
     DevTool(
+      id: 'cipher_decoder',
+      name: 'Cipher Decoder',
+      icon: Icons.lock_open,
+      builder: (_) => buildCipherDecoder(),
+      category: 'Security',
+    ),
+    DevTool(
       id: 'certificate_decoder_x509',
       name: 'Certificate Decoder (X.509)',
       icon: Icons.verified,
@@ -389,6 +445,13 @@ class ToolRegistry {
       icon: Icons.account_tree,
       builder: (_) => buildUmlClassDiagram(),
       category: 'Diagrams',
+    ),
+    DevTool(
+      id: 'chmod_calculator',
+      name: 'Chmod Calculator',
+      icon: Icons.lock_outline,
+      builder: (_) => buildChmodCalculator(),
+      category: 'Reference',
     ),
     DevTool(
       id: 'mime_types',
