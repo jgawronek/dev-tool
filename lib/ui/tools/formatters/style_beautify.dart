@@ -766,8 +766,8 @@ class _JsBeautifyMinifyViewState extends State<_JsBeautifyMinifyView> {
       case 'Minify':
         _output.text = _minifyJs(text);
         break;
-      case 'Obfuscate':
-        _output.text = _obfuscateJs(text);
+      case 'Wrap':
+        _output.text = _wrapJs(text);
         break;
       case 'Verify':
         _output.text = _formatKeywordTypos(text);
@@ -1193,7 +1193,11 @@ class _JsBeautifyMinifyViewState extends State<_JsBeautifyMinifyView> {
     return output.trim();
   }
 
-  String _obfuscateJs(String text) {
+  /// Base64-wraps the source in an IIFE and evals it at runtime. This hides
+  /// nothing that a reader can reverse in one step, so it is a transport
+  /// wrapper rather than obfuscation; the real transforms live in
+  /// `js_obfuscator_service.dart`.
+  String _wrapJs(String text) {
     if (text.trim().isEmpty) return '';
     final encoded = base64.encode(utf8.encode(text));
     return [
@@ -1437,7 +1441,7 @@ class _JsBeautifyMinifyViewState extends State<_JsBeautifyMinifyView> {
             ),
             const SizedBox(width: 6),
             SmallDropdown(
-              items: const ['Beautify', 'Minify', 'Obfuscate', 'Verify'],
+              items: const ['Beautify', 'Minify', 'Wrap', 'Verify'],
               initialValue: _format,
               onChanged: (value) {
                 setState(() => _format = value);

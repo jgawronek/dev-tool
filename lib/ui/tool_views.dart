@@ -57,6 +57,7 @@ export 'tools/security/certificate_decoder.dart';
 export 'tools/security/file_checksum.dart';
 export 'tools/security/firewall_fingerprint.dart';
 export 'tools/security/hash_generator.dart';
+export 'tools/security/js_obfuscator.dart';
 export 'tools/security/jwt_debugger.dart';
 export 'tools/security/session_cookie_decoder.dart';
 export 'tools/security/password_hashing.dart';

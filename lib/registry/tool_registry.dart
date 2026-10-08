@@ -503,6 +503,13 @@ class ToolRegistry {
       builder: (_) => buildAsn1Decoder(),
       category: 'Security',
     ),
+    DevTool(
+      id: 'js_obfuscator',
+      name: 'JS/TS Obfuscator',
+      icon: Icons.blur_on,
+      builder: (_) => buildJsObfuscator(),
+      category: 'Security',
+    ),
   ];
 
   static DevTool? byId(String id) {
