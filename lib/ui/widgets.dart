@@ -307,6 +307,7 @@ class EditorPane extends StatelessWidget {
     final headerActions = <Widget>[];
     VoidCallback? exampleAction;
     VoidCallback? clearAction;
+    VoidCallback? promotedCopyAction;
     for (final action in actions) {
       if (action is ToolButton) {
         if (action.label == 'Sample') {
@@ -317,18 +318,26 @@ class EditorPane extends StatelessWidget {
           clearAction ??= action.onPressed;
           continue;
         }
+        if (action.label == 'Copy') {
+          // A Copy ToolButton is how callers ask for the floating copy
+          // affordance. Dropping it (as the hidden-label filter used to) left
+          // most tools with no way to copy their output at all.
+          promotedCopyAction ??= action.onPressed;
+          continue;
+        }
         if (_isHiddenEditorAction(action.label, compact: !showHeader)) {
           continue;
         }
       }
       headerActions.add(action);
     }
-    final resolvedCopyAction = copyAction;
-    final resolvedOverlay =
-        overlay ??
-        (!showHeader && headerActions.isNotEmpty
-            ? _EditorOverlayControls(actions: headerActions)
-            : null);
+    final resolvedCopyAction = copyAction ?? promotedCopyAction;
+    final resolvedOverlay = _resolveOverlay(
+      overlay,
+      headerActions,
+      showHeader,
+      resolvedCopyAction,
+    );
     final pane = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -482,6 +491,70 @@ class _EditorFileDropRegionState extends State<_EditorFileDropRegion> {
       onEnter: (_) => FileDropService.setActiveTarget(_targetId),
       onExit: (_) => FileDropService.setActiveTarget(null),
       child: KeyedSubtree(key: _dropKey, child: widget.child),
+    );
+  }
+}
+
+/// Picks the floating control strip for a pane.
+///
+/// Actions are *merged* with a caller-supplied [overlay] rather than replaced
+/// by it. Overriding them was a silent trap: any tool that passed both lost
+/// every action, which is how several tools ended up with no Copy button.
+Widget? _resolveOverlay(
+  Widget? overlay,
+  List<Widget> headerActions,
+  bool showHeader,
+  VoidCallback? copyAction,
+) {
+  final Widget? base;
+  if (overlay != null) {
+    base = headerActions.isEmpty
+        ? overlay
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [overlay, const SizedBox(width: 6), ...headerActions],
+          );
+  } else {
+    base = !showHeader && headerActions.isNotEmpty
+        ? _EditorOverlayControls(actions: headerActions)
+        : null;
+  }
+  if (base == null) return null;
+  if (copyAction == null) return base;
+  // When a strip is present the copy button joins it; _EditorField only
+  // positions a standalone copy button when there is no strip at all.
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [base, const SizedBox(width: 6), _FloatingCopyButton(onPressed: copyAction)],
+  );
+}
+
+/// The compact icon button used to copy a pane's contents.
+class _FloatingCopyButton extends StatelessWidget {
+  const _FloatingCopyButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final appColors = context.appColors;
+    return Tooltip(
+      message: 'Copy',
+      child: Material(
+        color: appColors.panelElevated.withAlpha(210),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(6),
+          side: BorderSide(color: appColors.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.all(5),
+            child: Icon(Icons.copy, size: 15, color: appColors.mutedText),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -687,35 +760,17 @@ class _EditorField extends StatelessWidget {
                   right: 8,
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 460),
-                    child: overlay!,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: overlay!,
+                    ),
                   ),
                 )
               else if (copyAction != null)
                 Positioned(
                   top: 6,
                   right: 6,
-                  child: Tooltip(
-                    message: 'Copy',
-                    child: Material(
-                      color: appColors.panelElevated.withAlpha(210),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6),
-                        side: BorderSide(color: appColors.border),
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        onTap: copyAction,
-                        child: Padding(
-                          padding: const EdgeInsets.all(5),
-                          child: Icon(
-                            Icons.copy,
-                            size: 15,
-                            color: appColors.mutedText,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  child: _FloatingCopyButton(onPressed: copyAction!),
                 ),
             ],
           ),
