@@ -468,6 +468,41 @@ class ToolRegistry {
       showDemo: false,
       category: 'Preferences',
     ),
+    DevTool(
+      id: 'leetspeak_converter',
+      name: 'Leetspeak Converter',
+      icon: Icons.abc,
+      builder: (_) => buildLeetspeakConverter(),
+      category: 'Text',
+    ),
+    DevTool(
+      id: 'timestamp_extractor',
+      name: 'Timestamp Extractor',
+      icon: Icons.schedule,
+      builder: (_) => buildTimestampExtractor(),
+      category: 'Parsers',
+    ),
+    DevTool(
+      id: 'access_log_parser',
+      name: 'Access Log Parser',
+      icon: Icons.receipt_long,
+      builder: (_) => buildAccessLogParser(),
+      category: 'Parsers',
+    ),
+    DevTool(
+      id: 'session_cookie_decoder',
+      name: 'Session Cookie Decoder',
+      icon: Icons.cookie,
+      builder: (_) => buildSessionCookieDecoder(),
+      category: 'Security',
+    ),
+    DevTool(
+      id: 'asn1_tlv_decoder',
+      name: 'ASN.1 / TLV Decoder',
+      icon: Icons.account_tree,
+      builder: (_) => buildAsn1Decoder(),
+      category: 'Security',
+    ),
   ];
 
   static DevTool? byId(String id) {
