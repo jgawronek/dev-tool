@@ -130,11 +130,12 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
     try {
       final models = await _service.getAvailableModels();
       models.sort((a, b) => a.name.compareTo(b.name));
+      if (!mounted) return;
       setState(() => _models = models);
     } catch (e) {
-      setState(() => _error = 'Failed to load models: $e');
+      if (mounted) setState(() => _error = 'Failed to load models: $e');
     } finally {
-      setState(() => _loadingModels = false);
+      if (mounted) setState(() => _loadingModels = false);
     }
   }
 
@@ -168,11 +169,12 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
     });
     try {
       await _service.startServer(model.path);
+      if (!mounted) return;
       setState(() {});
     } catch (e) {
-      setState(() => _error = 'Failed to start server: $e');
+      if (mounted) setState(() => _error = 'Failed to start server: $e');
     } finally {
-      setState(() => _startingServer = false);
+      if (mounted) setState(() => _startingServer = false);
     }
   }
 
@@ -180,6 +182,7 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
     if (_stoppingServer) return;
     setState(() => _stoppingServer = true);
     await _service.stopServer();
+    if (!mounted) return;
     setState(() => _stoppingServer = false);
   }
 
@@ -193,16 +196,20 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
     });
     try {
       await _service.downloadModel(preset, (progress) {
+        if (!mounted) return;
         setState(() => _downloadProgress = progress);
       });
+      if (!mounted) return;
       await _refreshModels();
     } catch (e) {
-      setState(() => _error = 'Download failed: $e');
+      if (mounted) setState(() => _error = 'Download failed: $e');
     } finally {
-      setState(() {
-        _downloadingPreset = null;
-        _downloadProgress = 0;
-      });
+      if (mounted) {
+        setState(() {
+          _downloadingPreset = null;
+          _downloadProgress = 0;
+        });
+      }
     }
   }
 

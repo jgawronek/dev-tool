@@ -237,6 +237,7 @@ class _TotpCard extends StatelessWidget {
                       size: 16,
                       color: appColors.mutedText,
                     ),
+                    tooltip: 'Edit entry',
                     onPressed: onEdit,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(
@@ -370,6 +371,7 @@ class _TotpAddDialogState extends State<_TotpAddDialog> {
                     const Spacer(),
                     IconButton(
                       icon: const Icon(Icons.close),
+                      tooltip: 'Close',
                       onPressed: () => Navigator.of(context).pop(),
                       splashRadius: 18,
                     ),

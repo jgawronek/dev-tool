@@ -95,6 +95,7 @@ class _MimeTypesViewState extends State<_MimeTypesView> {
                       ? null
                       : IconButton(
                           icon: const Icon(Icons.clear, size: 16),
+                          tooltip: 'Clear search',
                           onPressed: () {
                             _search.clear();
                             setState(() {});

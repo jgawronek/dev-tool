@@ -10,11 +10,75 @@ import 'package:re_editor/re_editor.dart';
 import '../services/file_dialog_service.dart';
 import 'app_colors.dart';
 
+/// Descriptive hover text for common [ToolButton] labels. Unknown labels
+/// fall back to the label itself so every button still shows a tooltip.
+String actionTooltip(String label) {
+  const byLabel = <String, String>{
+    'Clear': 'Clear the input and result',
+    'Sample': 'Insert sample input',
+    'Go': 'Run with the current input',
+    'Clipboard': 'Paste input from the clipboard',
+    'Copy': 'Copy the result to the clipboard',
+    'Use as input': 'Move the result into the input editor',
+    'Generate': 'Generate a new value',
+    'Regenerate': 'Generate a new random value',
+    'Swap': 'Swap the input and output',
+    'Swap Inputs': 'Swap the input editors',
+    'Scan': 'Run the scan',
+    'Fingerprint': 'Run firewall fingerprinting',
+    'Reset': 'Reset all fields to their defaults',
+    'Reset output': 'Reset the output to its default',
+    'Save PNG': 'Export the diagram as a PNG image',
+    'Open logs directory': 'Open the server logs folder',
+    'Open': 'Open the URL in the browser',
+    'Now': 'Use the current date and time',
+    'Load file...': 'Load a file from disk',
+    'Choose file...': 'Choose a file to inspect',
+    'Copy manifest': 'Copy the model manifest to the clipboard',
+    'Cheat Sheet': 'Open the quick reference',
+    'Add Logo': 'Overlay a logo image',
+    'Change Logo': 'Replace the overlaid logo image',
+    'Remove Logo': 'Remove the overlaid logo',
+    'Remove': 'Remove this entry',
+    'Back to hash': 'Return to the hash input',
+    'Add New Path...': 'Add a custom scan path',
+  };
+  return byLabel[label] ?? label;
+}
+
+// IconData overrides ==, so it can't be a const-map key; a runtime map is
+// fine for this lookup.
+final Map<IconData, String> _iconTooltips = {
+  Icons.copy: 'Copy to clipboard',
+  Icons.content_paste: 'Paste from the clipboard',
+  Icons.refresh: 'Refresh',
+  Icons.zoom_in: 'Zoom in',
+  Icons.zoom_out: 'Zoom out',
+  Icons.play_arrow: 'Start',
+  Icons.stop: 'Stop',
+  Icons.delete: 'Delete',
+  Icons.close: 'Close',
+  Icons.edit: 'Edit',
+  Icons.upload_file: 'Choose a file to load',
+  Icons.download: 'Download',
+  Icons.folder_open: 'Open in Finder',
+  Icons.send: 'Send',
+  Icons.add: 'Add',
+  Icons.clear: 'Clear',
+};
+
 class ToolButton extends StatelessWidget {
-  const ToolButton({super.key, required this.label, this.icon, this.onPressed});
+  const ToolButton({
+    super.key,
+    required this.label,
+    this.icon,
+    this.tooltip,
+    this.onPressed,
+  });
 
   final String label;
   final IconData? icon;
+  final String? tooltip;
   final VoidCallback? onPressed;
 
   @override
@@ -31,34 +95,40 @@ class ToolButton extends StatelessWidget {
         children: [Icon(icon, size: 16), const SizedBox(width: 6), Text(label)],
       );
     } else if (label == 'Go') {
-      return ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          minimumSize: const Size(0, 28),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          backgroundColor: appColors.success,
-          foregroundColor: Colors.white,
-          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+      return Tooltip(
+        message: tooltip ?? actionTooltip(label),
+        child: ElevatedButton(
+          onPressed: onPressed,
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            minimumSize: const Size(0, 28),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            backgroundColor: appColors.success,
+            foregroundColor: Colors.white,
+            textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+          child: const Text('Go'),
         ),
-        child: const Text('Go'),
       );
     } else {
       child = Text(label);
     }
 
-    return OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        minimumSize: const Size(0, 28),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        side: BorderSide(color: appColors.border),
-        backgroundColor: appColors.panelElevated,
-        foregroundColor: appColors.editorText,
-        textStyle: const TextStyle(fontSize: 12),
+    return Tooltip(
+      message: tooltip ?? actionTooltip(label),
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          minimumSize: const Size(0, 28),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          side: BorderSide(color: appColors.border),
+          backgroundColor: appColors.panelElevated,
+          foregroundColor: appColors.editorText,
+          textStyle: const TextStyle(fontSize: 12),
+        ),
+        child: child,
       ),
-      child: child,
     );
   }
 }
@@ -90,7 +160,7 @@ class ToolIconButton extends StatelessWidget {
     return IconButton(
       onPressed: onPressed,
       icon: Icon(icon, size: 18, color: color),
-      tooltip: tooltip,
+      tooltip: tooltip ?? _iconTooltips[icon],
       padding: const EdgeInsets.all(5),
       constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
       splashRadius: 16,

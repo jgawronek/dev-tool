@@ -99,6 +99,7 @@ class _SidebarState extends State<Sidebar> {
                       ? null
                       : IconButton(
                           icon: const Icon(Icons.clear, size: 16),
+                          tooltip: 'Clear search',
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(
                             minWidth: 28,
