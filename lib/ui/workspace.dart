@@ -396,6 +396,7 @@ class _WorkspaceCanvas extends StatelessWidget {
                       corner,
                       delta,
                       size,
+                      toolId: panel.toolId,
                     ),
                   ),
                   onSnapLeft: () => workspace.snapPanel(
@@ -448,16 +449,17 @@ class _WorkspaceCanvas extends StatelessWidget {
     final sideDocked =
         panel.dockMode == PanelDockMode.left ||
         panel.dockMode == PanelDockMode.right;
+    final toolMin = WorkspaceState.minSizeFor(panel.toolId);
     final minWidth = panel.dockMode == PanelDockMode.tiled
         ? WorkspaceState.minTiledPanelWidth
         : sideDocked
-        ? panel.bounds.width.clamp(180.0, WorkspaceState.minPanelWidth)
-        : WorkspaceState.minPanelWidth;
+        ? panel.bounds.width.clamp(180.0, toolMin.width)
+        : toolMin.width;
     final minHeight = panel.dockMode == PanelDockMode.tiled
         ? WorkspaceState.minTiledPanelHeight
         : sideDocked
-        ? panel.bounds.height.clamp(48.0, WorkspaceState.minPanelHeight)
-        : WorkspaceState.minPanelHeight;
+        ? panel.bounds.height.clamp(48.0, toolMin.height)
+        : toolMin.height;
     final maxWidth = max(minWidth, size.width - 24);
     final maxHeight = max(minHeight, size.height - 24);
     final width = panel.bounds.width.clamp(minWidth, maxWidth);
@@ -482,11 +484,12 @@ class _WorkspaceCanvas extends StatelessWidget {
     Rect bounds,
     _PanelResizeCorner corner,
     Offset delta,
-    Size canvasSize,
-  ) {
+    Size canvasSize, {
+    required String toolId,
+  }) {
     const margin = 12.0;
-    const minWidth = WorkspaceState.minPanelWidth;
-    const minHeight = WorkspaceState.minPanelHeight;
+    final minWidth = WorkspaceState.minSizeFor(toolId).width;
+    final minHeight = WorkspaceState.minSizeFor(toolId).height;
     final maxRight = max(margin + minWidth, canvasSize.width - margin);
     final maxBottom = max(margin + minHeight, canvasSize.height - margin);
 

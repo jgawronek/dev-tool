@@ -25,6 +25,22 @@ flutter analyze
 flutter test
 ```
 
+`test/ui/tool_journeys_test.dart` exercises sidebar navigation, tool inputs and
+controls, recovery from invalid input, and compact-window layouts. It also
+opens every registered tool to catch build errors.
+`test/ui/workspace_geometry_test.dart` drags and resizes panel windows, resizes
+the sidebar, changes the app viewport, and checks for on-screen bounds and
+Flutter layout exceptions.
+
+To build and exercise the native macOS app as well:
+
+```bash
+flutter test integration_test/app_tools_test.dart -d macos
+```
+
+The native integration test searches for tools and verifies the JSON formatter
+and hash verifier in the running macOS build.
+
 ## Architecture
 
 - `lib/registry/tool_registry.dart` registers all tools and drives sidebar ordering.

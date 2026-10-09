@@ -190,7 +190,12 @@ class _SubdomainTakeoverViewState extends State<_SubdomainTakeoverView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
+          // Wraps rather than a Row so the timeout/concurrency fields stay
+          // reachable when the panel is resized very narrow.
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
                 'Targets',
@@ -199,7 +204,6 @@ class _SubdomainTakeoverViewState extends State<_SubdomainTakeoverView> {
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(width: 12),
               _takeoverOptionField(
                 context,
                 'Timeout',
@@ -207,14 +211,12 @@ class _SubdomainTakeoverViewState extends State<_SubdomainTakeoverView> {
                 width: 72,
                 suffix: 's',
               ),
-              const SizedBox(width: 10),
               _takeoverOptionField(
                 context,
                 'Concurrency',
                 controller: _concurrency,
                 width: 72,
               ),
-              const Spacer(),
               ToolButton(label: 'Scan', onPressed: _scanning ? null : _scan),
             ],
           ),

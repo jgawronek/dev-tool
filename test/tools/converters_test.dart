@@ -18,11 +18,7 @@ void toolTest(
 }
 
 /// Types into an [InlineTextField] found by its hint text.
-Future<void> enterInline(
-  WidgetTester tester,
-  String hint,
-  String text,
-) async {
+Future<void> enterInline(WidgetTester tester, String hint, String text) async {
   final field = tester.widget<InlineTextField>(
     find.byWidgetPredicate((w) => w is InlineTextField && w.hintText == hint),
   );
@@ -43,14 +39,20 @@ void main() {
     });
 
     toolTest('converts nested YAML maps to JSON', tool, (h) async {
-      await h.enter('---\n- item: Super Hoop', text: 'store:\n  book:\n    - title: T1');
+      await h.enter(
+        '---\n- item: Super Hoop',
+        text: 'store:\n  book:\n    - title: T1',
+      );
       final out = h.text('[]');
       expect(out, contains('"store"'));
       expect(out, contains('"title": "T1"'));
     });
 
     toolTest('converts scalars and keeps types', tool, (h) async {
-      await h.enter('---\n- item: Super Hoop', text: 'count: 42\nflag: true\nname: "x"');
+      await h.enter(
+        '---\n- item: Super Hoop',
+        text: 'count: 42\nflag: true\nname: "x"',
+      );
       final out = h.text('[]');
       expect(out, contains('"count": 42'));
       expect(out, contains('"flag": true'));
@@ -125,12 +127,22 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
     }
 
-    testWidgets('parses hex with 0x prefix and lists all bases', (tester) async {
+    testWidgets('parses hex with 0x prefix and lists all bases', (
+      tester,
+    ) async {
       final h = ToolHarness(tester);
       await h.open(tool);
       await type(tester, '0xDEADBEEF');
       expect(find.text('Base 16'), findsOneWidget);
-      expect(find.text('3735928559'), findsOneWidget);
+      // The inspector repeats the unsigned value, so scope to the base row.
+      expect(
+        tester
+            .widget<SelectableText>(
+              find.byKey(const ValueKey('base-value-Decimal')),
+            )
+            .data,
+        '3735928559',
+      );
       expect(find.text('0xDEADBEEF'), findsWidgets);
       expect(find.text('0o33653337357'), findsOneWidget);
     });
@@ -144,14 +156,26 @@ void main() {
       expect(find.text('0o377'), findsOneWidget);
 
       await type(tester, '0b1010');
-      expect(find.text('10'), findsOneWidget);
+      // Scoped by key: the inspector legitimately shows 10 for both the
+      // unsigned and signed interpretations of the same value.
+      expect(
+        tester
+            .widget<SelectableText>(
+              find.byKey(const ValueKey('base-value-Decimal')),
+            )
+            .data,
+        '10',
+      );
     });
 
     testWidgets('handles huge BigInt values', (tester) async {
       final h = ToolHarness(tester);
       await h.open(tool);
       await type(tester, '0xffffffffffffffffffffffffffffffff');
-      expect(find.text('340282366920938463463374607431768211455'), findsOneWidget);
+      expect(
+        find.text('340282366920938463463374607431768211455'),
+        findsOneWidget,
+      );
       expect(find.text('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'), findsOneWidget);
     });
 
@@ -159,7 +183,10 @@ void main() {
       final h = ToolHarness(tester);
       await h.open(tool);
       await type(tester, 'not a number');
-      expect(find.text('Enter a valid value for the selected base.'), findsOneWidget);
+      expect(
+        find.text('Enter a valid value for the selected base.'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('negative decimal is parsed', (tester) async {
@@ -224,7 +251,11 @@ void main() {
 
     testWidgets('parses rgb() input', (tester) async {
       await openLarge(tester);
-      await enterInline(tester, '#5CC07F, rgb(92, 192, 127)', 'rgb(92, 192, 127)');
+      await enterInline(
+        tester,
+        '#5CC07F, rgb(92, 192, 127)',
+        'rgb(92, 192, 127)',
+      );
       expect(find.text('#5CC07F'), findsWidgets);
     });
 
@@ -241,7 +272,10 @@ void main() {
         'Paste JSON to serialize into a PHP string...',
         text: '{"a":1,"b":"x"}',
       );
-      expect(h.text('PHP serialized output...'), 'a:2:{s:1:"a";i:1;s:1:"b";s:1:"x";}');
+      expect(
+        h.text('PHP serialized output...'),
+        'a:2:{s:1:"a";i:1;s:1:"b";s:1:"x";}',
+      );
     });
 
     toolTest('serializes nested arrays and booleans', 'php_serializer', (
@@ -258,12 +292,18 @@ void main() {
     });
 
     toolTest('unserializes scalars', 'php_unserializer', (h) async {
-      await h.enter('Paste a PHP serialized string to decode...', text: 'i:42;');
+      await h.enter(
+        'Paste a PHP serialized string to decode...',
+        text: 'i:42;',
+      );
       expect(h.text('Decoded JSON output...'), '42');
     });
 
     toolTest('unserializes strings', 'php_unserializer', (h) async {
-      await h.enter('Paste a PHP serialized string to decode...', text: 's:5:"Hello";');
+      await h.enter(
+        'Paste a PHP serialized string to decode...',
+        text: 's:5:"Hello";',
+      );
       expect(h.text('Decoded JSON output...'), '"Hello"');
     });
 
@@ -318,7 +358,8 @@ void main() {
     toolTest('builds a data-URI background rule', tool, (h) async {
       await h.enter(
         'Drop an .svg file here or paste SVG source...',
-        text: '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"></svg>',
+        text:
+            '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"></svg>',
       );
       final out = h.text('Output...');
       expect(out, contains('background-image'));
@@ -327,7 +368,10 @@ void main() {
     });
 
     toolTest('non-SVG input reports an error', tool, (h) async {
-      await h.enter('Drop an .svg file here or paste SVG source...', text: '<div>nope</div>');
+      await h.enter(
+        'Drop an .svg file here or paste SVG source...',
+        text: '<div>nope</div>',
+      );
       expect(h.text('Output...'), isEmpty);
       expect(find.textContaining('does not look like SVG'), findsOneWidget);
     });
@@ -349,7 +393,8 @@ void main() {
     toolTest('maps -X POST and headers into the request', tool, (h) async {
       await h.enter(
         'Enter text...',
-        text: "curl -X POST -H 'Content-Type: application/json' -d '{\"k\": 1}' https://api.example.com/submit",
+        text:
+            "curl -X POST -H 'Content-Type: application/json' -d '{\"k\": 1}' https://api.example.com/submit",
       );
       final out = h.text('Output...');
       expect(out, contains('POST'));
@@ -385,7 +430,10 @@ void main() {
     });
 
     toolTest('invalid JSON surfaces an error', tool, (h) async {
-      await h.enter('Drop a .json file here or enter your text...', text: '{oops}');
+      await h.enter(
+        'Drop a .json file here or enter your text...',
+        text: '{oops}',
+      );
       expect(
         h.text('- Right click -> Save to file...'),
         contains('Invalid JSON'),
@@ -396,7 +444,9 @@ void main() {
   group('HTML to JSX', () {
     const tool = 'html_to_jsx';
 
-    toolTest('converts class attributes and self-closing tags', tool, (h) async {
+    toolTest('converts class attributes and self-closing tags', tool, (
+      h,
+    ) async {
       await h.enter('Paste HTML here...', text: '<div class="a"><br></div>');
       final out = h.text('JSX output...');
       expect(out, contains('className="a"'));
@@ -424,7 +474,8 @@ void main() {
 
       await h.enter(
         'Choose a .js/.jsx file or paste JavaScript...',
-        text: '/** @param {string} name */\nfunction greet(name) {\n  return name;\n}',
+        text:
+            '/** @param {string} name */\nfunction greet(name) {\n  return name;\n}',
       );
       final annotated = h.text('TypeScript output...');
       expect(annotated, contains('name: string'));
@@ -434,7 +485,8 @@ void main() {
       await h.tap('TS → JS');
       await h.enter(
         'Choose a .ts/.tsx file or paste TypeScript...',
-        text: 'const n: number = 5;\nfunction f(a: string): string { return a; }',
+        text:
+            'const n: number = 5;\nfunction f(a: string): string { return a; }',
       );
       final out = h.text('JavaScript output...');
       expect(out, contains('const n = 5'));

@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../../../services/file_dialog_service.dart';
+import '../../../services/json_operations_service.dart';
 import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import 'editors.dart';
@@ -1114,6 +1115,7 @@ class JsonToolSession {
   );
 
   String indent = '2 spaces';
+  JsonOperation operation = JsonOperation.prettify;
   int _formatToken = 0;
 
   String get inputText => input.text;
@@ -1133,9 +1135,13 @@ class JsonToolSession {
       // Large documents are decoded + re-encoded off the UI thread so the
       // app stays responsive (a 26MB file would otherwise block for seconds).
       if (text.length > 200000) {
-        outcome = await compute(formatJsonWorker, (text, indentString));
+        outcome = await compute(formatJsonWorker, (
+          text,
+          indentString,
+          operation,
+        ));
       } else {
-        outcome = formatJsonSync(text, indentString);
+        outcome = formatJsonSync(text, indentString, operation);
       }
     } catch (e) {
       outcome = JsonFormatOutcome(error: e.toString());
@@ -1261,20 +1267,25 @@ class JsonFormatOutcome {
 }
 
 // Top-level so it can run inside an isolate via `compute`.
-JsonFormatOutcome formatJsonWorker((String, String) args) {
-  return formatJsonSync(args.$1, args.$2);
+JsonFormatOutcome formatJsonWorker((String, String, JsonOperation) args) {
+  return formatJsonSync(args.$1, args.$2, args.$3);
 }
 
-JsonFormatOutcome formatJsonSync(String text, String indentString) {
+JsonFormatOutcome formatJsonSync(
+  String text,
+  String indentString, [
+  JsonOperation operation = JsonOperation.prettify,
+]) {
   // jsonDecode is the source of truth for validity: it rejects real comments
   // and trailing commas with a precise offset, and (unlike a naive `//` scan)
   // correctly accepts `//` inside string values such as https:// URLs.
   try {
     final decoded = jsonDecode(text);
-    final output = JsonEncoder.withIndent(indentString).convert(decoded);
+    final output = transformJson(decoded, operation, indentString);
     final info = analyzeJson(decoded, text.length);
     return JsonFormatOutcome(output: output, summary: info.summary);
   } on FormatException catch (e) {
+    if (e.source == null) return JsonFormatOutcome(error: e.message);
     final position = positionFromIndex(e.offset ?? 0, text);
     return JsonFormatOutcome(
       error: 'Line ${position.line}, column ${position.column}: ${e.message}',

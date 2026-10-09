@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -123,6 +124,19 @@ class WorkspaceState {
   static const double minTiledPanelHeight = 220;
   static const double defaultPanelWidth = 760;
   static const double defaultPanelHeight = 580;
+
+  /// Smallest usable panel for [toolId]: the tool's declared floor, or the
+  /// workspace default when it does not declare one.
+  static Size minSizeFor(String toolId) {
+    final declared = ToolRegistry.byId(toolId)?.minSize;
+    if (declared == null) {
+      return const Size(minPanelWidth, minPanelHeight);
+    }
+    return Size(
+      max(declared.width, minPanelWidth),
+      max(declared.height, minPanelHeight),
+    );
+  }
 
   final SharedPreferences? _prefs;
   final ValueNotifier<List<ToolInstance>> panels;
@@ -327,11 +341,12 @@ class WorkspaceState {
   void updateBounds(String id, Rect bounds) {
     final current = panelById(id);
     if (current == null) return;
+    final minSize = minSizeFor(current.toolId);
     final normalized = Rect.fromLTWH(
       bounds.left,
       bounds.top,
-      bounds.width.clamp(minPanelWidth, double.infinity),
-      bounds.height.clamp(minPanelHeight, double.infinity),
+      bounds.width.clamp(minSize.width, double.infinity),
+      bounds.height.clamp(minSize.height, double.infinity),
     );
     final nextPanels = [
       for (final panel in panels.value)

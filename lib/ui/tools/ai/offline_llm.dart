@@ -320,11 +320,18 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // The title shrinks with an ellipsis rather than pushing the card's
+          // trailing action out of bounds on a narrow panel.
           Row(
             children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-              const Spacer(),
-              if (trailing != null) trailing,
+              Flexible(
+                child: Text(
+                  title,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              if (trailing != null) ...[const SizedBox(width: 8), trailing],
             ],
           ),
           const SizedBox(height: 8),
@@ -496,13 +503,15 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
                     horizontal: 12,
                     vertical: 8,
                   ),
-                  child: Row(
+                  child: Wrap(
+                    spacing: 12,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       const Text(
                         'Conversation',
                         style: TextStyle(fontWeight: FontWeight.w600),
                       ),
-                      const Spacer(),
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [

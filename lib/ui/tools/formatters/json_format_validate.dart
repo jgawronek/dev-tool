@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../../services/json_operations_service.dart';
 import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
@@ -67,6 +68,11 @@ class _JsonFormatValidateViewState extends State<_JsonFormatValidateView> {
     });
   }
 
+  void _setOperation(JsonOperation value) {
+    setState(() => _session.operation = value);
+    _session.format();
+  }
+
   void _formatLive(String _) {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 200), _session.format);
@@ -93,6 +99,27 @@ class _JsonFormatValidateViewState extends State<_JsonFormatValidateView> {
           const SizedBox(height: 8),
         ],
         _JsonStatsHeader(statusListenable: _session.status),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              const Text('Operation', style: TextStyle(fontSize: 12)),
+              SmallDropdown(
+                items: JsonOperation.values.map((item) => item.label).toList(),
+                initialValue: _session.operation.label,
+                onChanged: (label) => _setOperation(
+                  JsonOperation.values.firstWhere(
+                    (item) => item.label == label,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 8),
         Expanded(
           child: JsonSplitEditors(

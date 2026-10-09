@@ -114,34 +114,46 @@ class _RegExpTesterViewState extends State<_RegExpTesterView> {
       minSecondExtent: 220,
       first: Column(
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              const Text(
-                'RegExp:',
-                style: TextStyle(fontWeight: FontWeight.w600),
+          // Scrollable so the panes below keep a positive height when the
+          // panel is resized very small.
+          Flexible(
+            child: SingleChildScrollView(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Text(
+                    'RegExp:',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  SizedBox(
+                    width: 220,
+                    child: InlineTextField(
+                      hintText: r'([A-Z])\w+',
+                      controller: _regex,
+                      onChanged: (_) => _run(),
+                    ),
+                  ),
+                  ToolButton(
+                    label: 'Clipboard',
+                    onPressed: _pasteRegexClipboard,
+                  ),
+                  ToolButton(label: 'Sample', onPressed: _setSample),
+                  ToolButton(label: 'Clear', onPressed: _clearAll),
+                  const ToolIconButton(icon: Icons.settings),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Text:',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  ToolButton(
+                    label: 'Clipboard',
+                    onPressed: _pasteTextClipboard,
+                  ),
+                ],
               ),
-              SizedBox(
-                width: 220,
-                child: InlineTextField(
-                  hintText: r'([A-Z])\w+',
-                  controller: _regex,
-                  onChanged: (_) => _run(),
-                ),
-              ),
-              ToolButton(label: 'Clipboard', onPressed: _pasteRegexClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clearAll),
-              const ToolIconButton(icon: Icons.settings),
-              const SizedBox(width: 8),
-              const Text(
-                'Text:',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              ToolButton(label: 'Clipboard', onPressed: _pasteTextClipboard),
-            ],
+            ),
           ),
           const SizedBox(height: 8),
           Expanded(
@@ -161,32 +173,36 @@ class _RegExpTesterViewState extends State<_RegExpTesterView> {
             ),
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              const Text(
-                'Output:',
-                style: TextStyle(fontWeight: FontWeight.w600),
+          Flexible(
+            child: SingleChildScrollView(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Text(
+                    'Output:',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  SizedBox(
+                    width: 120,
+                    child: InlineTextField(
+                      hintText: r'$0\n',
+                      controller: _format,
+                      onChanged: (_) => _run(),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 200,
+                    child: InlineTextField(
+                      hintText: 'Search matches...',
+                      controller: _search,
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                ],
               ),
-              SizedBox(
-                width: 120,
-                child: InlineTextField(
-                  hintText: r'$0\n',
-                  controller: _format,
-                  onChanged: (_) => _run(),
-                ),
-              ),
-              SizedBox(
-                width: 200,
-                child: InlineTextField(
-                  hintText: 'Search matches...',
-                  controller: _search,
-                  onChanged: (_) => setState(() {}),
-                ),
-              ),
-            ],
+            ),
           ),
           const SizedBox(height: 8),
           Expanded(
@@ -214,7 +230,12 @@ class _RegExpTesterViewState extends State<_RegExpTesterView> {
               const Spacer(),
               const Icon(Icons.chevron_left, size: 16),
               const SizedBox(width: 8),
-              Text('${_matches.length} matches'),
+              Flexible(
+                child: Text(
+                  '${_matches.length} matches',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               const SizedBox(width: 8),
               const Icon(Icons.chevron_right, size: 16),
             ],

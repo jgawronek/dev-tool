@@ -323,6 +323,7 @@ class _BaseOutputRow extends StatelessWidget {
                     scrollDirection: Axis.horizontal,
                     child: SelectableText(
                       prefixed,
+                      key: ValueKey('base-value-${output.label}'),
                       style: TextStyle(
                         color: appColors.editorText,
                         fontFamily: 'Menlo',

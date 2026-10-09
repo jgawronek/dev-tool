@@ -67,6 +67,7 @@ class ToolRegistry {
       icon: Icons.search,
       builder: (_) => buildRegExpTester(),
       category: 'Text',
+      minSize: const Size(480, 560),
     ),
     DevTool(
       id: 'url_encode_decode',
@@ -88,6 +89,7 @@ class ToolRegistry {
       icon: Icons.travel_explore,
       builder: (_) => buildSubdomainFinder(),
       category: 'Network',
+      minSize: const Size(480, 560),
     ),
     DevTool(
       id: 'subdomain_takeover',
@@ -95,6 +97,7 @@ class ToolRegistry {
       icon: Icons.domain_verification,
       builder: (_) => buildSubdomainTakeover(),
       category: 'Security',
+      minSize: const Size(480, 600),
     ),
     DevTool(
       id: 'subnet_calculator',
@@ -109,6 +112,7 @@ class ToolRegistry {
       icon: Icons.radar,
       builder: (_) => buildPortScanner(),
       category: 'Network',
+      minSize: const Size(560, 540),
     ),
     DevTool(
       id: 'network_scanner',
@@ -116,6 +120,7 @@ class ToolRegistry {
       icon: Icons.lan,
       builder: (_) => buildNetworkScanner(),
       category: 'Network',
+      minSize: const Size(580, 600),
     ),
     DevTool(
       id: 'local_server',
@@ -130,6 +135,7 @@ class ToolRegistry {
       icon: Icons.shield,
       builder: (_) => buildFirewallFingerprint(),
       category: 'Security',
+      minSize: const Size(480, 500),
     ),
     DevTool(
       id: 'html_entity_encode_decode',
@@ -151,6 +157,7 @@ class ToolRegistry {
       icon: Icons.grid_3x3,
       builder: (_) => buildUuidUlid(),
       category: 'Generators',
+      minSize: const Size(480, 520),
     ),
     DevTool(
       id: 'html_preview',
@@ -165,6 +172,7 @@ class ToolRegistry {
       icon: Icons.compare_arrows,
       builder: (_) => buildTextDiffChecker(),
       category: 'Text',
+      minSize: const Size(480, 520),
     ),
     DevTool(
       id: 'yaml_json_converter',
@@ -179,6 +187,7 @@ class ToolRegistry {
       icon: Icons.calculate,
       builder: (_) => buildNumberBaseConverter(),
       category: 'Converters',
+      minSize: const Size(480, 360),
     ),
     DevTool(
       id: 'html_beautify_minify',
@@ -221,6 +230,7 @@ class ToolRegistry {
       icon: Icons.text_fields,
       builder: (_) => buildLoremIpsum(),
       category: 'Generators',
+      minSize: const Size(580, 280),
     ),
     DevTool(
       id: 'password_generator',
@@ -228,6 +238,7 @@ class ToolRegistry {
       icon: Icons.key,
       builder: (_) => buildPasswordGenerator(),
       category: 'Generators',
+      minSize: const Size(580, 280),
     ),
     DevTool(
       id: 'qr_code_reader_generator',
@@ -242,6 +253,7 @@ class ToolRegistry {
       icon: Icons.compare_arrows,
       builder: (_) => buildSemVerCalculator(),
       category: 'Text',
+      minSize: const Size(660, 280),
     ),
     DevTool(
       id: 'string_inspector',
@@ -284,6 +296,7 @@ class ToolRegistry {
       icon: Icons.lock,
       builder: (_) => buildTextEncryption(),
       category: 'Security',
+      minSize: const Size(480, 480),
     ),
     DevTool(
       id: 'password_hashing',
@@ -319,6 +332,7 @@ class ToolRegistry {
       icon: Icons.smart_toy,
       builder: (_) => buildOfflineLlm(),
       category: 'AI',
+      minSize: const Size(480, 560),
     ),
     DevTool(
       id: 'html_to_jsx',
@@ -389,6 +403,7 @@ class ToolRegistry {
       icon: Icons.shuffle,
       builder: (_) => buildRandomStringGenerator(),
       category: 'Generators',
+      minSize: const Size(600, 280),
     ),
     DevTool(
       id: 'svg_to_css',
@@ -452,6 +467,7 @@ class ToolRegistry {
       icon: Icons.lock_outline,
       builder: (_) => buildChmodCalculator(),
       category: 'Reference',
+      minSize: const Size(480, 420),
     ),
     DevTool(
       id: 'mime_types',
@@ -459,6 +475,7 @@ class ToolRegistry {
       icon: Icons.table_view,
       builder: (_) => buildMimeTypes(),
       category: 'Reference',
+      minSize: const Size(500, 280),
     ),
     DevTool(
       id: 'preferences',
@@ -509,6 +526,34 @@ class ToolRegistry {
       icon: Icons.blur_on,
       builder: (_) => buildJsObfuscator(),
       category: 'Security',
+    ),
+    DevTool(
+      id: 'hash_verifier',
+      name: 'Hash/HMAC Verifier',
+      icon: Icons.fact_check,
+      builder: (_) => buildHashVerifier(),
+      category: 'Security',
+    ),
+    DevTool(
+      id: 'query_editor',
+      name: 'URL Query Editor',
+      icon: Icons.link,
+      builder: (_) => buildQueryEditor(),
+      category: 'Parsers',
+    ),
+    DevTool(
+      id: 'csv_inspector',
+      name: 'CSV Inspector',
+      icon: Icons.table_rows,
+      builder: (_) => buildCsvInspector(),
+      category: 'Parsers',
+    ),
+    DevTool(
+      id: 'date_difference',
+      name: 'Date/Time Difference',
+      icon: Icons.date_range,
+      builder: (_) => buildDateDifference(),
+      category: 'Converters',
     ),
   ];
 

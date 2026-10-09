@@ -148,14 +148,58 @@ class ResizableSplitState extends State<ResizableSplit> {
             ? constraints.maxWidth
             : constraints.maxHeight;
         final available = max(0.0, maxExtent - splitterExtent);
+        final minTotal = widget.minFirstExtent + widget.minSecondExtent;
+
+        // A split must never hand an editor a zero or sub-minimum extent:
+        // re_editor asserts when its field has no bounded height, and squeezed
+        // panes overflow their fixed-width content. When the panel is too small
+        // to honour both minimums, scroll the split with each pane at its
+        // declared minimum instead of letting the ratio math collapse one.
+        if (available < minTotal) {
+          final scrollDirection = widget.horizontal
+              ? Axis.horizontal
+              : Axis.vertical;
+          return SingleChildScrollView(
+            scrollDirection: scrollDirection,
+            child: SizedBox(
+              width: widget.horizontal ? minTotal + splitterExtent : null,
+              height: widget.horizontal ? null : minTotal + splitterExtent,
+              child: widget.horizontal
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          width: widget.minFirstExtent,
+                          child: widget.first,
+                        ),
+                        EditorSplitter(horizontal: true, onDrag: (_) {}),
+                        SizedBox(
+                          width: widget.minSecondExtent,
+                          child: widget.second,
+                        ),
+                      ],
+                    )
+                  : Column(
+                      children: [
+                        SizedBox(
+                          height: widget.minFirstExtent,
+                          child: widget.first,
+                        ),
+                        EditorSplitter(horizontal: false, onDrag: (_) {}),
+                        SizedBox(
+                          height: widget.minSecondExtent,
+                          child: widget.second,
+                        ),
+                      ],
+                    ),
+            ),
+          );
+        }
+
         final requestedFirst = min(widget.minFirstExtent, available);
         final requestedSecond = min(widget.minSecondExtent, available);
-        final minTotal = requestedFirst + requestedSecond;
-        final minScale = minTotal > available && minTotal > 0
-            ? available / minTotal
-            : 1.0;
-        final minFirstExtent = requestedFirst * minScale;
-        final minSecondExtent = requestedSecond * minScale;
+        final minFirstExtent = requestedFirst;
+        final minSecondExtent = requestedSecond;
         final lowerRatio = available <= 0 ? 0.5 : minFirstExtent / available;
         final upperRatio = available <= 0
             ? 0.5
@@ -200,7 +244,11 @@ class ResizableSplitState extends State<ResizableSplit> {
 }
 
 class EditorSplitter extends StatelessWidget {
-  const EditorSplitter({super.key, required this.horizontal, required this.onDrag});
+  const EditorSplitter({
+    super.key,
+    required this.horizontal,
+    required this.onDrag,
+  });
 
   final bool horizontal;
   final ValueChanged<Offset> onDrag;

@@ -277,7 +277,9 @@ class _ChmodCalculatorViewState extends State<_ChmodCalculatorView> {
           child: Row(
             children: [
               _BitToggle(
-                label: chmodClass.letter == 'u' ? 'read' : '${chmodClass.letter} read',
+                label: chmodClass.letter == 'u'
+                    ? 'read'
+                    : '${chmodClass.letter} read',
                 bit: 'r',
                 octalBit: 4,
                 value: bits.read,
@@ -471,28 +473,33 @@ class _BitToggle extends StatelessWidget {
                   color: highlighted ? appColors.accent : appColors.border,
                 ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    highlighted ? Icons.check_box : Icons.check_box_outline_blank,
-                    size: 14,
-                    color: highlighted ? appColors.accent : appColors.mutedText,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    bit,
-                    style: TextStyle(
-                      fontFamily: 'Menlo',
-                      fontSize: 12,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      highlighted
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
+                      size: 14,
                       color: highlighted
-                          ? appColors.editorText
+                          ? appColors.accent
                           : appColors.mutedText,
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
+                    const SizedBox(width: 6),
+                    Text(
+                      bit,
+                      style: TextStyle(
+                        fontFamily: 'Menlo',
+                        fontSize: 12,
+                        color: highlighted
+                            ? appColors.editorText
+                            : appColors.mutedText,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
                       label,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -502,8 +509,8 @@ class _BitToggle extends StatelessWidget {
                             : appColors.mutedText,
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
