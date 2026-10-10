@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../../../services/csv_inspector_service.dart';
 import '../../../ui/widgets.dart';
+import '../../tool_sample_action.dart';
 import '../common/editors.dart';
 import '../common/shared.dart';
 
@@ -47,96 +48,98 @@ class _CsvInspectorViewState extends State<_CsvInspectorView> {
     setState(() => _result = result);
   }
 
-  void _clear() {
-    _input.clear();
-    _output.clear();
+  void _setSample() {
+    _input.text =
+        'name,language,score,note\n'
+        'Alex,Dart,92,"Enjoys Flutter, too"\n'
+        'Sam,Python,85,Builds scripts\n'
+        'Riley,Dart,78,Learning widgets\n'
+        'Jordan,JavaScript,88,Builds websites';
     _filter.clear();
     _filterColumn = '';
     _sortColumn = '';
-    setState(() => _result = const CsvInspectResult());
+    _descending = false;
+    _run();
   }
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Wrap(
-        spacing: 8,
-        runSpacing: 6,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          SizedBox(
-            width: 200,
-            child: TextField(
-              controller: _filter,
-              decoration: const InputDecoration(labelText: 'Filter contains'),
-              onChanged: (_) => _run(),
-            ),
-          ),
-          if (_result.columns.isNotEmpty) ...[
-            const Text('In'),
-            SmallDropdown(
-              key: ValueKey(
-                'filter-$_filterColumn-${_result.columns.join('|')}',
+  Widget build(BuildContext context) => ToolSampleAction(
+    onPressed: _setSample,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ToolToolbar(
+          children: [
+            SizedBox(
+              width: 200,
+              child: TextField(
+                controller: _filter,
+                decoration: const InputDecoration(labelText: 'Filter contains'),
+                onChanged: (_) => _run(),
               ),
-              items: ['All columns', ..._result.columns],
-              initialValue: _filterColumn.isEmpty
-                  ? 'All columns'
-                  : _filterColumn,
-              onChanged: (value) {
-                _filterColumn = value == 'All columns' ? '' : value;
-                _run();
-              },
             ),
-            const Text('Sort'),
-            SmallDropdown(
-              key: ValueKey('sort-$_sortColumn-${_result.columns.join('|')}'),
-              items: ['None', ..._result.columns],
-              initialValue: _sortColumn.isEmpty ? 'None' : _sortColumn,
-              onChanged: (value) {
-                _sortColumn = value == 'None' ? '' : value;
-                _run();
-              },
-            ),
-            CompactCheck(
-              label: 'Descending',
-              value: _descending,
-              onChanged: (value) {
-                _descending = value;
-                _run();
-              },
-            ),
-          ],
-          Text(
-            _result.error ??
-                '${_result.matchedCount} of ${_result.rowCount} rows',
-            style: _result.error == null
-                ? mutedToolTextStyle(context)
-                : errorToolTextStyle(context),
-          ),
-        ],
-      ),
-      const SizedBox(height: 8),
-      Expanded(
-        child: buildSplitEditors(
-          inputController: _input,
-          outputController: _output,
-          inputPlaceholder: 'CSV with header row',
-          outputPlaceholder: 'Filtered CSV',
-          inputActions: [
-            ToolButton(label: 'Go', onPressed: _run),
-            ToolButton(label: 'Clear', onPressed: _clear),
-          ],
-          outputActions: [
-            ToolButton(
-              label: 'Copy',
-              onPressed: () =>
-                  Clipboard.setData(ClipboardData(text: _output.text)),
+            if (_result.columns.isNotEmpty) ...[
+              const Text('In'),
+              SmallDropdown(
+                key: ValueKey(
+                  'filter-$_filterColumn-${_result.columns.join('|')}',
+                ),
+                items: ['All columns', ..._result.columns],
+                initialValue: _filterColumn.isEmpty
+                    ? 'All columns'
+                    : _filterColumn,
+                onChanged: (value) {
+                  _filterColumn = value == 'All columns' ? '' : value;
+                  _run();
+                },
+              ),
+              const Text('Sort'),
+              SmallDropdown(
+                key: ValueKey('sort-$_sortColumn-${_result.columns.join('|')}'),
+                items: ['None', ..._result.columns],
+                initialValue: _sortColumn.isEmpty ? 'None' : _sortColumn,
+                onChanged: (value) {
+                  _sortColumn = value == 'None' ? '' : value;
+                  _run();
+                },
+              ),
+              CompactCheck(
+                label: 'Descending',
+                value: _descending,
+                onChanged: (value) {
+                  _descending = value;
+                  _run();
+                },
+              ),
+            ],
+            Text(
+              _result.error ??
+                  '${_result.matchedCount} of ${_result.rowCount} rows',
+              style: _result.error == null
+                  ? mutedToolTextStyle(context)
+                  : errorToolTextStyle(context),
             ),
           ],
         ),
-      ),
-    ],
+        const SizedBox(height: 8),
+        Expanded(
+          child: buildSplitEditors(
+            inputController: _input,
+            outputController: _output,
+            inputPlaceholder: 'CSV with header row',
+            outputPlaceholder: 'Filtered CSV',
+            inputActions: [ToolButton(label: 'Go', onPressed: _run)],
+            outputActions: [
+              ToolButton(
+                label: 'Copy',
+                onPressed: () =>
+                    Clipboard.setData(ClipboardData(text: _output.text)),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
   );
 }
 

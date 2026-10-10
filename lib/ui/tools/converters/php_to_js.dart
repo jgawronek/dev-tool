@@ -7,6 +7,7 @@ import '../../../services/php_to_js_service.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _PhpToJsView extends StatefulWidget {
   const _PhpToJsView();
@@ -74,53 +75,43 @@ class UserCard {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (_error != null) ...[
-          Text(_error!, style: errorToolTextStyle(context)),
-          const SizedBox(height: 8),
-        ],
-        Expanded(
-          child: buildSplitEditors(
-            horizontal: true,
-            inputController: _input,
-            outputController: _output,
-            onInputChanged: (_) => _run(),
-            inputActions: [
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(
-                label: 'Clear',
-                onPressed: () {
-                  setState(() {
-                    _input.clear();
-                    _output.clear();
-                    _error = null;
-                  });
-                },
-              ),
-            ],
-            outputActions: [
-              ToolButton(
-                label: 'Copy',
-                onPressed: () =>
-                    Clipboard.setData(ClipboardData(text: _output.text)),
-              ),
-            ],
-            inputPlaceholder:
-                '<?php\n\$name = "DevUtils";\necho "Hello \$name";',
-            outputPlaceholder: 'JavaScript output...',
-            showInputHeader: false,
-            showOutputHeader: false,
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_error != null) ...[
+            Text(_error!, style: errorToolTextStyle(context)),
+            const SizedBox(height: 8),
+          ],
+          Expanded(
+            child: buildSplitEditors(
+              inputController: _input,
+              outputController: _output,
+              onInputChanged: (_) => _run(),
+              inputActions: [],
+              outputActions: [
+                ToolButton(
+                  label: 'Copy',
+                  onPressed: () =>
+                      Clipboard.setData(ClipboardData(text: _output.text)),
+                ),
+              ],
+              inputPlaceholder:
+                  '<?php\n\$name = "DevUtils";\necho "Hello \$name";',
+              outputPlaceholder: 'JavaScript output...',
+              showInputHeader: true,
+              showOutputHeader: true,
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Heuristic transpile (token state machine, ported from '
-          'Danack/PHP-to-Javascript) — review output for complex code.',
-          style: mutedToolTextStyle(context, fontSize: 12),
-        ),
-      ],
+          const SizedBox(height: 8),
+          Text(
+            'Heuristic transpile (token state machine, ported from '
+            'Danack/PHP-to-Javascript) — review output for complex code.',
+            style: mutedToolTextStyle(context, fontSize: 12),
+          ),
+        ],
+      ),
     );
   }
 }

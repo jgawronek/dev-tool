@@ -12,6 +12,7 @@ import '../../../services/file_dialog_service.dart';
 import '../../../ui/widgets.dart';
 import '../common/editors.dart';
 import '../common/shared.dart';
+import '../../tool_sample_action.dart';
 
 class _QrCodeView extends StatefulWidget {
   const _QrCodeView();
@@ -196,167 +197,148 @@ class _QrCodeViewState extends State<_QrCodeView> {
 
   @override
   Widget build(BuildContext context) {
-    return ResizableSplit(
-      horizontal: false,
-      first: EditorPane(
-        label: 'Content',
-        actions: [
-          ToolButton(
-            label: 'Clipboard',
-            onPressed: () async {
-              final text = await readClipboardText();
-              setState(() => _content.text = text);
-              _updatePreview();
-            },
-          ),
-          ToolButton(
-            label: 'Sample',
-            onPressed: () {
-              setState(
-                () => _content.text = 'BEGIN:VCARD\nFN:DevUtils\nEND:VCARD',
-              );
-              _updatePreview();
-            },
-          ),
-          ToolButton(
-            label: 'Clear',
-            onPressed: () {
-              setState(() => _content.clear());
-              _updatePreview();
-            },
-          ),
-          SmallDropdown(
-            items: const [
-              'Plain text',
-              'URL',
-              'vCard',
-              'Wi-Fi',
-              'Email',
-              'SMS',
-            ],
-            initialValue: _template,
-            onChanged: _applyTemplate,
-          ),
-        ],
-        controller: _content,
-        onChanged: (_) => _updatePreview(),
-        placeholder: 'BEGIN:VCARD...',
-      ),
-      second: Column(
-        children: [
-          Expanded(
-            child: Container(
-              decoration: toolSurfaceDecoration(context),
-              padding: const EdgeInsets.all(16),
-              child: Center(
-                child: _content.text.isEmpty
-                    ? Text(
-                        'Enter content to generate a QR code',
-                        style: mutedToolTextStyle(context),
-                      )
-                    : ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: 320,
-                          maxHeight: 320,
-                        ),
-                        child: AspectRatio(
-                          aspectRatio: 1,
-                          child: DecoratedBox(
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
+    return ToolSampleAction(
+      onPressed: () {
+        setState(() => _content.text = 'BEGIN:VCARD\nFN:DevUtils\nEND:VCARD');
+        _updatePreview();
+      },
+      child: buildAdaptiveSplit(
+        first: EditorPane(
+          label: 'Content',
+          actions: [
+            SmallDropdown(
+              items: const [
+                'Plain text',
+                'URL',
+                'vCard',
+                'Wi-Fi',
+                'Email',
+                'SMS',
+              ],
+              initialValue: _template,
+              onChanged: _applyTemplate,
+            ),
+          ],
+          controller: _content,
+          onChanged: (_) => _updatePreview(),
+          placeholder: 'BEGIN:VCARD...',
+        ),
+        second: Column(
+          children: [
+            Expanded(
+              child: ToolPanel(
+                title: 'QR code',
+                actions: [
+                  ToolButton(
+                    label: 'Save PNG',
+                    onPressed: _content.text.isEmpty ? null : _savePng,
+                  ),
+                ],
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  child: Center(
+                    child: _content.text.isEmpty
+                        ? Text(
+                            'Enter content to generate a QR code',
+                            style: mutedToolTextStyle(context),
+                          )
+                        : ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              maxWidth: 320,
+                              maxHeight: 320,
                             ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Stack(
-                                alignment: Alignment.center,
-                                children: [
-                                  QrImageView(
-                                    data: _content.text,
-                                    version: QrVersions.auto,
-                                    errorCorrectionLevel: _ecLevel,
-                                    backgroundColor: Colors.white,
-                                    eyeStyle: _eyeStyle,
-                                    dataModuleStyle: _dataModuleStyle,
-                                    errorStateBuilder: (context, error) => Padding(
-                                      padding: const EdgeInsets.all(12),
-                                      child: Text(
-                                        'Content too long for a QR code at this error-correction level.',
-                                        textAlign: TextAlign.center,
-                                        style: errorToolTextStyle(context),
+                            child: AspectRatio(
+                              aspectRatio: 1,
+                              child: DecoratedBox(
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      QrImageView(
+                                        data: _content.text,
+                                        version: QrVersions.auto,
+                                        errorCorrectionLevel: _ecLevel,
+                                        backgroundColor: Colors.white,
+                                        eyeStyle: _eyeStyle,
+                                        dataModuleStyle: _dataModuleStyle,
+                                        errorStateBuilder: (context, error) =>
+                                            Padding(
+                                              padding: const EdgeInsets.all(12),
+                                              child: Text(
+                                                'Content too long for a QR code at this error-correction level.',
+                                                textAlign: TextAlign.center,
+                                                style: errorToolTextStyle(
+                                                  context,
+                                                ),
+                                              ),
+                                            ),
                                       ),
-                                    ),
-                                  ),
-                                  if (_logoPath != null)
-                                    FractionallySizedBox(
-                                      widthFactor: 0.24,
-                                      heightFactor: 0.24,
-                                      child: Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            6,
+                                      if (_logoPath != null)
+                                        FractionallySizedBox(
+                                          widthFactor: 0.24,
+                                          heightFactor: 0.24,
+                                          child: Container(
+                                            padding: const EdgeInsets.all(4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: Image.file(
+                                              File(_logoPath!),
+                                              fit: BoxFit.contain,
+                                            ),
                                           ),
                                         ),
-                                        child: Image.file(
-                                          File(_logoPath!),
-                                          fit: BoxFit.contain,
-                                        ),
-                                      ),
-                                    ),
-                                ],
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              SmallDropdown(
-                items: const ['Square modules', 'Rounded modules'],
-                initialValue: _roundedModules
-                    ? 'Rounded modules'
-                    : 'Square modules',
-                onChanged: (value) => setState(
-                  () => _roundedModules = value == 'Rounded modules',
+                  ),
                 ),
               ),
-              SmallDropdown(
-                items: const ['Square eyes', 'Circle eyes'],
-                initialValue: _circleEyes ? 'Circle eyes' : 'Square eyes',
-                onChanged: (value) =>
-                    setState(() => _circleEyes = value == 'Circle eyes'),
-              ),
-              if (_logoPath == null)
-                ToolButton(label: 'Add Logo', onPressed: _pickLogo)
-              else ...[
-                ToolButton(label: 'Change Logo', onPressed: _pickLogo),
-                ToolButton(label: 'Remove Logo', onPressed: _removeLogo),
+            ),
+            const SizedBox(height: 8),
+            ToolToolbar(
+              children: [
+                SmallDropdown(
+                  items: const ['Square modules', 'Rounded modules'],
+                  initialValue: _roundedModules
+                      ? 'Rounded modules'
+                      : 'Square modules',
+                  onChanged: (value) => setState(
+                    () => _roundedModules = value == 'Rounded modules',
+                  ),
+                ),
+                SmallDropdown(
+                  items: const ['Square eyes', 'Circle eyes'],
+                  initialValue: _circleEyes ? 'Circle eyes' : 'Square eyes',
+                  onChanged: (value) =>
+                      setState(() => _circleEyes = value == 'Circle eyes'),
+                ),
+                if (_logoPath == null)
+                  ToolButton(label: 'Add Logo', onPressed: _pickLogo)
+                else ...[
+                  ToolButton(label: 'Change Logo', onPressed: _pickLogo),
+                  ToolButton(label: 'Remove Logo', onPressed: _removeLogo),
+                ],
+
+                SmallDropdown(
+                  items: _ecLevels.keys.toList(),
+                  initialValue: _errorCorrection,
+                  onChanged: (value) =>
+                      setState(() => _errorCorrection = value),
+                ),
               ],
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              SmallDropdown(
-                items: _ecLevels.keys.toList(),
-                initialValue: _errorCorrection,
-                onChanged: (value) => setState(() => _errorCorrection = value),
-              ),
-              ToolButton(label: 'Save PNG', onPressed: _savePng),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }

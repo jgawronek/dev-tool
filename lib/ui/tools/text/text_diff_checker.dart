@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../ui/widgets.dart';
 import '../common/editors.dart';
-import '../common/shared.dart';
+import '../../tool_sample_action.dart';
 
 class _TextDiffView extends StatefulWidget {
   const _TextDiffView();
@@ -68,57 +68,16 @@ class _TextDiffViewState extends State<_TextDiffView> {
 
   @override
   Widget build(BuildContext context) {
-    final inputComparison = ResizableSplit(
-      horizontal: true,
+    final inputComparison = buildAdaptiveSplit(
       first: EditorPane(
         label: 'Input 1',
-        actions: [
-          ToolButton(
-            label: 'Clipboard',
-            onPressed: () async {
-              final text = await readClipboardText();
-              setState(() => _left.text = text);
-              _run();
-            },
-          ),
-          ToolButton(
-            label: 'Sample',
-            onPressed: () {
-              setState(() => _left.text = 'Line one\nLine two');
-              _run();
-            },
-          ),
-          ToolButton(
-            label: 'Clear',
-            onPressed: () {
-              setState(() => _left.clear());
-              _run();
-            },
-          ),
-        ],
+        actions: [],
         controller: _left,
         onChanged: (_) => _run(),
       ),
       second: EditorPane(
         label: 'Input 2',
-        actions: [
-          ToolButton(
-            label: 'Clipboard',
-            onPressed: () async {
-              final text = await readClipboardText();
-              setState(() => _right.text = text);
-              _run();
-            },
-          ),
-          ToolButton(
-            label: 'Clear',
-            onPressed: () {
-              setState(() => _right.clear());
-              _run();
-            },
-          ),
-          ToolButton(label: 'Swap Inputs', onPressed: _swap),
-        ],
+        actions: [ToolButton(label: 'Swap Inputs', onPressed: _swap)],
         controller: _right,
         onChanged: (_) => _run(),
       ),
@@ -164,7 +123,7 @@ class _TextDiffViewState extends State<_TextDiffView> {
         const SizedBox(height: 8),
         Expanded(
           child: EditorPane(
-            label: '',
+            label: 'Differences',
             actions: [
               ToolButton(
                 label: 'Copy',
@@ -180,11 +139,17 @@ class _TextDiffViewState extends State<_TextDiffView> {
       ],
     );
 
-    return ResizableSplit(
-      horizontal: false,
-      initialRatio: 0.66,
-      first: inputComparison,
-      second: outputPane,
+    return ToolSampleAction(
+      onPressed: () {
+        setState(() => _left.text = 'Line one\nLine two');
+        _run();
+      },
+      child: ResizableSplit(
+        horizontal: false,
+        initialRatio: 0.66,
+        first: inputComparison,
+        second: outputPane,
+      ),
     );
   }
 }

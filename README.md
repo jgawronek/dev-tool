@@ -25,12 +25,17 @@ flutter analyze
 flutter test
 ```
 
+The workspace shows one tool at a time; other open tools live in a tab strip
+(⌘1–9 to switch, ⌘⇧[ / ⌘⇧] to cycle, ⌘W to close). Each tool header shows its
+title, subtitle, and an "Offline tool" pill when the tool makes no network
+calls. Splits prefer side-by-side editors and fall back to stacked layout in
+narrow windows.
+
 `test/ui/tool_journeys_test.dart` exercises sidebar navigation, tool inputs and
 controls, recovery from invalid input, and compact-window layouts. It also
 opens every registered tool to catch build errors.
-`test/ui/workspace_geometry_test.dart` drags and resizes panel windows, resizes
-the sidebar, changes the app viewport, and checks for on-screen bounds and
-Flutter layout exceptions.
+`test/ui/tool_buttons_test.dart` taps every enabled button, toggle segment, and
+dropdown option in every tool and asserts nothing throws or strands a route.
 
 To build and exercise the native macOS app as well:
 

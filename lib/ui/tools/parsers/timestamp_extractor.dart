@@ -7,6 +7,7 @@ import '../../../ui/widgets.dart';
 import '../common/editors.dart';
 import '../common/shared.dart';
 import '../../../services/timestamp_service.dart';
+import '../../tool_sample_action.dart';
 
 class _TimestampExtractorView extends StatefulWidget {
   const _TimestampExtractorView();
@@ -49,63 +50,67 @@ class _TimestampExtractorViewState extends State<_TimestampExtractorView> {
     _run();
   }
 
-  void _clear() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final outcome = extractTimestamps(_input.text, format: _format);
     final hits = outcome.hits;
-    return Column(
-      children: [
-        Expanded(
-          child: buildSplitEditors(
-            inputActions: [
-              ToolButton(label: 'Go', onPressed: _run),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clear),
-              SegmentedToggle(
-                options: const ['All', 'ISO', 'Apache', 'nginx', 'Syslog', 'Epoch'],
-                initialIndex: _format == null ? 0 : _format!.index + 1,
-                onChanged: (index) {
-                  setState(() {
-                    _format = index == 0 ? null : TimestampFormat.values[index - 1];
-                  });
-                  _run();
-                },
-              ),
-            ],
-            outputActions: [
-              ToolButton(
-                label: 'Copy',
-                onPressed: () =>
-                    Clipboard.setData(ClipboardData(text: _output.text)),
-              ),
-            ],
-            inputController: _input,
-            outputController: _output,
-            inputPlaceholder: 'Paste text containing timestamps',
-            outputPlaceholder: 'Detected timestamps',
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              hits.isEmpty
-                  ? 'No timestamps detected.'
-                  : '${hits.length} timestamp(s) detected'
-                      '${_format == null ? '' : ' as ${_format!.label}'}.',
-              style: mutedToolTextStyle(context),
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        children: [
+          Expanded(
+            child: buildSplitEditors(
+              inputActions: [
+                ToolButton(label: 'Go', onPressed: _run),
+
+                SegmentedToggle(
+                  options: const [
+                    'All',
+                    'ISO',
+                    'Apache',
+                    'nginx',
+                    'Syslog',
+                    'Epoch',
+                  ],
+                  initialIndex: _format == null ? 0 : _format!.index + 1,
+                  onChanged: (index) {
+                    setState(() {
+                      _format = index == 0
+                          ? null
+                          : TimestampFormat.values[index - 1];
+                    });
+                    _run();
+                  },
+                ),
+              ],
+              outputActions: [
+                ToolButton(
+                  label: 'Copy',
+                  onPressed: () =>
+                      Clipboard.setData(ClipboardData(text: _output.text)),
+                ),
+              ],
+              inputController: _input,
+              outputController: _output,
+              inputPlaceholder: 'Paste text containing timestamps',
+              outputPlaceholder: 'Detected timestamps',
             ),
           ),
-        ),
-      ],
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                hits.isEmpty
+                    ? 'No timestamps detected.'
+                    : '${hits.length} timestamp(s) detected'
+                          '${_format == null ? '' : ' as ${_format!.label}'}.',
+                style: mutedToolTextStyle(context),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

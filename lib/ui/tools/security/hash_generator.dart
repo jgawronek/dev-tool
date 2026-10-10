@@ -25,6 +25,7 @@ import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _HashGeneratorView extends StatefulWidget {
   const _HashGeneratorView();
@@ -90,22 +91,9 @@ class _HashGeneratorViewState extends State<_HashGeneratorView> {
     return bytesToHex(out);
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _input.text = text);
-    _compute();
-  }
-
   void _setSample() {
     setState(() => _input.text = 'Ut quidam aut expedita porro ut ipsa ea et');
     _compute();
-  }
-
-  void _clearInput() {
-    setState(() {
-      _input.clear();
-      _hashes.clear();
-    });
   }
 
   Future<void> _copyHash(String value) async {
@@ -218,56 +206,59 @@ class _HashGeneratorViewState extends State<_HashGeneratorView> {
   @override
   Widget build(BuildContext context) {
     final byteCount = utf8.encode(_input.text).length;
-    return ResizableSplit(
-      horizontal: true,
-      initialRatio: 0.62,
-      minSecondExtent: 360,
-      first: EditorPane(
-        label: 'Input',
-        actions: [
-          ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-          ToolButton(label: 'Sample', onPressed: _setSample),
-          const ToolButton(label: 'Load file...'),
-          ToolButton(label: 'Clear', onPressed: _clearInput),
-        ],
-        controller: _input,
-        onChanged: (_) => _compute(),
-        placeholder: 'Enter text to hash...',
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: buildAdaptiveSplit(
+        initialRatio: 0.62,
+        minSecondExtent: 360,
+        first: EditorPane(
+          label: 'Input',
+          actions: [],
+          controller: _input,
+          onChanged: (_) => _compute(),
+          placeholder: 'Enter text to hash...',
+        ),
+        second: _buildHashSidePanel(context, byteCount),
       ),
-      second: _buildHashSidePanel(context, byteCount),
     );
   }
 
   Widget _buildHashSidePanel(BuildContext context, int byteCount) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
+    return ToolPanel(
+      title: 'Hashes',
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SegmentedToggle(
-              options: const ['Generate', 'Lookup'],
-              initialIndex: _hashMode,
-              onChanged: (index) => setState(() => _hashMode = index),
+            Row(
+              children: [
+                SegmentedToggle(
+                  options: const ['Generate', 'Lookup'],
+                  initialIndex: _hashMode,
+                  onChanged: (index) => setState(() => _hashMode = index),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _hashMode == 0
+                        ? '$byteCount bytes (string)'
+                        : 'Hash-Buster style lookup',
+                    overflow: TextOverflow.ellipsis,
+                    style: mutedToolTextStyle(context),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 10),
+            const SizedBox(height: 10),
             Expanded(
-              child: Text(
-                _hashMode == 0
-                    ? '$byteCount bytes (string)'
-                    : 'Hash-Buster style lookup',
-                overflow: TextOverflow.ellipsis,
-                style: mutedToolTextStyle(context),
-              ),
+              child: _hashMode == 0
+                  ? _buildHashGeneratePanel(context)
+                  : _buildHashLookupPanel(context),
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        Expanded(
-          child: _hashMode == 0
-              ? _buildHashGeneratePanel(context)
-              : _buildHashLookupPanel(context),
-        ),
-      ],
+      ),
     );
   }
 
@@ -439,7 +430,7 @@ class _HashGeneratorViewState extends State<_HashGeneratorView> {
             controller: _lookupReport,
             readOnly: true,
             placeholder: 'Hash analysis and crack results...',
-            showHeader: false,
+            showHeader: true,
             actions: const [],
           ),
         ),
@@ -569,6 +560,9 @@ class _HashLookupTextField extends StatelessWidget {
         decoration: InputDecoration(
           hintText: hint,
           border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
           isDense: true,
           hintStyle: TextStyle(color: appColors.mutedText),
         ),

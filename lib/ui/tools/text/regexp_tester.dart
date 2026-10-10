@@ -4,10 +4,10 @@ library;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _RegExpTesterView extends StatefulWidget {
   const _RegExpTesterView();
@@ -59,18 +59,6 @@ class _RegExpTesterViewState extends State<_RegExpTesterView> {
     return buffer.toString();
   }
 
-  Future<void> _pasteRegexClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _regex.text = text);
-    _run();
-  }
-
-  Future<void> _pasteTextClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _text.text = text);
-    _run();
-  }
-
   void _setSample() {
     setState(() {
       _regex.text = r'([A-Z])\w+';
@@ -78,16 +66,6 @@ class _RegExpTesterViewState extends State<_RegExpTesterView> {
           'DevUtils helps you with your tiny daily tasks. It works entirely offline.';
     });
     _run();
-  }
-
-  void _clearAll() {
-    setState(() {
-      _regex.clear();
-      _text.clear();
-      _output.clear();
-      _matches = [];
-      _error = null;
-    });
   }
 
   Future<void> _copyOutput() async {
@@ -107,154 +85,101 @@ class _RegExpTesterViewState extends State<_RegExpTesterView> {
   Widget build(BuildContext context) {
     final matches = _filteredMatches();
 
-    return ResizableSplit(
-      horizontal: false,
-      initialRatio: 0.66,
-      minFirstExtent: 260,
-      minSecondExtent: 220,
-      first: Column(
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Scrollable so the panes below keep a positive height when the
-          // panel is resized very small.
-          Flexible(
-            child: SingleChildScrollView(
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  const Text(
-                    'RegExp:',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  SizedBox(
-                    width: 220,
-                    child: InlineTextField(
-                      hintText: r'([A-Z])\w+',
-                      controller: _regex,
-                      onChanged: (_) => _run(),
-                    ),
-                  ),
-                  ToolButton(
-                    label: 'Clipboard',
-                    onPressed: _pasteRegexClipboard,
-                  ),
-                  ToolButton(label: 'Sample', onPressed: _setSample),
-                  ToolButton(label: 'Clear', onPressed: _clearAll),
-                  const ToolIconButton(icon: Icons.settings),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Text:',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  ToolButton(
-                    label: 'Clipboard',
-                    onPressed: _pasteTextClipboard,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: Container(
-              decoration: toolSurfaceDecoration(context),
-              padding: const EdgeInsets.all(8),
-              child: TextField(
-                controller: _text,
-                maxLines: null,
-                onChanged: (_) => _run(),
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  isDense: true,
-                ),
-                style: TextStyle(color: context.appColors.editorText),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Flexible(
-            child: SingleChildScrollView(
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  const Text(
-                    'Output:',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  SizedBox(
-                    width: 120,
-                    child: InlineTextField(
-                      hintText: r'$0\n',
-                      controller: _format,
-                      onChanged: (_) => _run(),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 200,
-                    child: InlineTextField(
-                      hintText: 'Search matches...',
-                      controller: _search,
-                      onChanged: (_) => setState(() {}),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: EditorPane(
-              label: '',
-              actions: [ToolButton(label: 'Copy', onPressed: _copyOutput)],
-              controller: _output,
-              readOnly: true,
-              placeholder: '',
-            ),
-          ),
-        ],
-      ),
-      second: Column(
-        children: [
-          if (_error != null) ...[
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(_error!, style: errorToolTextStyle(context)),
-            ),
-            const SizedBox(height: 6),
-          ],
-          Row(
+          ToolToolbar(
             children: [
-              const Spacer(),
-              const Icon(Icons.chevron_left, size: 16),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  '${_matches.length} matches',
-                  overflow: TextOverflow.ellipsis,
+              const Text('Expression', style: TextStyle(fontSize: 12)),
+              SizedBox(
+                width: 260,
+                child: InlineTextField(
+                  height: 32,
+                  hintText: r'([A-Z])\w+',
+                  controller: _regex,
+                  onChanged: (_) => _run(),
                 ),
               ),
-              const SizedBox(width: 8),
-              const Icon(Icons.chevron_right, size: 16),
+
+              const Text('Output format', style: TextStyle(fontSize: 12)),
+              SizedBox(
+                width: 120,
+                child: InlineTextField(
+                  height: 32,
+                  hintText: r'$0\n',
+                  controller: _format,
+                  onChanged: (_) => _run(),
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 8),
-          const ToolButton(label: 'Cheat Sheet'),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(_error!, style: errorToolTextStyle(context)),
+            ),
           Expanded(
-            child: Container(
-              decoration: toolSurfaceDecoration(context),
-              padding: const EdgeInsets.all(8),
-              child: ListView.separated(
-                itemCount: matches.length,
-                separatorBuilder: (context, index) => const Divider(height: 8),
-                itemBuilder: (context, index) {
-                  final match = matches[index];
-                  final value = match.group(0) ?? '';
-                  return Text('"$value" (${match.start}, ${match.end})');
-                },
+            child: buildAdaptiveSplit(
+              first: EditorPane(
+                label: 'Text',
+                actions: [],
+                controller: _text,
+                onChanged: (_) => _run(),
+                placeholder: 'Enter text to match...',
+              ),
+              second: Column(
+                children: [
+                  Expanded(
+                    child: ToolPanel(
+                      title: 'Matches (${_matches.length})',
+                      actions: [
+                        SizedBox(
+                          width: 170,
+                          child: InlineTextField(
+                            height: 32,
+                            hintText: 'Search matches...',
+                            controller: _search,
+                            onChanged: (_) => setState(() {}),
+                          ),
+                        ),
+                      ],
+                      child: matches.isEmpty
+                          ? Center(
+                              child: Text(
+                                'No matches',
+                                style: mutedToolTextStyle(context),
+                              ),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.all(14),
+                              itemCount: matches.length,
+                              separatorBuilder: (_, _) =>
+                                  const Divider(height: 16),
+                              itemBuilder: (context, index) {
+                                final match = matches[index];
+                                return SelectableText(
+                                  '"${match.group(0) ?? ''}" (${match.start}, ${match.end})',
+                                );
+                              },
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: EditorPane(
+                      label: 'Formatted matches',
+                      actions: [
+                        ToolButton(label: 'Copy', onPressed: _copyOutput),
+                      ],
+                      controller: _output,
+                      readOnly: true,
+                      placeholder: 'Formatted matches will appear here',
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

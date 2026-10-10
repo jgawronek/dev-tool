@@ -14,6 +14,7 @@ import '../../../services/json_operations_service.dart';
 import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import 'editors.dart';
+import '../../tool_sample_action.dart';
 
 ValueChanged<String>? goActionChanged(List<Widget> actions) {
   for (final action in actions) {
@@ -50,10 +51,7 @@ Future<String> readClipboardText() async {
   return data?.text ?? '';
 }
 
-BoxDecoration toolSurfaceDecoration(
-  BuildContext context, {
-  double radius = 8,
-}) {
+BoxDecoration toolSurfaceDecoration(BuildContext context, {double radius = 8}) {
   final appColors = context.appColors;
   return BoxDecoration(
     color: appColors.panelElevated,
@@ -178,7 +176,7 @@ class JsonSplitEditors extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         if (horizontal) {
-          const splitterWidth = 6.0;
+          const splitterWidth = 14.0;
           final available = max(0.0, constraints.maxWidth - splitterWidth);
           final minPane = min(220.0, available / 2);
           final maxInputWidth = max(minPane, available - minPane);
@@ -232,7 +230,7 @@ class JsonSplitEditors extends StatelessWidget {
           );
         }
 
-        const splitterHeight = 6.0;
+        const splitterHeight = 14.0;
         final available = max(0.0, constraints.maxHeight - splitterHeight);
         final minPane = min(160.0, available / 2);
         final maxInputHeight = max(minPane, available - minPane);
@@ -300,9 +298,7 @@ class JsonEditorSplitter extends StatelessWidget {
 
 class JsonValidationResult {
   const JsonValidationResult.valid(this.info) : error = null, isValid = true;
-  const JsonValidationResult.invalid(this.error)
-    : info = null,
-      isValid = false;
+  const JsonValidationResult.invalid(this.error) : info = null, isValid = false;
 
   final bool isValid;
   final JsonValidationInfo? info;
@@ -484,10 +480,16 @@ class CompactCheck extends StatelessWidget {
 }
 
 class HtmlRenderedPreview extends StatefulWidget {
-  const HtmlRenderedPreview({super.key, required this.html, required this.overlay});
+  const HtmlRenderedPreview({
+    super.key,
+    required this.html,
+    required this.overlay,
+    this.title = 'Preview',
+  });
 
   final String html;
   final Widget overlay;
+  final String title;
 
   @override
   State<HtmlRenderedPreview> createState() => HtmlRenderedPreviewState();
@@ -549,46 +551,33 @@ class HtmlRenderedPreviewState extends State<HtmlRenderedPreview> {
   @override
   Widget build(BuildContext context) {
     final appColors = context.appColors;
-    return Container(
+    return ToolPanel(
       key: const ValueKey('html-rendered-preview'),
-      decoration: BoxDecoration(
+      title: widget.title,
+      actions: [widget.overlay],
+      child: ColoredBox(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: appColors.border),
-      ),
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: widget.html.trim().isEmpty
-                ? Center(
-                    child: Text(
-                      'Preview rendered HTML here...',
-                      style: TextStyle(color: appColors.mutedText),
-                    ),
-                  )
-                : _controller == null
-                ? HtmlPreviewFallback(html: widget.html, error: _webViewError)
-                : ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: WebViewWidget(controller: _controller!),
-                  ),
-          ),
-          Positioned(
-            top: 8,
-            right: 8,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 460),
-              child: widget.overlay,
-            ),
-          ),
-        ],
+        child: widget.html.trim().isEmpty
+            ? Center(
+                child: Text(
+                  'Enter content to see a preview',
+                  style: TextStyle(color: appColors.mutedText),
+                ),
+              )
+            : _controller == null
+            ? HtmlPreviewFallback(html: widget.html, error: _webViewError)
+            : WebViewWidget(controller: _controller!),
       ),
     );
   }
 }
 
 class HtmlPreviewFallback extends StatelessWidget {
-  const HtmlPreviewFallback({super.key, required this.html, required this.error});
+  const HtmlPreviewFallback({
+    super.key,
+    required this.html,
+    required this.error,
+  });
 
   final String html;
   final Object? error;
@@ -746,33 +735,10 @@ class RenderedPreviewPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 32),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
-            child: Row(
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const Spacer(),
-                PreviewBadge(label: badge),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Expanded(
-          child: HtmlRenderedPreview(
-            html: html,
-            overlay: const SizedBox.shrink(),
-          ),
-        ),
-      ],
+    return HtmlRenderedPreview(
+      title: label,
+      html: html,
+      overlay: PreviewBadge(label: badge),
     );
   }
 }
@@ -884,36 +850,27 @@ class SourceFileControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appColors = context.appColors;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: appColors.panelElevated.withAlpha(236),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: appColors.border),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (fileName != null) ...[
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 180),
-                child: Text(
-                  fileName!,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: appColors.mutedText, fontSize: 11),
-                ),
-              ),
-              const SizedBox(width: 6),
-            ],
-            ToolIconButton(
-              icon: Icons.insert_drive_file,
-              tooltip: tooltip,
-              onPressed: onPickFile,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (fileName != null) ...[
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 180),
+            child: Text(
+              fileName!,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: appColors.mutedText, fontSize: 11),
             ),
-          ],
+          ),
+          const SizedBox(width: 6),
+        ],
+        IconButton(
+          icon: const Icon(Icons.insert_drive_file_outlined, size: 17),
+          tooltip: tooltip,
+          onPressed: onPickFile,
+          visualDensity: VisualDensity.compact,
         ),
-      ),
+      ],
     );
   }
 }
@@ -978,13 +935,6 @@ class MarkupBeautifyMinifyViewState extends State<MarkupBeautifyMinifyView> {
     _run();
   }
 
-  void _clear() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final controls = Row(
@@ -1023,25 +973,26 @@ class MarkupBeautifyMinifyViewState extends State<MarkupBeautifyMinifyView> {
       ],
     );
 
-    return buildSplitEditors(
-      inputActions: [
-        ToolButton(label: 'Sample', onPressed: _setSample),
-        ToolButton(label: 'Clear', onPressed: _clear),
-      ],
-      outputActions: [
-        ToolButton(
-          label: 'Copy',
-          onPressed: () => Clipboard.setData(ClipboardData(text: _output.text)),
-        ),
-      ],
-      inputController: _input,
-      outputController: _output,
-      onInputChanged: (_) => _run(),
-      inputPlaceholder: 'Paste ${widget.language} here...',
-      outputPlaceholder: 'Output...',
-      showInputHeader: false,
-      showOutputHeader: false,
-      outputOverlay: controls,
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: buildSplitEditors(
+        inputActions: [],
+        outputActions: [
+          ToolButton(
+            label: 'Copy',
+            onPressed: () =>
+                Clipboard.setData(ClipboardData(text: _output.text)),
+          ),
+        ],
+        inputController: _input,
+        outputController: _output,
+        onInputChanged: (_) => _run(),
+        inputPlaceholder: 'Paste ${widget.language} here...',
+        outputPlaceholder: 'Output...',
+        showInputHeader: true,
+        showOutputHeader: true,
+        outputOverlay: controls,
+      ),
     );
   }
 }
@@ -1051,12 +1002,14 @@ class InlineTextField extends StatelessWidget {
     super.key,
     this.hintText,
     this.width,
+    this.height,
     this.controller,
     this.onChanged,
   });
 
   final String? hintText;
   final double? width;
+  final double? height;
   final TextEditingController? controller;
   final ValueChanged<String>? onChanged;
 
@@ -1065,20 +1018,35 @@ class InlineTextField extends StatelessWidget {
     final appColors = context.appColors;
     return SizedBox(
       width: width,
-      child: Container(
-        decoration: toolSurfaceDecoration(context, radius: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: TextField(
-          controller: controller,
-          onChanged: onChanged,
-          decoration: InputDecoration(
-            hintText: hintText,
-            border: InputBorder.none,
-            isDense: true,
-            hintStyle: TextStyle(color: appColors.mutedText),
+      height: height,
+      child: TextField(
+        controller: controller,
+        onChanged: onChanged,
+        decoration: InputDecoration(
+          constraints: height == null
+              ? null
+              : BoxConstraints.tightFor(height: height),
+          visualDensity: height == null ? null : VisualDensity.standard,
+          hintText: hintText,
+          isDense: true,
+          filled: true,
+          fillColor: appColors.panel,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 8,
           ),
-          style: TextStyle(color: appColors.editorText),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: BorderSide(color: appColors.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: BorderSide(color: appColors.accent),
+          ),
+          hintStyle: TextStyle(color: appColors.mutedText),
         ),
+        style: TextStyle(color: appColors.editorText, fontSize: 13),
       ),
     );
   }

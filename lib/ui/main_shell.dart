@@ -109,7 +109,7 @@ class _SidebarResizeHandleState extends State<_SidebarResizeHandle> {
         behavior: HitTestBehavior.opaque,
         onPanUpdate: (details) => widget.onDrag(details.delta),
         child: Container(
-          width: 7,
+          width: 5,
           color: Colors.transparent,
           alignment: Alignment.center,
           child: Container(

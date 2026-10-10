@@ -9,6 +9,7 @@ import 'package:yaml/yaml.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _YamlToJsonView extends StatefulWidget {
   const _YamlToJsonView();
@@ -50,23 +51,10 @@ class _YamlToJsonViewState extends State<_YamlToJsonView> {
     }
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _input.text = text);
-  }
-
   void _setSample() {
     const sample =
         '- item: Super Hoop\n  quantity: 1\n- item: Basketball\n  quantity: 4';
     setState(() => _input.text = sample);
-  }
-
-  void _clearInput() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-      _error = null;
-    });
   }
 
   Future<void> _copyOutput() async {
@@ -75,41 +63,39 @@ class _YamlToJsonViewState extends State<_YamlToJsonView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: buildSplitEditors(
-            inputActions: [
-              ToolButton(label: 'Go', onPressed: _run),
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clearInput),
-            ],
-            outputActions: [
-              SmallDropdown(
-                items: const ['2 spaces', '4 spaces', 'Tabs'],
-                initialValue: _indent,
-                onChanged: (value) {
-                  setState(() => _indent = value);
-                  _run();
-                },
-              ),
-              ToolButton(label: 'Copy', onPressed: _copyOutput),
-            ],
-            inputController: _input,
-            outputController: _output,
-            inputPlaceholder: '---\n- item: Super Hoop',
-            outputPlaceholder: '[]',
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        children: [
+          Expanded(
+            child: buildSplitEditors(
+              inputActions: [ToolButton(label: 'Go', onPressed: _run)],
+              outputActions: [
+                SmallDropdown(
+                  items: const ['2 spaces', '4 spaces', 'Tabs'],
+                  initialValue: _indent,
+                  onChanged: (value) {
+                    setState(() => _indent = value);
+                    _run();
+                  },
+                ),
+                ToolButton(label: 'Copy', onPressed: _copyOutput),
+              ],
+              inputController: _input,
+              outputController: _output,
+              inputPlaceholder: '---\n- item: Super Hoop',
+              outputPlaceholder: '[]',
+            ),
           ),
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(_error!, style: errorToolTextStyle(context)),
-          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(_error!, style: errorToolTextStyle(context)),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -172,24 +158,11 @@ class _YamlJsonConverterViewState extends State<_YamlJsonConverterView> {
     }
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _input.text = text);
-  }
-
   void _setSample() {
     setState(() {
       _input.text = _yamlToJson
           ? '- item: Super Hoop\n  quantity: 1\n- item: Basketball\n  quantity: 4'
           : '{"store":{"book":[{"category":"reference","title":"Sayings"}]}}';
-    });
-  }
-
-  void _clearInput() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-      _error = null;
     });
   }
 
@@ -199,52 +172,53 @@ class _YamlJsonConverterViewState extends State<_YamlJsonConverterView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: buildSplitEditors(
-            inputActions: [
-              ToolButton(label: 'Go', onPressed: _run),
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clearInput),
-              SegmentedToggle(
-                options: const ['YAML → JSON', 'JSON → YAML'],
-                initialIndex: _yamlToJson ? 0 : 1,
-                onChanged: (index) {
-                  setState(() => _yamlToJson = index == 0);
-                  _run();
-                },
-              ),
-            ],
-            outputActions: [
-              if (_yamlToJson)
-                SmallDropdown(
-                  items: const ['2 spaces', '4 spaces', 'Tabs'],
-                  initialValue: _indent,
-                  onChanged: (value) {
-                    setState(() => _indent = value);
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        children: [
+          Expanded(
+            child: buildSplitEditors(
+              inputActions: [
+                ToolButton(label: 'Go', onPressed: _run),
+
+                SegmentedToggle(
+                  options: const ['YAML → JSON', 'JSON → YAML'],
+                  initialIndex: _yamlToJson ? 0 : 1,
+                  onChanged: (index) {
+                    setState(() => _yamlToJson = index == 0);
                     _run();
                   },
                 ),
-              ToolButton(label: 'Copy', onPressed: _copyOutput),
-            ],
-            inputController: _input,
-            outputController: _output,
-            inputPlaceholder: _yamlToJson
-                ? '---\n- item: Super Hoop'
-                : '{"store": {"book": []}}',
-            outputPlaceholder: _yamlToJson ? '[]' : 'store:\n  book: []',
+              ],
+              outputActions: [
+                if (_yamlToJson)
+                  SmallDropdown(
+                    items: const ['2 spaces', '4 spaces', 'Tabs'],
+                    initialValue: _indent,
+                    onChanged: (value) {
+                      setState(() => _indent = value);
+                      _run();
+                    },
+                  ),
+                ToolButton(label: 'Copy', onPressed: _copyOutput),
+              ],
+              inputController: _input,
+              outputController: _output,
+              inputPlaceholder: _yamlToJson
+                  ? '---\n- item: Super Hoop'
+                  : '{"store": {"book": []}}',
+              outputPlaceholder: _yamlToJson ? '[]' : 'store:\n  book: []',
+            ),
           ),
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(_error!, style: errorToolTextStyle(context)),
-          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(_error!, style: errorToolTextStyle(context)),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -286,23 +260,10 @@ class _JsonToYamlViewState extends State<_JsonToYamlView> {
     }
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _input.text = text);
-  }
-
   void _setSample() {
     const sample =
         '{"store":{"book":[{"category":"reference","title":"Sayings"}]}}';
     setState(() => _input.text = sample);
-  }
-
-  void _clearInput() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-      _error = null;
-    });
   }
 
   Future<void> _copyOutput() async {
@@ -311,31 +272,31 @@ class _JsonToYamlViewState extends State<_JsonToYamlView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: buildSplitEditors(
-            inputActions: [
-              ToolButton(label: 'Go', onPressed: _run),
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clearInput),
-            ],
-            outputActions: [ToolButton(label: 'Copy', onPressed: _copyOutput)],
-            inputController: _input,
-            outputController: _output,
-            inputPlaceholder: '{"store": {"book": []}}',
-            outputPlaceholder: 'store:\n  book: []',
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        children: [
+          Expanded(
+            child: buildSplitEditors(
+              inputActions: [ToolButton(label: 'Go', onPressed: _run)],
+              outputActions: [
+                ToolButton(label: 'Copy', onPressed: _copyOutput),
+              ],
+              inputController: _input,
+              outputController: _output,
+              inputPlaceholder: '{"store": {"book": []}}',
+              outputPlaceholder: 'store:\n  book: []',
+            ),
           ),
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(_error!, style: errorToolTextStyle(context)),
-          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(_error!, style: errorToolTextStyle(context)),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

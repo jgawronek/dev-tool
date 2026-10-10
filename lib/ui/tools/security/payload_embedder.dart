@@ -289,125 +289,114 @@ class _PayloadEmbedderViewState extends State<_PayloadEmbedderView> {
     });
   }
 
-  void _clear() {
-    _carrierPath.clear();
-    _payloadPath.clear();
-    _outputPath.clear();
-    _passphrase.clear();
-    _status.clear();
-    setState(() {
-      _error = null;
-      _info = null;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    return ResizableSplit(
-      horizontal: true,
+    return buildAdaptiveSplit(
       initialRatio: 0.46,
       minFirstExtent: 420,
       minSecondExtent: 360,
-      first: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Wrap(
-                spacing: 10,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  SegmentedToggle(
-                    options: const ['Embed', 'Check', 'Decode'],
-                    initialIndex: _modeIndex,
-                    onChanged: (index) => setState(() => _modeIndex = index),
+      first: ToolPanel(
+        title: 'Options',
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SegmentedToggle(
+                      options: const ['Embed', 'Check', 'Decode'],
+                      initialIndex: _modeIndex,
+                      onChanged: (index) => setState(() => _modeIndex = index),
+                    ),
+                    ToolButton(
+                      label: 'Example paths',
+                      onPressed: _setExamplePaths,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _PayloadPathField(
+                  label: _isEmbed ? 'Carrier file' : 'Stego file',
+                  controller: _carrierPath,
+                  hint: '/path/to/image.png, image.jpg, or document.pdf',
+                  onPickFile: _pickCarrierFile,
+                  dropTargetId: _carrierDropTargetId,
+                  onDropped: (paths) => _setDroppedPath(_carrierPath, paths),
+                ),
+                if (_isEmbed) ...[
+                  const SizedBox(height: 10),
+                  _PayloadPathField(
+                    label: 'Payload file',
+                    controller: _payloadPath,
+                    hint: '/path/to/secret.txt',
+                    onPickFile: _pickPayloadFile,
+                    dropTargetId: _payloadDropTargetId,
+                    onDropped: (paths) => _setDroppedPath(_payloadPath, paths),
                   ),
-                  ToolButton(
-                    label: 'Example paths',
-                    onPressed: _setExamplePaths,
+                ],
+                if (!_isCheck) ...[
+                  const SizedBox(height: 10),
+                  _PayloadPathField(
+                    label: _isDecode ? 'Decoded output' : 'Output file',
+                    controller: _outputPath,
+                    hint: _isDecode
+                        ? 'Leave empty to use embedded filename'
+                        : 'Leave empty to create *.embedded.*',
+                    onPickFile: _pickOutputFile,
+                    onPickDirectory: _pickOutputDirectory,
                   ),
-                  ToolButton(label: 'Reset', onPressed: _clear),
                 ],
-              ),
-              const SizedBox(height: 16),
-              _PayloadPathField(
-                label: _isEmbed ? 'Carrier file' : 'Stego file',
-                controller: _carrierPath,
-                hint: '/path/to/image.png, image.jpg, or document.pdf',
-                onPickFile: _pickCarrierFile,
-                dropTargetId: _carrierDropTargetId,
-                onDropped: (paths) => _setDroppedPath(_carrierPath, paths),
-              ),
-              if (_isEmbed) ...[
-                const SizedBox(height: 10),
-                _PayloadPathField(
-                  label: 'Payload file',
-                  controller: _payloadPath,
-                  hint: '/path/to/secret.txt',
-                  onPickFile: _pickPayloadFile,
-                  dropTargetId: _payloadDropTargetId,
-                  onDropped: (paths) => _setDroppedPath(_payloadPath, paths),
-                ),
-              ],
-              if (!_isCheck) ...[
-                const SizedBox(height: 10),
-                _PayloadPathField(
-                  label: _isDecode ? 'Decoded output' : 'Output file',
-                  controller: _outputPath,
-                  hint: _isDecode
-                      ? 'Leave empty to use embedded filename'
-                      : 'Leave empty to create *.embedded.*',
-                  onPickFile: _pickOutputFile,
-                  onPickDirectory: _pickOutputDirectory,
-                ),
-              ],
-              if (!_isCheck) ...[
-                const SizedBox(height: 10),
-                _PayloadPathField(
-                  label: 'Passphrase',
-                  controller: _passphrase,
-                  hint: 'Required for encryption/decode',
-                  obscureText: true,
-                ),
-              ],
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (_isEmbed)
-                    ToolButton(
-                      label: _busy ? 'Embedding...' : 'Embed encrypted',
-                      onPressed: _busy ? null : _embed,
-                    ),
-                  if (_isCheck)
-                    ToolButton(
-                      label: _busy ? 'Checking...' : 'Check embedded data',
-                      onPressed: _busy ? null : () => _check(),
-                    ),
-                  if (!_isCheck)
-                    ToolButton(
-                      label: _busy
-                          ? 'Checking...'
-                          : _isEmbed && _outputPath.text.trim().isNotEmpty
-                          ? 'Check output'
-                          : 'Check embedded data',
-                      onPressed: _busy
-                          ? null
-                          : () => _check(preferOutput: _isEmbed),
-                    ),
-                  if (_isDecode)
-                    ToolButton(
-                      label: _busy ? 'Decoding...' : 'Decode',
-                      onPressed: _busy ? null : _decode,
-                    ),
+                if (!_isCheck) ...[
+                  const SizedBox(height: 10),
+                  _PayloadPathField(
+                    label: 'Passphrase',
+                    controller: _passphrase,
+                    hint: 'Required for encryption/decode',
+                    obscureText: true,
+                  ),
                 ],
-              ),
-              const SizedBox(height: 16),
-              _PayloadMethodSummary(),
-            ],
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (_isEmbed)
+                      ToolButton(
+                        label: _busy ? 'Embedding...' : 'Embed encrypted',
+                        onPressed: _busy ? null : _embed,
+                      ),
+                    if (_isCheck)
+                      ToolButton(
+                        label: _busy ? 'Checking...' : 'Check embedded data',
+                        onPressed: _busy ? null : () => _check(),
+                      ),
+                    if (!_isCheck)
+                      ToolButton(
+                        label: _busy
+                            ? 'Checking...'
+                            : _isEmbed && _outputPath.text.trim().isNotEmpty
+                            ? 'Check output'
+                            : 'Check embedded data',
+                        onPressed: _busy
+                            ? null
+                            : () => _check(preferOutput: _isEmbed),
+                      ),
+                    if (_isDecode)
+                      ToolButton(
+                        label: _busy ? 'Decoding...' : 'Decode',
+                        onPressed: _busy ? null : _decode,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _PayloadMethodSummary(),
+              ],
+            ),
           ),
         ),
       ),
@@ -428,7 +417,7 @@ class _PayloadEmbedderViewState extends State<_PayloadEmbedderView> {
               actions: const [],
               controller: _status,
               readOnly: true,
-              showHeader: false,
+              showHeader: true,
               placeholder:
                   'Embed, check, or decode encrypted files inside PNG, JPG, or PDF carriers...',
             ),

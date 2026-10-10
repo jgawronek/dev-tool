@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/material.dart';
+import '../../../ui/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../ui/app_colors.dart';
@@ -109,16 +110,22 @@ class _AuthTotpViewState extends State<_AuthTotpView> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Wrap(
-        spacing: 16,
-        runSpacing: 16,
-        children: [
-          for (var i = 0; i < _entries.length; i++)
-            _TotpCard(entry: _entries[i], onEdit: () => _openEditDialog(i)),
-          _TotpAddCard(onTap: _openAddDialog),
-        ],
+    return ToolPanel(
+      title: 'Authenticator accounts',
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(12),
+        child: Padding(
+          padding: EdgeInsets.zero,
+          child: Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            children: [
+              for (var i = 0; i < _entries.length; i++)
+                _TotpCard(entry: _entries[i], onEdit: () => _openEditDialog(i)),
+              _TotpAddCard(onTap: _openAddDialog),
+            ],
+          ),
+        ),
       ),
     );
   }

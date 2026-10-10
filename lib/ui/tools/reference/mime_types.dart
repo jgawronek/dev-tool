@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../../../ui/widgets.dart';
 import '../../../data/mime_types.dart';
 import '../../../ui/app_colors.dart';
 import '../common/shared.dart';
@@ -117,8 +118,9 @@ class _MimeTypesViewState extends State<_MimeTypesView> {
         ),
         const SizedBox(height: 12),
         Expanded(
-          child: Container(
-            decoration: toolSurfaceDecoration(context),
+          child: ToolPanel(
+            title: 'MIME types',
+            expand: true,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: SingleChildScrollView(

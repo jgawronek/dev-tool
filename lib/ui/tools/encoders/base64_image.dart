@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _Base64ImageView extends StatefulWidget {
   const _Base64ImageView();
@@ -28,25 +29,10 @@ class _Base64ImageViewState extends State<_Base64ImageView> {
     super.dispose();
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    _input.text = text;
-    _updatePreview();
-  }
-
   void _setSample() {
     _input.text =
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l5F7cwAAAABJRU5ErkJggg==';
     _updatePreview();
-  }
-
-  void _clear() {
-    setState(() {
-      _input.clear();
-      _previewLabel = 'Image preview (base64 only)';
-      _previewBytes = null;
-      _previewError = null;
-    });
   }
 
   Future<void> _copyString() async {
@@ -85,106 +71,60 @@ class _Base64ImageViewState extends State<_Base64ImageView> {
 
   @override
   Widget build(BuildContext context) {
-    return ResizableSplit(
-      horizontal: true,
-      first: EditorPane(
-        label: 'String',
-        actions: [
-          ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-          ToolButton(label: 'Sample', onPressed: _setSample),
-          ToolButton(label: 'Clear', onPressed: _clear),
-          ToolButton(label: 'Copy', onPressed: _copyString),
-        ],
-        controller: _input,
-        onChanged: (_) => _updatePreview(),
-      ),
-      second: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: buildAdaptiveSplit(
+        first: EditorPane(
+          label: 'String',
+          actions: [ToolButton(label: 'Copy', onPressed: _copyString)],
+          controller: _input,
+          onChanged: (_) => _updatePreview(),
+        ),
+        second: ToolPanel(
+          title: 'Image',
+          actions: [
+            IconButton(
+              tooltip: 'Copy image',
+              onPressed: _previewBytes == null ? null : _copyImage,
+              icon: const Icon(Icons.copy_outlined, size: 17),
+            ),
+          ],
+          child: Stack(
             children: [
-              const Text(
-                'Image',
-                style: TextStyle(fontWeight: FontWeight.w600),
+              Center(
+                child: _previewBytes == null
+                    ? Text(
+                        _previewError ?? _previewLabel,
+                        style: _previewError == null
+                            ? mutedToolTextStyle(context)
+                            : errorToolTextStyle(context),
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Image.memory(
+                          _previewBytes!,
+                          fit: BoxFit.contain,
+                          gaplessPlayback: true,
+                          filterQuality: FilterQuality.medium,
+                          errorBuilder: (context, error, stackTrace) => Text(
+                            'Could not render image',
+                            style: errorToolTextStyle(context),
+                          ),
+                        ),
+                      ),
               ),
+              if (_previewBytes != null)
+                Positioned(
+                  left: 12,
+                  bottom: 10,
+                  child: Text(
+                    _previewLabel,
+                    style: mutedToolTextStyle(context, fontSize: 11),
+                  ),
+                ),
             ],
           ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: Container(
-              decoration: toolSurfaceDecoration(context),
-              child: Stack(
-                children: [
-                  Center(
-                    child: _previewBytes == null
-                        ? Text(
-                            _previewError ?? _previewLabel,
-                            style: _previewError == null
-                                ? mutedToolTextStyle(context)
-                                : errorToolTextStyle(context),
-                          )
-                        : Padding(
-                            padding: const EdgeInsets.all(18),
-                            child: Image.memory(
-                              _previewBytes!,
-                              fit: BoxFit.contain,
-                              gaplessPlayback: true,
-                              filterQuality: FilterQuality.medium,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  Text(
-                                    'Could not render image',
-                                    style: errorToolTextStyle(context),
-                                  ),
-                            ),
-                          ),
-                  ),
-                  if (_previewBytes != null)
-                    Positioned(
-                      left: 12,
-                      bottom: 10,
-                      child: Text(
-                        _previewLabel,
-                        style: mutedToolTextStyle(context, fontSize: 11),
-                      ),
-                    ),
-                  Positioned(
-                    top: 6,
-                    right: 6,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Tooltip(
-                          message: 'Load File...',
-                          child: IconButton(
-                            onPressed: () {},
-                            icon: const Icon(Icons.upload_file, size: 18),
-                            padding: const EdgeInsets.all(4),
-                            constraints: const BoxConstraints(
-                              minWidth: 28,
-                              minHeight: 28,
-                            ),
-                            splashRadius: 16,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        TextButton(
-                          onPressed: _copyImage,
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                            minimumSize: const Size(0, 24),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            textStyle: const TextStyle(fontSize: 11),
-                          ),
-                          child: const Text('Copy'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

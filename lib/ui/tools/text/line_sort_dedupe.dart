@@ -2,10 +2,12 @@
 library;
 
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import '../../../ui/widgets.dart';
-import '../common/shared.dart';
+import '../../tool_sample_action.dart';
 import '../common/editors.dart';
 
 class _LineSortDedupeView extends StatefulWidget {
@@ -41,20 +43,9 @@ class _LineSortDedupeViewState extends State<_LineSortDedupeView> {
     setState(() {});
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _input.text = text);
-  }
-
   void _setSample() {
-    setState(() => _input.text = '1\n11\n2\n22\n22\n33\n5.0\n2.5');
-  }
-
-  void _clearInput() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-    });
+    _input.text = '1\n11\n2\n22\n22\n33\n5.0\n2.5';
+    _run();
   }
 
   Future<void> _copyOutput() async {
@@ -63,36 +54,34 @@ class _LineSortDedupeViewState extends State<_LineSortDedupeView> {
 
   @override
   Widget build(BuildContext context) {
-    return buildSplitEditors(
-      inputActions: [
-        ToolButton(label: 'Go', onPressed: _run),
-        ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-        ToolButton(label: 'Sample', onPressed: _setSample),
-        ToolButton(label: 'Clear', onPressed: _clearInput),
-      ],
-      outputActions: [
-        SmallDropdown(
-          items: const ['A -> Z (Text)', 'Z -> A (Text)'],
-          initialValue: _sort,
-          onChanged: (value) {
-            setState(() => _sort = value);
-            _run();
-          },
-        ),
-        SmallDropdown(
-          items: const ['With Duplicates', 'Without Duplicates'],
-          initialValue: _dupes,
-          onChanged: (value) {
-            setState(() => _dupes = value);
-            _run();
-          },
-        ),
-        ToolButton(label: 'Copy', onPressed: _copyOutput),
-      ],
-      inputController: _input,
-      outputController: _output,
-      inputPlaceholder: 'Line 1\nLine 2\nLine 2',
-      outputPlaceholder: 'Line 1\nLine 2',
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: buildSplitEditors(
+        inputActions: [ToolButton(label: 'Go', onPressed: _run)],
+        outputActions: [
+          SmallDropdown(
+            items: const ['A -> Z (Text)', 'Z -> A (Text)'],
+            initialValue: _sort,
+            onChanged: (value) {
+              setState(() => _sort = value);
+              _run();
+            },
+          ),
+          SmallDropdown(
+            items: const ['With Duplicates', 'Without Duplicates'],
+            initialValue: _dupes,
+            onChanged: (value) {
+              setState(() => _dupes = value);
+              _run();
+            },
+          ),
+          ToolButton(label: 'Copy', onPressed: _copyOutput),
+        ],
+        inputController: _input,
+        outputController: _output,
+        inputPlaceholder: 'Line 1\nLine 2\nLine 2',
+        outputPlaceholder: 'Line 1\nLine 2',
+      ),
     );
   }
 }

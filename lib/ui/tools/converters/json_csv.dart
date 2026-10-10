@@ -13,6 +13,12 @@ import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
+
+const _csvSample =
+    'id,name,note\n1,DevUtils,"Sample row"\n2,Example,"Escaped ""string"""';
+const _jsonSample =
+    '{"data":[{"id":1,"name":"JSON Formatter","deep":{"nested":1,"value":2}}]}';
 
 class _JsonStatusPill extends StatelessWidget {
   const _JsonStatusPill({required this.statusListenable});
@@ -110,26 +116,9 @@ class _CsvToJsonViewState extends State<_CsvToJsonView> {
     }
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() {
-      _input.text = text;
-    });
-  }
-
   void _setSample() {
-    const sample =
-        'id,name,note\n1,DevUtils,"Sample row"\n2,Example,"Escaped ""string"""';
     setState(() {
-      _input.text = sample;
-    });
-  }
-
-  void _clearInput() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-      _error = null;
+      _input.text = _csvSample;
     });
   }
 
@@ -139,42 +128,43 @@ class _CsvToJsonViewState extends State<_CsvToJsonView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: buildSplitEditors(
-            inputActions: [
-              ToolButton(label: 'Go', onPressed: _run),
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clearInput),
-              const ToolIconButton(icon: Icons.settings),
-            ],
-            outputActions: [
-              SmallDropdown(
-                items: const ['2 spaces', '4 spaces', 'Tabs'],
-                initialValue: _indent,
-                onChanged: (value) {
-                  setState(() => _indent = value);
-                  _run();
-                },
-              ),
-              ToolButton(label: 'Copy', onPressed: _copyOutput),
-            ],
-            inputPlaceholder: 'id,name,note',
-            outputPlaceholder: '[]',
-            inputController: _input,
-            outputController: _output,
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        children: [
+          Expanded(
+            child: buildSplitEditors(
+              inputActions: [
+                ToolButton(label: 'Go', onPressed: _run),
+
+                const ToolIconButton(icon: Icons.settings),
+              ],
+              outputActions: [
+                SmallDropdown(
+                  items: const ['2 spaces', '4 spaces', 'Tabs'],
+                  initialValue: _indent,
+                  onChanged: (value) {
+                    setState(() => _indent = value);
+                    _run();
+                  },
+                ),
+                ToolButton(label: 'Copy', onPressed: _copyOutput),
+              ],
+              inputPlaceholder: 'id,name,note',
+              outputPlaceholder: '[]',
+              inputController: _input,
+              outputController: _output,
+            ),
           ),
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(_error!, style: errorToolTextStyle(context)),
-          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(_error!, style: errorToolTextStyle(context)),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -274,23 +264,8 @@ class _JsonToCsvViewState extends State<_JsonToCsvView> {
     }
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _input.text = text);
-  }
-
   void _setSample() {
-    const sample =
-        '{"data":[{"id":1,"name":"JSON Formatter","deep":{"nested":1,"value":2}}]}';
-    setState(() => _input.text = sample);
-  }
-
-  void _clearInput() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-      _error = null;
-    });
+    setState(() => _input.text = _jsonSample);
   }
 
   Future<void> _copyOutput() async {
@@ -299,32 +274,35 @@ class _JsonToCsvViewState extends State<_JsonToCsvView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: buildSplitEditors(
-            inputActions: [
-              ToolButton(label: 'Go', onPressed: _run),
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clearInput),
-              const ToolIconButton(icon: Icons.settings),
-            ],
-            outputActions: [ToolButton(label: 'Copy', onPressed: _copyOutput)],
-            inputController: _input,
-            outputController: _output,
-            inputPlaceholder: '{"data":[{"id":1,"name":"JSON Formatter"}]}',
-            outputPlaceholder: 'id,name',
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        children: [
+          Expanded(
+            child: buildSplitEditors(
+              inputActions: [
+                ToolButton(label: 'Go', onPressed: _run),
+
+                const ToolIconButton(icon: Icons.settings),
+              ],
+              outputActions: [
+                ToolButton(label: 'Copy', onPressed: _copyOutput),
+              ],
+              inputController: _input,
+              outputController: _output,
+              inputPlaceholder: '{"data":[{"id":1,"name":"JSON Formatter"}]}',
+              outputPlaceholder: 'id,name',
+            ),
           ),
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(_error!, style: errorToolTextStyle(context)),
-          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(_error!, style: errorToolTextStyle(context)),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -510,42 +488,51 @@ class _JsonCsvConverterViewState extends State<_JsonCsvConverterView> {
     }
   }
 
+  void _setSample() {
+    _debounce?.cancel();
+    _input.text = _csvToJson ? _csvSample : _jsonSample;
+    _run();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return JsonSplitEditors(
-      inputController: _input,
-      outputController: _output,
-      inputScrollController: _inputScroll,
-      outputScrollController: _outputScroll,
-      inputMarkedLines: const <int>{},
-      inputRatio: _inputRatio,
-      outputSoftWrap: _outputWrap,
-      onInputRatioChanged: (value) => setState(() => _inputRatio = value),
-      onInputChanged: (_) => _scheduleRun(),
-      inputPlaceholder: _csvToJson ? 'id,name,note' : '{"data":[{"id":1}]}',
-      outputPlaceholder: _csvToJson ? '[]' : 'id,name',
-      inputActions: const [],
-      outputActions: [ToolButton(label: 'Copy', onPressed: _copyOutput)],
-      showInputHeader: false,
-      showOutputHeader: false,
-      inputOverlay: _CsvJsonDirectionOverlay(
-        csvToJson: _csvToJson,
-        onChanged: (value) {
-          setState(() => _csvToJson = value);
-          _run();
-        },
-      ),
-      outputOverlay: _JsonCsvOutputOverlay(
-        csvToJson: _csvToJson,
-        indent: _indent,
-        wrap: _outputWrap,
-        statusListenable: _status,
-        onIndentChanged: (value) {
-          setState(() => _indent = value);
-          _run();
-        },
-        onWrapChanged: (value) => setState(() => _outputWrap = value),
-        onExport: _export,
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: JsonSplitEditors(
+        inputController: _input,
+        outputController: _output,
+        inputScrollController: _inputScroll,
+        outputScrollController: _outputScroll,
+        inputMarkedLines: const <int>{},
+        inputRatio: _inputRatio,
+        outputSoftWrap: _outputWrap,
+        onInputRatioChanged: (value) => setState(() => _inputRatio = value),
+        onInputChanged: (_) => _scheduleRun(),
+        inputPlaceholder: _csvToJson ? 'id,name,note' : '{"data":[{"id":1}]}',
+        outputPlaceholder: _csvToJson ? '[]' : 'id,name',
+        inputActions: const [],
+        outputActions: [ToolButton(label: 'Copy', onPressed: _copyOutput)],
+        showInputHeader: true,
+        showOutputHeader: true,
+        inputOverlay: _CsvJsonDirectionOverlay(
+          csvToJson: _csvToJson,
+          onChanged: (value) {
+            setState(() => _csvToJson = value);
+            _run();
+          },
+        ),
+        outputOverlay: _JsonCsvOutputOverlay(
+          csvToJson: _csvToJson,
+          indent: _indent,
+          wrap: _outputWrap,
+          statusListenable: _status,
+          onIndentChanged: (value) {
+            setState(() => _indent = value);
+            _run();
+          },
+          onWrapChanged: (value) => setState(() => _outputWrap = value),
+          onExport: _export,
+        ),
       ),
     );
   }

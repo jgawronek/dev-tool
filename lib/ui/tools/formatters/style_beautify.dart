@@ -13,6 +13,7 @@ import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _SimplePassThroughView extends StatefulWidget {
   const _SimplePassThroughView({
@@ -43,18 +44,6 @@ class _SimplePassThroughViewState extends State<_SimplePassThroughView> {
     setState(() => _output.text = _input.text);
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _input.text = text);
-  }
-
-  void _clearInput() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-    });
-  }
-
   Future<void> _copyOutput() async {
     await Clipboard.setData(ClipboardData(text: _output.text));
   }
@@ -77,12 +66,7 @@ class _SimplePassThroughViewState extends State<_SimplePassThroughView> {
     outputActions.add(ToolButton(label: 'Copy', onPressed: _copyOutput));
 
     return buildSplitEditors(
-      inputActions: [
-        ToolButton(label: 'Go', onPressed: _run),
-        ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-        ToolButton(label: 'Sample', onPressed: () {}),
-        ToolButton(label: 'Clear', onPressed: _clearInput),
-      ],
+      inputActions: [ToolButton(label: 'Go', onPressed: _run)],
       outputActions: outputActions,
       inputController: _input,
       outputController: _output,
@@ -179,15 +163,6 @@ class _StyleBeautifyMinifyViewState extends State<_StyleBeautifyMinifyView> {
     _run();
   }
 
-  void _clearInput() {
-    setState(() {
-      _sourceFileName = null;
-      _error = null;
-      _input.clear();
-      _output.clear();
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final controls = _HtmlFormatControls(
@@ -216,10 +191,7 @@ class _StyleBeautifyMinifyViewState extends State<_StyleBeautifyMinifyView> {
         _sourceFileName = null;
         _run();
       },
-      inputActions: [
-        ToolButton(label: 'Sample', onPressed: _setSample),
-        ToolButton(label: 'Clear', onPressed: _clearInput),
-      ],
+      inputActions: [],
       outputActions: [ToolButton(label: 'Copy', onPressed: _copyOutput)],
       inputOverlay: SourceFileControls(
         onPickFile: _pickFile,
@@ -227,26 +199,30 @@ class _StyleBeautifyMinifyViewState extends State<_StyleBeautifyMinifyView> {
         tooltip: 'Choose ${widget.language} file',
       ),
       outputOverlay: controls,
-      showInputHeader: false,
-      showOutputHeader: false,
+      showInputHeader: true,
+      showOutputHeader: true,
       inputDropTargetId: _dropTargetId,
       onInputDropped: (paths) {
         if (paths.isNotEmpty) unawaited(_loadFile(paths.first));
       },
     );
 
-    if (_error == null) return editors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(_error!, style: errorToolTextStyle(context)),
-        const SizedBox(height: 8),
-        Expanded(child: editors),
-      ],
+    if (_error == null) {
+      return ToolSampleAction(onPressed: _setSample, child: editors);
+    }
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(_error!, style: errorToolTextStyle(context)),
+          const SizedBox(height: 8),
+          Expanded(child: editors),
+        ],
+      ),
     );
   }
 }
-
 
 /// Adds a missing space after a declaration's property colon
 /// (`color:red` -> `color: red`) without touching URLs or selectors.
@@ -277,7 +253,9 @@ String _beautifyStyleSheet(String source, String indentString) {
     buffer.clear();
     previousWasSpace = false;
     if (text.isEmpty) return;
-    lines.add('${indent()}${_spaceDeclarationColon(text)}${suffixSemicolon ? ';' : ''}');
+    lines.add(
+      '${indent()}${_spaceDeclarationColon(text)}${suffixSemicolon ? ';' : ''}',
+    );
   }
 
   void writeComment(String comment) {
@@ -480,13 +458,6 @@ class _HtmlBeautifyMinifyViewState extends State<_HtmlBeautifyMinifyView> {
     _run();
   }
 
-  void _clearInput() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-    });
-  }
-
   Future<void> _copyOutput() async {
     await Clipboard.setData(ClipboardData(text: _output.text));
   }
@@ -507,31 +478,30 @@ class _HtmlBeautifyMinifyViewState extends State<_HtmlBeautifyMinifyView> {
       },
     );
 
-    return ResizableSplit(
-      horizontal: false,
-      first: EditorPane(
-        label: 'Input',
-        actions: [
-          ToolButton(label: 'Sample', onPressed: _setSample),
-          ToolButton(label: 'Clear', onPressed: _clearInput),
-        ],
-        controller: _input,
-        onChanged: (_) => _run(),
-        placeholder: 'Paste HTML here...',
-        showHeader: false,
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: buildAdaptiveSplit(
+        first: EditorPane(
+          label: 'Input',
+          actions: [],
+          controller: _input,
+          onChanged: (_) => _run(),
+          placeholder: 'Paste HTML here...',
+          showHeader: true,
+        ),
+        second: _format == 'Preview'
+            ? HtmlRenderedPreview(html: _input.text, overlay: outputControls)
+            : EditorPane(
+                label: 'Output',
+                actions: const [],
+                controller: _output,
+                readOnly: true,
+                placeholder: 'Output...',
+                copyAction: _copyOutput,
+                showHeader: true,
+                overlay: outputControls,
+              ),
       ),
-      second: _format == 'Preview'
-          ? HtmlRenderedPreview(html: _input.text, overlay: outputControls)
-          : EditorPane(
-              label: 'Output',
-              actions: const [],
-              controller: _output,
-              readOnly: true,
-              placeholder: 'Output...',
-              copyAction: _copyOutput,
-              showHeader: false,
-              overlay: outputControls,
-            ),
     );
   }
 }
@@ -556,42 +526,32 @@ class _HtmlFormatControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appColors = context.appColors;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: appColors.panelElevated.withAlpha(236),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: appColors.border),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Format',
-              style: TextStyle(
-                color: appColors.editorText,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(width: 6),
-            SmallDropdown(
-              items: formats,
-              initialValue: format,
-              onChanged: onFormatChanged,
-            ),
-            if (showIndent) ...[
-              const SizedBox(width: 6),
-              SmallDropdown(
-                items: const ['2 spaces', '4 spaces', 'Tabs'],
-                initialValue: indent,
-                onChanged: onIndentChanged,
-              ),
-            ],
-          ],
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Format',
+          style: TextStyle(
+            color: appColors.editorText,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-      ),
+        const SizedBox(width: 6),
+        SmallDropdown(
+          items: formats,
+          initialValue: format,
+          onChanged: onFormatChanged,
+        ),
+        if (showIndent) ...[
+          const SizedBox(width: 6),
+          SmallDropdown(
+            items: const ['2 spaces', '4 spaces', 'Tabs'],
+            initialValue: indent,
+            onChanged: onIndentChanged,
+          ),
+        ],
+      ],
     );
   }
 }
@@ -1385,12 +1345,6 @@ class _JsBeautifyMinifyViewState extends State<_JsBeautifyMinifyView> {
     return matrix[a.length][b.length];
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _input.text = text);
-    _run();
-  }
-
   void _setSample() {
     const sample =
         '// program to generate fibonacci series up to n terms\n'
@@ -1411,60 +1365,51 @@ class _JsBeautifyMinifyViewState extends State<_JsBeautifyMinifyView> {
     _run();
   }
 
-  void _clearInput() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-    });
-  }
-
   Future<void> _copyOutput() async {
     await Clipboard.setData(ClipboardData(text: _output.text));
   }
 
   @override
   Widget build(BuildContext context) {
-    return buildSplitEditors(
-      inputActions: [
-        ToolButton(label: 'Go', onPressed: _run),
-        ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-        ToolButton(label: 'Sample', onPressed: _setSample),
-        ToolButton(label: 'Clear', onPressed: _clearInput),
-      ],
-      outputActions: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Format...',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(width: 6),
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: buildSplitEditors(
+        inputActions: [ToolButton(label: 'Go', onPressed: _run)],
+        outputActions: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Format...',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(width: 6),
+              SmallDropdown(
+                items: const ['Beautify', 'Minify', 'Wrap', 'Verify'],
+                initialValue: _format,
+                onChanged: (value) {
+                  setState(() => _format = value);
+                  _run();
+                },
+              ),
+            ],
+          ),
+          if (_format == 'Beautify')
             SmallDropdown(
-              items: const ['Beautify', 'Minify', 'Wrap', 'Verify'],
-              initialValue: _format,
+              items: const ['2 spaces', '4 spaces', 'Tabs'],
+              initialValue: _indent,
               onChanged: (value) {
-                setState(() => _format = value);
+                setState(() => _indent = value);
                 _run();
               },
             ),
-          ],
-        ),
-        if (_format == 'Beautify')
-          SmallDropdown(
-            items: const ['2 spaces', '4 spaces', 'Tabs'],
-            initialValue: _indent,
-            onChanged: (value) {
-              setState(() => _indent = value);
-              _run();
-            },
-          ),
-        ToolButton(label: 'Copy', onPressed: _copyOutput),
-      ],
-      inputController: _input,
-      outputController: _output,
-      inputPlaceholder: 'Paste JavaScript or TypeScript here...',
-      outputPlaceholder: 'Output...',
+          ToolButton(label: 'Copy', onPressed: _copyOutput),
+        ],
+        inputController: _input,
+        outputController: _output,
+        inputPlaceholder: 'Paste JavaScript or TypeScript here...',
+        outputPlaceholder: 'Output...',
+      ),
     );
   }
 }

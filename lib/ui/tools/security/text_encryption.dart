@@ -22,6 +22,7 @@ import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _TextEncryptionView extends StatefulWidget {
   const _TextEncryptionView();
@@ -870,194 +871,171 @@ class _TextEncryptionViewState extends State<_TextEncryptionView> {
       _algorithm = _algorithms.first;
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Controls row 1: Category & Algorithm
-        Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Category:',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(width: 8),
-                SmallDropdown(
-                  items: _categories,
-                  initialValue: _category,
-                  onChanged: (v) {
-                    setState(() {
-                      _category = v;
-                      _algorithm = _algorithmsByCategory[v]!.first;
-                    });
-                    _process();
-                  },
-                ),
-              ],
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Algorithm:',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(width: 8),
-                SmallDropdown(
-                  items: _algorithms,
-                  initialValue: _algorithm,
-                  onChanged: (v) {
-                    setState(() => _algorithm = v);
-                    _process();
-                  },
-                ),
-              ],
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Mode:',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(width: 8),
-                SegmentedToggle(
-                  options: const ['Encrypt', 'Decrypt'],
-                  initialIndex: _mode == 'Encrypt' ? 0 : 1,
-                  onChanged: (i) {
-                    setState(() => _mode = i == 0 ? 'Encrypt' : 'Decrypt');
-                    _process();
-                  },
-                ),
-              ],
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Output:',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(width: 8),
-                SegmentedToggle(
-                  options: const ['Base64', 'Hex'],
-                  initialIndex: _outputFormat == 'Base64' ? 0 : 1,
-                  onChanged: (i) {
-                    setState(() => _outputFormat = i == 0 ? 'Base64' : 'Hex');
-                    _process();
-                  },
-                ),
-              ],
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        // Key input row
-        Row(
-          children: [
-            const Text(
-              'Password/Key:',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Container(
-                decoration: toolSurfaceDecoration(context, radius: 6),
-                child: TextField(
-                  controller: _key,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    hintText: 'Enter password for encryption/decryption...',
-                    border: InputBorder.none,
-                    hintStyle: TextStyle(color: appColors.mutedText),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
-                    ),
-                    isDense: true,
+    return ToolSampleAction(
+      onPressed: () {
+        setState(() => _input.text = 'Hello, World! This is a secret message.');
+        _process();
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Controls row 1: Category & Algorithm
+          ToolToolbar(
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Category:',
+                    style: TextStyle(fontWeight: FontWeight.w600),
                   ),
-                  style: TextStyle(fontSize: 12, color: appColors.editorText),
-                  onChanged: (_) => _process(),
+                  const SizedBox(width: 8),
+                  SmallDropdown(
+                    items: _categories,
+                    initialValue: _category,
+                    onChanged: (v) {
+                      setState(() {
+                        _category = v;
+                        _algorithm = _algorithmsByCategory[v]!.first;
+                      });
+                      _process();
+                    },
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Algorithm:',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(width: 8),
+                  SmallDropdown(
+                    items: _algorithms,
+                    initialValue: _algorithm,
+                    onChanged: (v) {
+                      setState(() => _algorithm = v);
+                      _process();
+                    },
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Mode:',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(width: 8),
+                  SegmentedToggle(
+                    options: const ['Encrypt', 'Decrypt'],
+                    initialIndex: _mode == 'Encrypt' ? 0 : 1,
+                    onChanged: (i) {
+                      setState(() => _mode = i == 0 ? 'Encrypt' : 'Decrypt');
+                      _process();
+                    },
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Output:',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(width: 8),
+                  SegmentedToggle(
+                    options: const ['Base64', 'Hex'],
+                    initialIndex: _outputFormat == 'Base64' ? 0 : 1,
+                    onChanged: (i) {
+                      setState(() => _outputFormat = i == 0 ? 'Base64' : 'Hex');
+                      _process();
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Key input row
+          Row(
+            children: [
+              const Text(
+                'Password/Key:',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Container(
+                  decoration: toolSurfaceDecoration(context, radius: 6),
+                  child: TextField(
+                    controller: _key,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      hintText: 'Enter password for encryption/decryption...',
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      hintStyle: TextStyle(color: appColors.mutedText),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      isDense: true,
+                    ),
+                    style: TextStyle(fontSize: 12, color: appColors.editorText),
+                    onChanged: (_) => _process(),
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        // Input/Output editors
-        Expanded(
-          child: ResizableSplit(
-            horizontal: true,
-            first: EditorPane(
-              label: _mode == 'Encrypt' ? 'Plaintext' : 'Ciphertext',
-              actions: [
-                ToolButton(
-                  label: 'Clipboard',
-                  onPressed: () async {
-                    final text = await readClipboardText();
-                    setState(() => _input.text = text);
-                    _process();
-                  },
-                ),
-                ToolButton(
-                  label: 'Sample',
-                  onPressed: () {
-                    setState(
-                      () => _input.text =
-                          'Hello, World! This is a secret message.',
-                    );
-                    _process();
-                  },
-                ),
-                ToolButton(
-                  label: 'Clear',
-                  onPressed: () {
-                    setState(() {
-                      _input.clear();
-                      _output.clear();
-                      _error = null;
-                    });
-                  },
-                ),
-                ToolIconButton(
-                  icon: Icons.swap_horiz,
-                  tooltip: 'Swap & toggle mode',
-                  onPressed: _swapInputOutput,
-                ),
-              ],
-              controller: _input,
-              onChanged: (_) => _process(),
-              placeholder: _mode == 'Encrypt'
-                  ? 'Enter text to encrypt...'
-                  : 'Enter ciphertext to decrypt...',
-            ),
-            second: EditorPane(
-              label: _mode == 'Encrypt' ? 'Ciphertext' : 'Plaintext',
-              actions: [
-                ToolButton(
-                  label: 'Copy',
-                  onPressed: () =>
-                      Clipboard.setData(ClipboardData(text: _output.text)),
-                ),
-              ],
-              controller: _output,
-              readOnly: true,
-              placeholder: _mode == 'Encrypt'
-                  ? 'Encrypted output appears here...'
-                  : 'Decrypted output appears here...',
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Input/Output editors
+          Expanded(
+            child: buildAdaptiveSplit(
+              first: EditorPane(
+                label: _mode == 'Encrypt' ? 'Plaintext' : 'Ciphertext',
+                actions: [
+                  ToolIconButton(
+                    icon: Icons.swap_horiz,
+                    tooltip: 'Swap & toggle mode',
+                    onPressed: _swapInputOutput,
+                  ),
+                ],
+                controller: _input,
+                onChanged: (_) => _process(),
+                placeholder: _mode == 'Encrypt'
+                    ? 'Enter text to encrypt...'
+                    : 'Enter ciphertext to decrypt...',
+              ),
+              second: EditorPane(
+                label: _mode == 'Encrypt' ? 'Ciphertext' : 'Plaintext',
+                actions: [
+                  ToolButton(
+                    label: 'Copy',
+                    onPressed: () =>
+                        Clipboard.setData(ClipboardData(text: _output.text)),
+                  ),
+                ],
+                controller: _output,
+                readOnly: true,
+                placeholder: _mode == 'Encrypt'
+                    ? 'Encrypted output appears here...'
+                    : 'Decrypted output appears here...',
+              ),
             ),
           ),
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 8),
-          Text(_error!, style: errorToolTextStyle(context)),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(_error!, style: errorToolTextStyle(context)),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

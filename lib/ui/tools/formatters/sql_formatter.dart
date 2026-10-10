@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _SqlFormatterView extends StatefulWidget {
   const _SqlFormatterView();
@@ -42,70 +43,56 @@ class _SqlFormatterViewState extends State<_SqlFormatterView> {
 
   @override
   Widget build(BuildContext context) {
-    return buildSplitEditors(
-      inputActions: [
-        ToolButton(label: 'Go', onPressed: _run),
-        ToolButton(
-          label: 'Clipboard',
-          onPressed: () async {
-            final text = await readClipboardText();
-            setState(() => _input.text = text);
-            _run();
-          },
-        ),
-        ToolButton(
-          label: 'Sample',
-          onPressed: () {
-            setState(() => _input.text = 'select * from users where id = 1');
-            _run();
-          },
-        ),
-        ToolButton(
-          label: 'Clear',
-          onPressed: () {
-            setState(() => _input.clear());
-            _output.clear();
-          },
-        ),
-        const SmallDropdown(
-          items: ['General SQL'],
-          initialValue: 'General SQL',
-        ),
-      ],
-      outputActions: [
-        SmallDropdown(
-          items: const ['Format', 'SQL to English'],
-          initialValue: _mode,
-          onChanged: (value) {
-            setState(() => _mode = value);
-            _run();
-          },
-        ),
-        if (_mode == 'Format')
+    return ToolSampleAction(
+      onPressed: () {
+        setState(() => _input.text = 'select * from users where id = 1');
+        _run();
+      },
+      child: buildSplitEditors(
+        inputActions: [
+          ToolButton(label: 'Go', onPressed: _run),
+
+          const SmallDropdown(
+            items: ['General SQL'],
+            initialValue: 'General SQL',
+          ),
+        ],
+        outputActions: [
           SmallDropdown(
-            items: const ['Uppercase', 'Lowercase'],
-            initialValue: _case,
+            items: const ['Format', 'SQL to English'],
+            initialValue: _mode,
             onChanged: (value) {
-              setState(() => _case = value);
+              setState(() => _mode = value);
               _run();
             },
           ),
-        if (_mode == 'Format')
-          SmallDropdown(
-            items: const ['2 spaces', '4 spaces', 'Tabs'],
-            initialValue: _indent,
-            onChanged: (value) {
-              setState(() => _indent = value);
-              _run();
-            },
+          if (_mode == 'Format')
+            SmallDropdown(
+              items: const ['Uppercase', 'Lowercase'],
+              initialValue: _case,
+              onChanged: (value) {
+                setState(() => _case = value);
+                _run();
+              },
+            ),
+          if (_mode == 'Format')
+            SmallDropdown(
+              items: const ['2 spaces', '4 spaces', 'Tabs'],
+              initialValue: _indent,
+              onChanged: (value) {
+                setState(() => _indent = value);
+                _run();
+              },
+            ),
+          ToolButton(
+            label: 'Copy',
+            onPressed: () =>
+                Clipboard.setData(ClipboardData(text: _output.text)),
           ),
-        ToolButton(
-          label: 'Copy',
-          onPressed: () => Clipboard.setData(ClipboardData(text: _output.text)),
-        ),
-      ],
-      inputController: _input,
-      outputController: _output,
+        ],
+        inputController: _input,
+        outputController: _output,
+      ),
     );
   }
 }

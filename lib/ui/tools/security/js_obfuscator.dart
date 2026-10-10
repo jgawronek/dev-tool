@@ -7,6 +7,7 @@ import '../../../ui/widgets.dart';
 import '../common/editors.dart';
 import '../common/shared.dart';
 import '../../../services/js_obfuscator_service.dart';
+import '../../tool_sample_action.dart';
 
 const _sampleSource = r'''
 const config = { apiKey: "sk-live-0123456789", retries: 3 };
@@ -65,21 +66,6 @@ class _JsObfuscatorViewState extends State<_JsObfuscatorView> {
     _run();
   }
 
-  void _clear() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-      _report = null;
-      _error = null;
-    });
-  }
-
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _input.text = text);
-    _run();
-  }
-
   void _update(ObfuscatorOptions next) {
     setState(() => _options = next);
     _run();
@@ -87,31 +73,29 @@ class _JsObfuscatorViewState extends State<_JsObfuscatorView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: buildSplitEditors(
-            inputActions: [
-              ToolButton(label: 'Go', onPressed: _run),
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clear),
-            ],
-            outputActions: [
-              ToolButton(
-                label: 'Copy',
-                onPressed: () =>
-                    Clipboard.setData(ClipboardData(text: _output.text)),
-              ),
-            ],
-            inputController: _input,
-            outputController: _output,
-            inputPlaceholder: 'Paste JavaScript or TypeScript',
-            outputPlaceholder: 'Obfuscated source',
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        children: [
+          Expanded(
+            child: buildSplitEditors(
+              inputActions: [ToolButton(label: 'Go', onPressed: _run)],
+              outputActions: [
+                ToolButton(
+                  label: 'Copy',
+                  onPressed: () =>
+                      Clipboard.setData(ClipboardData(text: _output.text)),
+                ),
+              ],
+              inputController: _input,
+              outputController: _output,
+              inputPlaceholder: 'Paste JavaScript or TypeScript',
+              outputPlaceholder: 'Obfuscated source',
+            ),
           ),
-        ),
-        _buildOptions(),
-      ],
+          _buildOptions(),
+        ],
+      ),
     );
   }
 
@@ -128,44 +112,38 @@ class _JsObfuscatorViewState extends State<_JsObfuscatorView> {
               CompactCheck(
                 label: 'Rename identifiers',
                 value: _options.mangleIdentifiers,
-                onChanged: (value) => _update(
-                  _options.copy(mangleIdentifiers: value),
-                ),
+                onChanged: (value) =>
+                    _update(_options.copy(mangleIdentifiers: value)),
               ),
               CompactCheck(
                 label: 'Hoist strings',
                 value: _options.hoistStrings,
-                onChanged: (value) => _update(
-                  _options.copy(hoistStrings: value),
-                ),
+                onChanged: (value) =>
+                    _update(_options.copy(hoistStrings: value)),
               ),
               CompactCheck(
                 label: 'Inject dead code',
                 value: _options.deadCodeInjection,
-                onChanged: (value) => _update(
-                  _options.copy(deadCodeInjection: value),
-                ),
+                onChanged: (value) =>
+                    _update(_options.copy(deadCodeInjection: value)),
               ),
               CompactCheck(
                 label: 'Self-defending',
                 value: _options.selfDefending,
-                onChanged: (value) => _update(
-                  _options.copy(selfDefending: value),
-                ),
+                onChanged: (value) =>
+                    _update(_options.copy(selfDefending: value)),
               ),
               CompactCheck(
                 label: 'Debug protection',
                 value: _options.debugProtection,
-                onChanged: (value) => _update(
-                  _options.copy(debugProtection: value),
-                ),
+                onChanged: (value) =>
+                    _update(_options.copy(debugProtection: value)),
               ),
               CompactCheck(
                 label: 'Disable console',
                 value: _options.disableConsoleOutput,
-                onChanged: (value) => _update(
-                  _options.copy(disableConsoleOutput: value),
-                ),
+                onChanged: (value) =>
+                    _update(_options.copy(disableConsoleOutput: value)),
               ),
             ],
           ),
@@ -184,8 +162,9 @@ class _JsObfuscatorViewState extends State<_JsObfuscatorView> {
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerLeft,
                       child: SegmentedToggle(
-                        options:
-                            ManglerStyle.values.map((s) => s.label).toList(),
+                        options: ManglerStyle.values
+                            .map((s) => s.label)
+                            .toList(),
                         initialIndex: _options.style.index,
                         onChanged: (index) => _update(
                           _options.copy(style: ManglerStyle.values[index]),

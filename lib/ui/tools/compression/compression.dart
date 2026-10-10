@@ -9,6 +9,7 @@ import '../../../services/compression_service.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 /// Inputs past this size move to a background isolate; compressing a few MB
 /// of text synchronously would stall the editor's caret.
@@ -41,6 +42,7 @@ class _CompressionViewState extends State<_CompressionView> {
   bool get _modeCompress => _compressing;
 
   Future<void> _run() async {
+    final token = ++_token;
     final text = _input.text;
     if (text.trim().isEmpty) {
       setState(() {
@@ -52,7 +54,6 @@ class _CompressionViewState extends State<_CompressionView> {
     }
 
     // A newer keystroke supersedes this run.
-    final token = ++_token;
     final codec = _codec;
     final compressing = _compressing;
 
@@ -79,12 +80,6 @@ class _CompressionViewState extends State<_CompressionView> {
     });
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _input.text = text);
-    _run();
-  }
-
   void _setSample() {
     setState(() {
       _input.text = _modeCompress
@@ -94,15 +89,6 @@ class _CompressionViewState extends State<_CompressionView> {
           : 'H4sIAAAAAAAAA8tIzcnJBwCGphA2BQAAAA==';
     });
     _run();
-  }
-
-  void _clear() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-      _summary = '';
-      _error = null;
-    });
   }
 
   Future<void> _copyOutput() async {
@@ -123,45 +109,61 @@ class _CompressionViewState extends State<_CompressionView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: buildVerticalEditors(
-            inputActions: [
-              ToolButton(label: 'Go', onPressed: _run),
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clear),
+    final labels = CompressionCodec.values.map((c) => c.label).toList();
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ToolToolbar(
+            children: [
               SegmentedToggle(
                 options: const ['Compress', 'Decompress'],
                 initialIndex: _compressing ? 0 : 1,
                 onChanged: _setMode,
               ),
+              const Text('Format'),
+              SmallDropdown(
+                items: labels,
+                initialValue: _codec.label,
+                onChanged: (value) {
+                  final index = labels.indexOf(value);
+                  if (index < 0) return;
+                  setState(() => _codec = CompressionCodec.values[index]);
+                  _run();
+                },
+              ),
             ],
-            outputActions: [
-              ToolButton(label: 'Copy', onPressed: _copyOutput),
-              ToolButton(label: 'Use as input', onPressed: _useAsInput),
-            ],
-            inputController: _input,
-            outputController: _output,
-            onInputChanged: (_) => _run(),
-            inputPlaceholder: _modeCompress
-                ? 'Text to compress...'
-                : 'Paste Base64 or hex archive data...',
-            outputPlaceholder: _modeCompress
-                ? 'Base64 encoded archive...'
-                : 'Decompressed output...',
-            // EditorPane renders `outputActions` only when no overlay is
-            // supplied, so the output controls are composed into the overlay
-            // row instead of being passed separately.
-            outputOverlay: _buildOutputControls(context),
           ),
-        ),
-        if (_error != null || _summary.isNotEmpty)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 6),
+          const SizedBox(height: 12),
+          Expanded(
+            child: buildVerticalEditors(
+              inputLabel: _modeCompress ? 'Text' : 'Archive',
+              outputLabel: _modeCompress
+                  ? 'Base64 archive'
+                  : 'Decompressed text',
+              inputActions: [],
+              outputActions: [
+                ToolButton(
+                  label: 'Use as input',
+                  onPressed: _output.text.isEmpty ? null : _useAsInput,
+                ),
+                ToolButton(label: 'Copy', onPressed: _copyOutput),
+              ],
+              inputController: _input,
+              outputController: _output,
+              onInputChanged: (_) => _run(),
+              inputPlaceholder: _modeCompress
+                  ? 'Enter text to compress…'
+                  : 'Paste Base64 or hex archive data…',
+              outputPlaceholder: _modeCompress
+                  ? 'Compressed archive will appear here'
+                  : 'Decompressed text will appear here',
+            ),
+          ),
+          if (_error != null || _summary.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
               child: Text(
                 _error ?? _summary,
                 style: _error != null
@@ -169,31 +171,8 @@ class _CompressionViewState extends State<_CompressionView> {
                     : mutedToolTextStyle(context),
               ),
             ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildOutputControls(BuildContext context) {
-    final labels = CompressionCodec.values.map((c) => c.label).toList();
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SmallDropdown(
-          items: labels,
-          initialValue: _codec.label,
-          onChanged: (value) {
-            final index = labels.indexOf(value);
-            if (index < 0) return;
-            setState(() => _codec = CompressionCodec.values[index]);
-            _run();
-          },
-        ),
-        const SizedBox(width: 6),
-        ToolButton(label: 'Copy', onPressed: _copyOutput),
-        const SizedBox(width: 6),
-        ToolButton(label: 'Use as input', onPressed: _useAsInput),
-      ],
+        ],
+      ),
     );
   }
 }

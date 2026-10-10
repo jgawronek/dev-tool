@@ -43,132 +43,113 @@ class _LoremIpsumViewState extends State<_LoremIpsumView> {
 
   @override
   Widget build(BuildContext context) {
-    return ResizableSplit(
-      horizontal: true,
+    return buildAdaptiveSplit(
       initialRatio: 0.34,
       minFirstExtent: 300,
       minSecondExtent: 420,
-      first: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _LoremControlRow(
-                label: 'Count',
-                child: SmallDropdown(
-                  items: const ['x1', 'x5', 'x10'],
-                  initialValue: _count,
-                  width: 104,
-                  onChanged: (value) => setState(() => _count = value),
+      first: ToolPanel(
+        title: 'Insert content',
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _LoremControlRow(
+                  label: 'Count',
+                  child: SmallDropdown(
+                    items: const ['x1', 'x5', 'x10'],
+                    initialValue: _count,
+                    width: 104,
+                    onChanged: (value) => setState(() => _count = value),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              _LoremControlRow(
-                label: 'Mode',
-                child: SmallDropdown(
-                  items: const ['Replace', 'Append'],
-                  initialValue: _mode,
-                  width: 124,
-                  onChanged: (value) => setState(() => _mode = value),
+                const SizedBox(height: 8),
+                _LoremControlRow(
+                  label: 'Mode',
+                  child: SmallDropdown(
+                    items: const ['Replace', 'Append'],
+                    initialValue: _mode,
+                    width: 124,
+                    onChanged: (value) => setState(() => _mode = value),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 18),
-              _LoremSection(
-                title: 'Text',
-                children: [
-                  _LoremActionButton(
-                    label: 'Paragraph',
-                    onPressed: () => _addText(_paragraph()),
-                  ),
-                  _LoremActionButton(
-                    label: 'Sentence',
-                    onPressed: () => _addText('Lorem ipsum dolor sit amet.'),
-                  ),
-                  _LoremActionButton(
-                    label: 'Word',
-                    onPressed: () => _addText('Lorem'),
-                  ),
-                  _LoremActionButton(
-                    label: 'Title',
-                    onPressed: () => _addText('Lorem Ipsum Title'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _LoremSection(
-                title: 'Identity',
-                children: [
-                  _LoremActionButton(
-                    label: 'First name',
-                    onPressed: () => _addText('Alex'),
-                  ),
-                  _LoremActionButton(
-                    label: 'Last name',
-                    onPressed: () => _addText('Johnson'),
-                  ),
-                  _LoremActionButton(
-                    label: 'Full name',
-                    onPressed: () => _addText('Alex Johnson'),
-                  ),
-                  _LoremActionButton(
-                    label: 'Email',
-                    onPressed: () => _addText('hello@example.com'),
-                  ),
-                  _LoremActionButton(
-                    label: 'URL',
-                    onPressed: () => _addText('https://example.com'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _LoremSection(
-                title: 'Social',
-                children: [
-                  _LoremActionButton(
-                    label: 'Short tweet',
-                    onPressed: () => _addText('Building tools offline.'),
-                  ),
-                  _LoremActionButton(
-                    label: 'Long tweet',
-                    onPressed: () => _addText(
-                      'DevUtils helps you with daily tasks, offline and fast.',
+                const SizedBox(height: 18),
+                _LoremSection(
+                  title: 'Text',
+                  children: [
+                    _LoremActionButton(
+                      label: 'Paragraph',
+                      onPressed: () => _addText(_paragraph()),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    _LoremActionButton(
+                      label: 'Sentence',
+                      onPressed: () => _addText('Lorem ipsum dolor sit amet.'),
+                    ),
+                    _LoremActionButton(
+                      label: 'Word',
+                      onPressed: () => _addText('Lorem'),
+                    ),
+                    _LoremActionButton(
+                      label: 'Title',
+                      onPressed: () => _addText('Lorem Ipsum Title'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _LoremSection(
+                  title: 'Identity',
+                  children: [
+                    _LoremActionButton(
+                      label: 'First name',
+                      onPressed: () => _addText('Alex'),
+                    ),
+                    _LoremActionButton(
+                      label: 'Last name',
+                      onPressed: () => _addText('Johnson'),
+                    ),
+                    _LoremActionButton(
+                      label: 'Full name',
+                      onPressed: () => _addText('Alex Johnson'),
+                    ),
+                    _LoremActionButton(
+                      label: 'Email',
+                      onPressed: () => _addText('hello@example.com'),
+                    ),
+                    _LoremActionButton(
+                      label: 'URL',
+                      onPressed: () => _addText('https://example.com'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _LoremSection(
+                  title: 'Social',
+                  children: [
+                    _LoremActionButton(
+                      label: 'Short tweet',
+                      onPressed: () => _addText('Building tools offline.'),
+                    ),
+                    _LoremActionButton(
+                      label: 'Long tweet',
+                      onPressed: () => _addText(
+                        'DevUtils helps you with daily tasks, offline and fast.',
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
-      second: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Text(
-                'Output',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const Spacer(),
-              ToolButton(
-                label: 'Reset output',
-                onPressed: () => setState(() => _output.clear()),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: EditorPane(
-              label: '',
-              actions: const [],
-              controller: _output,
-              placeholder: 'Generated text...',
-              copyAction: _copyOutput,
-              showHeader: false,
-            ),
-          ),
-        ],
+      second: EditorPane(
+        label: 'Generated text',
+        actions: const [],
+        controller: _output,
+        placeholder: 'Generated text...',
+        copyAction: _copyOutput,
+        showHeader: true,
       ),
     );
   }

@@ -7,6 +7,7 @@ import '../../../services/subdomain_lookup_service.dart';
 import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
+import '../../tool_sample_action.dart';
 
 class _SubdomainFinderView extends StatefulWidget {
   const _SubdomainFinderView();
@@ -104,15 +105,6 @@ class _SubdomainFinderViewState extends State<_SubdomainFinderView> {
     _domain.text = _isDomainMode ? 'github.com' : 'GitHub';
   }
 
-  void _clear() {
-    setState(() {
-      _domain.clear();
-      _results.clear();
-      _error = null;
-      _status = _emptyStatus;
-    });
-  }
-
   void _changeMode(int index) {
     final mode = index == 0
         ? SubdomainLookupMode.domain
@@ -131,100 +123,106 @@ class _SubdomainFinderViewState extends State<_SubdomainFinderView> {
   @override
   Widget build(BuildContext context) {
     final appColors = context.appColors;
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            decoration: toolSurfaceDecoration(context),
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Padding(
+        padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ToolPanel(
+              title: 'Search options',
+              expand: false,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    SegmentedToggle(
-                      options: const ['Domain', 'Organization'],
-                      initialIndex: _isDomainMode ? 0 : 1,
-                      onChanged: _changeMode,
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        SegmentedToggle(
+                          options: const ['Domain', 'Organization'],
+                          initialIndex: _isDomainMode ? 0 : 1,
+                          onChanged: _changeMode,
+                        ),
+                        Text(
+                          'Target',
+                          style: TextStyle(
+                            color: appColors.editorText,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        ToolButton(
+                          label: 'Find known',
+                          onPressed: _loading ? null : _findSubdomains,
+                        ),
+                      ],
                     ),
-                    Text(
-                      'Target',
-                      style: TextStyle(
-                        color: appColors.editorText,
-                        fontWeight: FontWeight.w700,
+                    const SizedBox(height: 10),
+                    Container(
+                      decoration: toolSurfaceDecoration(context, radius: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: TextField(
+                        controller: _domain,
+                        enabled: !_loading,
+                        onSubmitted: (_) => _findSubdomains(),
+                        decoration: InputDecoration(
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          isDense: true,
+                          hintText: _inputHint,
+                          hintStyle: TextStyle(color: appColors.mutedText),
+                        ),
+                        style: TextStyle(
+                          color: appColors.editorText,
+                          fontFamily: 'Menlo',
+                          fontSize: 13,
+                        ),
                       ),
-                    ),
-                    ToolButton(
-                      label: 'Find known',
-                      onPressed: _loading ? null : _findSubdomains,
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                Container(
-                  decoration: toolSurfaceDecoration(context, radius: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: TextField(
-                    controller: _domain,
-                    enabled: !_loading,
-                    onSubmitted: (_) => _findSubdomains(),
-                    decoration: InputDecoration(
-                      border: InputBorder.none,
-                      isDense: true,
-                      hintText: _inputHint,
-                      hintStyle: TextStyle(color: appColors.mutedText),
-                    ),
-                    style: TextStyle(
-                      color: appColors.editorText,
-                      fontFamily: 'Menlo',
-                      fontSize: 13,
-                    ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                if (_loading) ...[
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Expanded(
+                  child: Text(
+                    _error ?? _status,
+                    style: _error == null
+                        ? mutedToolTextStyle(context)
+                        : errorToolTextStyle(context),
                   ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              if (_loading) ...[
-                const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                const SizedBox(width: 8),
-              ],
-              Expanded(
-                child: Text(
-                  _error ?? _status,
-                  style: _error == null
-                      ? mutedToolTextStyle(context)
-                      : errorToolTextStyle(context),
-                ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: EditorPane(
+                label: 'Public subdomains',
+                actions: [],
+                controller: _results,
+                readOnly: true,
+                placeholder: _outputPlaceholder,
+                showHeader: true,
               ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Expanded(
-            child: EditorPane(
-              label: 'Public subdomains',
-              actions: [
-                ToolButton(label: 'Sample', onPressed: _setSample),
-                ToolButton(label: 'Clear', onPressed: _clear),
-              ],
-              controller: _results,
-              readOnly: true,
-              placeholder: _outputPlaceholder,
-              showHeader: false,
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

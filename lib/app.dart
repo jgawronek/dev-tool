@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'state/tool_state.dart';
 import 'state/tool_state_scope.dart';
 import 'ui/app_colors.dart';
+import 'ui/documentation.dart';
 import 'ui/main_shell.dart';
 
 class DevToolApp extends StatelessWidget {
@@ -25,7 +26,10 @@ class DevToolApp extends StatelessWidget {
               themeMode: darkMode ? ThemeMode.dark : ThemeMode.light,
               home: ToolStateScope(
                 state: state,
-                child: MainShell(state: state),
+                child: DocumentationMenuHost(
+                  state: state,
+                  child: MainShell(state: state),
+                ),
               ),
             );
           },

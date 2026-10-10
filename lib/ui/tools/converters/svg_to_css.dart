@@ -6,10 +6,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import '../../../services/file_dialog_service.dart';
-import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _SvgToCssView extends StatefulWidget {
   const _SvgToCssView();
@@ -58,9 +58,10 @@ class _SvgToCssViewState extends State<_SvgToCssView> {
   /// Cheap structural check: an SVG document must have a root `<svg>`
   /// element. Namespaced or prefixed tags are accepted.
   bool _looksLikeSvg(String source) {
-    return RegExp(r'<[\w.-]*:?\bsvg[\s>]', caseSensitive: false).hasMatch(
-      source,
-    );
+    return RegExp(
+      r'<[\w.-]*:?\bsvg[\s>]',
+      caseSensitive: false,
+    ).hasMatch(source);
   }
 
   Future<void> _pickSvgFile() async {
@@ -103,78 +104,69 @@ class _SvgToCssViewState extends State<_SvgToCssView> {
     _run();
   }
 
-  void _clear() {
-    setState(() {
-      _sourceFileName = null;
-      _error = null;
-      _input.clear();
-      _output.clear();
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (_error != null) ...[
-          Text(_error!, style: errorToolTextStyle(context)),
-          const SizedBox(height: 8),
-        ],
-        Expanded(
-          child: ResizableSplit(
-            horizontal: false,
-            initialRatio: 0.68,
-            first: ResizableSplit(
-              horizontal: false,
-              initialRatio: 0.52,
-              first: FileDropTargetRegion(
-                targetId: _dropTargetId,
-                onDropped: (paths) {
-                  if (paths.isNotEmpty) unawaited(_loadSvgFile(paths.first));
-                },
-                child: EditorPane(
-                  label: 'Source',
-                  actions: [
-                    ToolButton(label: 'Sample', onPressed: _setSample),
-                    ToolButton(label: 'Clear', onPressed: _clear),
-                  ],
-                  controller: _input,
-                  onChanged: (_) {
-                    _sourceFileName = null;
-                    _run();
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_error != null) ...[
+            Text(_error!, style: errorToolTextStyle(context)),
+            const SizedBox(height: 8),
+          ],
+          Expanded(
+            child: buildAdaptiveSplit(
+              initialRatio: 0.68,
+              first: ResizableSplit(
+                horizontal: false,
+                initialRatio: 0.52,
+                first: FileDropTargetRegion(
+                  targetId: _dropTargetId,
+                  onDropped: (paths) {
+                    if (paths.isNotEmpty) unawaited(_loadSvgFile(paths.first));
                   },
-                  placeholder: 'Drop an .svg file here or paste SVG source...',
-                  showHeader: false,
-                  enableFileDrop: false,
-                  overlay: SourceFileControls(
-                    onPickFile: _pickSvgFile,
-                    fileName: _sourceFileName,
-                    tooltip: 'Choose SVG file',
+                  child: EditorPane(
+                    label: 'Source',
+                    actions: [],
+                    controller: _input,
+                    onChanged: (_) {
+                      _sourceFileName = null;
+                      _run();
+                    },
+                    placeholder:
+                        'Drop an .svg file here or paste SVG source...',
+                    showHeader: true,
+                    enableFileDrop: false,
+                    overlay: SourceFileControls(
+                      onPickFile: _pickSvgFile,
+                      fileName: _sourceFileName,
+                      tooltip: 'Choose SVG file',
+                    ),
+                  ),
+                ),
+                second: EditorPane(
+                  label: 'CSS',
+                  actions: const [],
+                  controller: _output,
+                  readOnly: true,
+                  placeholder: 'Output...',
+                  showHeader: true,
+                  overlay: SmallDropdown(
+                    items: const ['URL Encoded', 'Raw'],
+                    initialValue: _format,
+                    onChanged: (value) {
+                      setState(() => _format = value);
+                      _run();
+                    },
                   ),
                 ),
               ),
-              second: EditorPane(
-                label: 'CSS',
-                actions: const [],
-                controller: _output,
-                readOnly: true,
-                placeholder: 'Output...',
-                showHeader: false,
-                overlay: SmallDropdown(
-                  items: const ['URL Encoded', 'Raw'],
-                  initialValue: _format,
-                  onChanged: (value) {
-                    setState(() => _format = value);
-                    _run();
-                  },
-                ),
-              ),
+              second: _SvgPreviewPane(svg: _input.text),
             ),
-            second: _SvgPreviewPane(svg: _input.text),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -187,21 +179,7 @@ class _SvgPreviewPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final trimmed = svg.trim();
-    if (trimmed.isEmpty) {
-      return Container(
-        decoration: toolSurfaceDecoration(context),
-        child: Center(
-          child: Text(
-            'SVG preview',
-            style: TextStyle(color: context.appColors.mutedText),
-          ),
-        ),
-      );
-    }
-    return HtmlRenderedPreview(
-      html: trimmed,
-      overlay: const SizedBox.shrink(),
-    );
+    return HtmlRenderedPreview(html: trimmed, overlay: const SizedBox.shrink());
   }
 }
 

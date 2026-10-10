@@ -4,6 +4,8 @@ import FlutterMacOS
 @main
 class AppDelegate: FlutterAppDelegate {
   override func applicationDidFinishLaunching(_ notification: Notification) {
+    super.applicationDidFinishLaunching(notification)
+    NSApp.windows.compactMap { $0 as? MainFlutterWindow }.first?.configureDocumentationMenu()
     NSApp.activate(ignoringOtherApps: true)
   }
 

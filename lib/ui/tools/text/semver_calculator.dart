@@ -87,7 +87,8 @@ class _SemVerCalculatorViewState extends State<_SemVerCalculatorView> {
       }
     }
 
-    final invalid = (left == null && _left.text.trim().isNotEmpty) ||
+    final invalid =
+        (left == null && _left.text.trim().isNotEmpty) ||
         (right == null && _right.text.trim().isNotEmpty);
     setState(() {
       _output.text = buffer.toString().trimRight();
@@ -98,7 +99,11 @@ class _SemVerCalculatorViewState extends State<_SemVerCalculatorView> {
     });
   }
 
-  String _summarise(SemVer? left, SemVer? right, ({String highest, List<SemVer> matched, List<SemVer> candidates}) resolved) {
+  String _summarise(
+    SemVer? left,
+    SemVer? right,
+    ({String highest, List<SemVer> matched, List<SemVer> candidates}) resolved,
+  ) {
     final parts = <String>[];
     if (left != null && right != null) {
       final result = compareSemVer(left, right);
@@ -106,8 +111,8 @@ class _SemVerCalculatorViewState extends State<_SemVerCalculatorView> {
         result == 0
             ? 'A and B are equal'
             : result < 0
-                ? 'A is older'
-                : 'A is newer',
+            ? 'A is older'
+            : 'A is newer',
       );
       parts.add(diffSemVer(left, right).summary);
     }
@@ -133,7 +138,7 @@ class _SemVerCalculatorViewState extends State<_SemVerCalculatorView> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -155,71 +160,77 @@ class _SemVerCalculatorViewState extends State<_SemVerCalculatorView> {
   }
 
   Widget _buildInputs(BuildContext context) {
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              SizedBox(
-                width: 132,
-                child: _Field(
-                  label: 'A',
-                  controller: _left,
-                  onChanged: (_) => _run(),
+    return ToolPanel(
+      title: 'Versions and range',
+      expand: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 132,
+                  child: _Field(
+                    label: 'A',
+                    controller: _left,
+                    onChanged: (_) => _run(),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              SizedBox(
-                width: 132,
-                child: _Field(
-                  label: 'B',
-                  controller: _right,
-                  onChanged: (_) => _run(),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 132,
+                  child: _Field(
+                    label: 'B',
+                    controller: _right,
+                    onChanged: (_) => _run(),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              ToolButton(label: 'Swap', onPressed: _swap),
-              const SizedBox(width: 10),
-              SizedBox(
-                width: 132,
-                child: _Field(
-                  label: 'Range',
-                  controller: _range,
-                  onChanged: (_) => _run(),
+                const SizedBox(width: 10),
+                ToolButton(label: 'Swap', onPressed: _swap),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 132,
+                  child: _Field(
+                    label: 'Range',
+                    controller: _range,
+                    onChanged: (_) => _run(),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              ToolButton(label: 'Copy', onPressed: _copyOutput),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Range supports ^ ~ >= > < <= =, x wildcards, "1.2.3 - 1.2.9", '
-            'and "||" alternatives.',
-            style: mutedToolTextStyle(context, fontSize: 11),
-          ),
-        ],
+                const SizedBox(width: 8),
+                ToolButton(label: 'Copy', onPressed: _copyOutput),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Range supports ^ ~ >= > < <= =, x wildcards, "1.2.3 - 1.2.9", '
+              'and "||" alternatives.',
+              style: mutedToolTextStyle(context, fontSize: 11),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildOutput(BuildContext context) {
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-      child: SingleChildScrollView(
-        child: SelectableText(
-          _output.text.isEmpty
-              ? 'Enter two versions to compare.'
-              : _output.text,
-          style: TextStyle(
-            fontFamily: 'Menlo',
-            fontSize: 12,
-            height: 1.55,
-            color: context.appColors.editorText,
+    return ToolPanel(
+      title: 'Comparison',
+      expand: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+        child: SingleChildScrollView(
+          child: SelectableText(
+            _output.text.isEmpty
+                ? 'Enter two versions to compare.'
+                : _output.text,
+            style: TextStyle(
+              fontFamily: 'Menlo',
+              fontSize: 12,
+              height: 1.55,
+              color: context.appColors.editorText,
+            ),
           ),
         ),
       ),

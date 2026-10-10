@@ -19,6 +19,7 @@ import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 // Box geometry is owned by PlantUmlService so the layout engine reserves the
 // exact space the canvas draws into. These keep the renderer's call sites.
@@ -1338,29 +1339,6 @@ User --> Role : has
     _scheduleFit();
   }
 
-  void _clear() {
-    setState(() {
-      _diagram = UmlDiagram();
-      _selected = null;
-      _selectedGroup = null;
-      _pan = Offset.zero;
-      _scale = 1.0;
-      _source.text = PlantUmlService.generate(_diagram);
-    });
-  }
-
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    if (text.isEmpty) return;
-    setState(() {
-      _diagram = PlantUmlService.parse(text);
-      _selected = null;
-      _selectedGroup = null;
-      _source.text = PlantUmlService.generate(_diagram);
-    });
-    _scheduleFit();
-  }
-
   // A .puml/.txt file dropped on the canvas: load and parse it.
   Future<void> _loadDroppedFile(List<String> paths) async {
     if (paths.isEmpty) return;
@@ -1617,8 +1595,7 @@ User --> Role : has
 
   @override
   Widget build(BuildContext context) {
-    final split = ResizableSplit(
-      horizontal: true,
+    final split = buildAdaptiveSplit(
       initialRatio: 0.6,
       minFirstExtent: 280,
       minSecondExtent: 240,
@@ -1671,11 +1648,7 @@ User --> Role : has
       ),
       second: EditorPane(
         label: 'PlantUML',
-        actions: [
-          ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-          ToolButton(label: 'Sample', onPressed: _setSample),
-          ToolButton(label: 'Clear', onPressed: _clear),
-        ],
+        actions: [],
         controller: _source,
         onChanged: _onSourceChanged,
         revealLine: _highlightLine,
@@ -1686,7 +1659,7 @@ User --> Role : has
         copyAction: () => Clipboard.setData(ClipboardData(text: _source.text)),
       ),
     );
-    return split;
+    return ToolSampleAction(onPressed: _setSample, child: split);
   }
 }
 
@@ -1841,370 +1814,317 @@ class _UmlCanvasPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appColors = context.appColors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          // Matches the EditorPane header height so the "Diagram" and
-          // "PlantUML" labels line up across the split.
-          height: 38,
-          alignment: Alignment.centerLeft,
-          child: Row(
-            children: [
-              const Text(
-                'Diagram',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SmallDropdown(
-                          items: _umlCanvasStyles,
-                          initialValue: bgStyle,
-                          onChanged: onBgStyle,
-                        ),
-                        const SizedBox(width: 6),
-                        SmallDropdown(
-                          items: _umlNodeSkins,
-                          initialValue: nodeSkin,
-                          onChanged: onNodeSkin,
-                        ),
-                        const SizedBox(width: 6),
-                        ToolButton(
-                          label: 'Tidy',
-                          icon: Icons.grid_view,
-                          onPressed: onTidy,
-                        ),
-                        const SizedBox(width: 6),
-                        ToolButton(
-                          label: 'Snap',
-                          icon: snapToGrid ? Icons.grid_on : Icons.grid_off,
-                          onPressed: onToggleSnap,
-                        ),
-                        const SizedBox(width: 6),
-                        ToolIconButton(
-                          icon: Icons.zoom_out,
-                          tooltip: 'Zoom out',
-                          onPressed: onZoomOut,
-                        ),
-                        ToolIconButton(
-                          icon: Icons.zoom_in,
-                          tooltip: 'Zoom in',
-                          onPressed: onZoomIn,
-                        ),
-                        ToolButton(
-                          label: 'Fit',
-                          icon: Icons.fit_screen,
-                          onPressed: onFit,
-                        ),
-                        const SizedBox(width: 6),
-                        PopupMenuButton<String>(
-                          tooltip: 'Save / export',
-                          position: PopupMenuPosition.under,
-                          color: appColors.panelElevated,
-                          onSelected: (value) => switch (value) {
-                            'save' => onSavePuml(),
-                            'png' => onExportPng(),
-                            'pdf' => onExportPdf(),
-                            'print' => onPrint(),
-                            _ => null,
-                          },
-                          itemBuilder: (_) => [
-                            _exportMenuItem(
-                              'save',
-                              Icons.save_outlined,
-                              'Save .puml',
-                            ),
-                            _exportMenuItem(
-                              'png',
-                              Icons.image_outlined,
-                              'Export PNG…',
-                            ),
-                            _exportMenuItem(
-                              'pdf',
-                              Icons.picture_as_pdf_outlined,
-                              'Export PDF…',
-                            ),
-                            _exportMenuItem(
-                              'print',
-                              Icons.print_outlined,
-                              'Print…  ⌘P',
-                            ),
-                          ],
-                          child: AbsorbPointer(
-                            child: ToolButton(
-                              label: 'Export',
-                              icon: Icons.ios_share,
-                              onPressed: () {},
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+    return ToolPanel(
+      title: 'Diagram',
+      actions: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SmallDropdown(
+              items: _umlCanvasStyles,
+              initialValue: bgStyle,
+              onChanged: onBgStyle,
+            ),
+            const SizedBox(width: 6),
+            SmallDropdown(
+              items: _umlNodeSkins,
+              initialValue: nodeSkin,
+              onChanged: onNodeSkin,
+            ),
+            const SizedBox(width: 6),
+            ToolButton(label: 'Tidy', icon: Icons.grid_view, onPressed: onTidy),
+            const SizedBox(width: 6),
+            ToolButton(
+              label: 'Snap',
+              icon: snapToGrid ? Icons.grid_on : Icons.grid_off,
+              onPressed: onToggleSnap,
+            ),
+            const SizedBox(width: 6),
+            ToolIconButton(
+              icon: Icons.zoom_out,
+              tooltip: 'Zoom out',
+              onPressed: onZoomOut,
+            ),
+            ToolIconButton(
+              icon: Icons.zoom_in,
+              tooltip: 'Zoom in',
+              onPressed: onZoomIn,
+            ),
+            ToolButton(label: 'Fit', icon: Icons.fit_screen, onPressed: onFit),
+            const SizedBox(width: 6),
+            PopupMenuButton<String>(
+              tooltip: 'Save / export',
+              position: PopupMenuPosition.under,
+              color: appColors.panelElevated,
+              onSelected: (value) => switch (value) {
+                'save' => onSavePuml(),
+                'png' => onExportPng(),
+                'pdf' => onExportPdf(),
+                'print' => onPrint(),
+                _ => null,
+              },
+              itemBuilder: (_) => [
+                _exportMenuItem('save', Icons.save_outlined, 'Save .puml'),
+                _exportMenuItem('png', Icons.image_outlined, 'Export PNG…'),
+                _exportMenuItem(
+                  'pdf',
+                  Icons.picture_as_pdf_outlined,
+                  'Export PDF…',
                 ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 6),
-        Expanded(
-          child: FileDropTargetRegion(
-            targetId: dropTargetId,
-            onDropped: onDropFile,
-            child: Container(
-              decoration: BoxDecoration(
-                color: _umlCanvasBackground(bgStyle, appColors),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: appColors.border),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: FocusableActionDetector(
-                focusNode: focusNode,
-                shortcuts: const {
-                  SingleActivator(LogicalKeyboardKey.delete): _DeleteIntent(),
-                  SingleActivator(LogicalKeyboardKey.backspace):
-                      _DeleteIntent(),
-                  SingleActivator(LogicalKeyboardKey.keyS, meta: true):
-                      _SavePumlIntent(),
-                  SingleActivator(LogicalKeyboardKey.keyP, meta: true):
-                      _PrintDiagramIntent(),
-                },
-                actions: {
-                  _DeleteIntent: CallbackAction<_DeleteIntent>(
-                    onInvoke: (_) {
-                      onDeleteSelected();
-                      return null;
-                    },
-                  ),
-                  _SavePumlIntent: CallbackAction<_SavePumlIntent>(
-                    onInvoke: (_) {
-                      onSavePuml();
-                      return null;
-                    },
-                  ),
-                  _PrintDiagramIntent: CallbackAction<_PrintDiagramIntent>(
-                    onInvoke: (_) {
-                      onPrint();
-                      return null;
-                    },
-                  ),
-                },
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    onViewport(constraints.biggest);
-                    final extent = _canvasExtent(constraints.biggest);
-                    return Listener(
-                      // Mouse wheel / two-finger scroll zooms toward the cursor.
-                      onPointerSignal: (event) {
-                        if (event is PointerScrollEvent) {
-                          onZoom(
-                            exp(-event.scrollDelta.dy * 0.006),
-                            event.localPosition,
-                          );
-                        }
-                      },
-                      // Trackpad pinch / two-finger pan (macOS delivers these as
-                      // pan-zoom gestures, not scroll signals).
-                      onPointerPanZoomStart: (_) => onScaleStart(),
-                      onPointerPanZoomUpdate: (event) => onScaleUpdate(
-                        event.scale,
-                        event.localPosition,
-                        event.panDelta,
-                      ),
-                      child: Stack(
-                        children: [
-                          // Background: empty-space drag pans the canvas; tap clears
-                          // the selection.
-                          Positioned.fill(
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: () => onSelect(null),
-                              onPanUpdate: (d) => onPan(d.delta),
-                              onSecondaryTapDown: (d) => onCanvasMenu(
-                                d.globalPosition,
-                                d.localPosition,
-                              ),
-                              child: const SizedBox.expand(),
-                            ),
-                          ),
-                          if (diagram.types.isEmpty && diagram.groups.isEmpty)
-                            Center(
-                              child: Text(
-                                'Nothing to show yet.\nDrop a .puml file, type PlantUML, '
-                                'or add a class.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: appColors.mutedText,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                          // Positioned(left:0,top:0) gives the content unbounded
-                          // constraints so the SizedBox keeps its FULL extent
-                          // (not clamped to the viewport) — otherwise content below
-                          // the viewport is painted but not hit-testable.
-                          Positioned(
-                            left: 0,
-                            top: 0,
-                            child: Transform.translate(
-                              offset: pan,
-                              child: Transform.scale(
-                                scale: scale,
-                                alignment: Alignment.topLeft,
-                                child: RepaintBoundary(
-                                  key: captureKey,
-                                  child: SizedBox(
-                                    width: extent.width,
-                                    height: extent.height,
-                                    child: Stack(
-                                      clipBehavior: Clip.none,
-                                      children: [
-                                        // Solid background so an exported PNG/PDF
-                                        // matches the canvas instead of being
-                                        // transparent (invisible on-screen behind
-                                        // the live content).
-                                        Positioned.fill(
-                                          child: ColoredBox(
-                                            color: _umlCanvasBackground(
-                                              bgStyle,
-                                              appColors,
-                                            ),
-                                          ),
-                                        ),
-                                        // Alignment grid (behind everything) when
-                                        // snap-to-grid is on.
-                                        if (snapToGrid)
-                                          Positioned.fill(
-                                            child: IgnorePointer(
-                                              child: CustomPaint(
-                                                painter: _GridPainter(
-                                                  step: gridStep,
-                                                  color: appColors.border,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        // Group containers (parents first, behind nodes).
-                                        for (final group in _groupsByDepth)
-                                          Positioned(
-                                            left: group.x,
-                                            top: group.y,
-                                            child: _UmlGroupBox(
-                                              group: group,
-                                              selected:
-                                                  group.id == selectedGroup,
-                                              stereo: _stereotypeColors(
-                                                diagram,
-                                                group.stereotype,
-                                                appColors,
-                                                nodeSkin,
-                                                identity: group.id,
-                                              ),
-                                              onSelect: () =>
-                                                  onSelectGroup(group.id),
-                                              onDrag: (delta) =>
-                                                  onGroupDrag(group, delta),
-                                              onDragEnd: onGroupDragEnd,
-                                              onPan: onPan,
-                                              onContextMenu: (pos) =>
-                                                  onGroupMenu(group.id, pos),
-                                            ),
-                                          ),
-                                        Positioned.fill(
-                                          child: IgnorePointer(
-                                            child: CustomPaint(
-                                              painter: _UmlDiagramPainter(
-                                                diagram: diagram,
-                                                colors: appColors,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        for (final type in diagram.types)
-                                          Positioned(
-                                            // Selected boxes reserve a handle margin; shift
-                                            // back so the box stays put visually.
-                                            left:
-                                                type.x -
-                                                (type.name == selected
-                                                    ? _umlHandleInset
-                                                    : 0),
-                                            top:
-                                                type.y -
-                                                (type.name == selected
-                                                    ? _umlHandleInset
-                                                    : 0),
-                                            child: _UmlTypeBox(
-                                              type: type,
-                                              selected: type.name == selected,
-                                              sketch: bgStyle == 'Sketch',
-                                              stereo: _stereotypeColors(
-                                                diagram,
-                                                type.stereotype,
-                                                appColors,
-                                                nodeSkin,
-                                                identity: type.name,
-                                              ),
-                                              editing: type.name == editing,
-                                              onSelect: () =>
-                                                  onSelect(type.name),
-                                              onDrag: (delta) =>
-                                                  onBoxDrag(type, delta),
-                                              onDragEnd: onBoxDragEnd,
-                                              onPan: onPan,
-                                              onRename: (text) =>
-                                                  onRename(type.name, text),
-                                              onEndEdit: onEndEdit,
-                                              onContextMenu: (pos) =>
-                                                  onNodeMenu(type.name, pos),
-                                              onResize: (handle, delta) =>
-                                                  onResize(type, handle, delta),
-                                              onResizeEnd: onResizeEnd,
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          // Fixed overlays (unaffected by pan/zoom).
-                          if (diagram.heading != null)
-                            Positioned(
-                              top: 8,
-                              left: 12,
-                              right: 12,
-                              child: IgnorePointer(
-                                child: Center(
-                                  child: _UmlTitleChip(text: diagram.heading!),
-                                ),
-                              ),
-                            ),
-                          Positioned(
-                            right: 8,
-                            bottom: 8,
-                            child: IgnorePointer(
-                              child: _UmlZoomBadge(scale: scale),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                _exportMenuItem('print', Icons.print_outlined, 'Print…  ⌘P'),
+              ],
+              child: AbsorbPointer(
+                child: ToolButton(
+                  label: 'Export',
+                  icon: Icons.ios_share,
+                  onPressed: () {},
                 ),
               ),
             ),
-          ),
+          ],
         ),
       ],
+      child: FileDropTargetRegion(
+        targetId: dropTargetId,
+        onDropped: onDropFile,
+        child: Container(
+          decoration: BoxDecoration(
+            color: _umlCanvasBackground(bgStyle, appColors),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: FocusableActionDetector(
+            focusNode: focusNode,
+            shortcuts: const {
+              SingleActivator(LogicalKeyboardKey.delete): _DeleteIntent(),
+              SingleActivator(LogicalKeyboardKey.backspace): _DeleteIntent(),
+              SingleActivator(LogicalKeyboardKey.keyS, meta: true):
+                  _SavePumlIntent(),
+              SingleActivator(LogicalKeyboardKey.keyP, meta: true):
+                  _PrintDiagramIntent(),
+            },
+            actions: {
+              _DeleteIntent: CallbackAction<_DeleteIntent>(
+                onInvoke: (_) {
+                  onDeleteSelected();
+                  return null;
+                },
+              ),
+              _SavePumlIntent: CallbackAction<_SavePumlIntent>(
+                onInvoke: (_) {
+                  onSavePuml();
+                  return null;
+                },
+              ),
+              _PrintDiagramIntent: CallbackAction<_PrintDiagramIntent>(
+                onInvoke: (_) {
+                  onPrint();
+                  return null;
+                },
+              ),
+            },
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                onViewport(constraints.biggest);
+                final extent = _canvasExtent(constraints.biggest);
+                return Listener(
+                  // Mouse wheel / two-finger scroll zooms toward the cursor.
+                  onPointerSignal: (event) {
+                    if (event is PointerScrollEvent) {
+                      onZoom(
+                        exp(-event.scrollDelta.dy * 0.006),
+                        event.localPosition,
+                      );
+                    }
+                  },
+                  // Trackpad pinch / two-finger pan (macOS delivers these as
+                  // pan-zoom gestures, not scroll signals).
+                  onPointerPanZoomStart: (_) => onScaleStart(),
+                  onPointerPanZoomUpdate: (event) => onScaleUpdate(
+                    event.scale,
+                    event.localPosition,
+                    event.panDelta,
+                  ),
+                  child: Stack(
+                    children: [
+                      // Background: empty-space drag pans the canvas; tap clears
+                      // the selection.
+                      Positioned.fill(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => onSelect(null),
+                          onPanUpdate: (d) => onPan(d.delta),
+                          onSecondaryTapDown: (d) =>
+                              onCanvasMenu(d.globalPosition, d.localPosition),
+                          child: const SizedBox.expand(),
+                        ),
+                      ),
+                      if (diagram.types.isEmpty && diagram.groups.isEmpty)
+                        Center(
+                          child: Text(
+                            'Nothing to show yet.\nDrop a .puml file, type PlantUML, '
+                            'or add a class.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: appColors.mutedText,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      // Positioned(left:0,top:0) gives the content unbounded
+                      // constraints so the SizedBox keeps its FULL extent
+                      // (not clamped to the viewport) — otherwise content below
+                      // the viewport is painted but not hit-testable.
+                      Positioned(
+                        left: 0,
+                        top: 0,
+                        child: Transform.translate(
+                          offset: pan,
+                          child: Transform.scale(
+                            scale: scale,
+                            alignment: Alignment.topLeft,
+                            child: RepaintBoundary(
+                              key: captureKey,
+                              child: SizedBox(
+                                width: extent.width,
+                                height: extent.height,
+                                child: Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    // Solid background so an exported PNG/PDF
+                                    // matches the canvas instead of being
+                                    // transparent (invisible on-screen behind
+                                    // the live content).
+                                    Positioned.fill(
+                                      child: ColoredBox(
+                                        color: _umlCanvasBackground(
+                                          bgStyle,
+                                          appColors,
+                                        ),
+                                      ),
+                                    ),
+                                    // Alignment grid (behind everything) when
+                                    // snap-to-grid is on.
+                                    if (snapToGrid)
+                                      Positioned.fill(
+                                        child: IgnorePointer(
+                                          child: CustomPaint(
+                                            painter: _GridPainter(
+                                              step: gridStep,
+                                              color: appColors.border,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    // Group containers (parents first, behind nodes).
+                                    for (final group in _groupsByDepth)
+                                      Positioned(
+                                        left: group.x,
+                                        top: group.y,
+                                        child: _UmlGroupBox(
+                                          group: group,
+                                          selected: group.id == selectedGroup,
+                                          stereo: _stereotypeColors(
+                                            diagram,
+                                            group.stereotype,
+                                            appColors,
+                                            nodeSkin,
+                                            identity: group.id,
+                                          ),
+                                          onSelect: () =>
+                                              onSelectGroup(group.id),
+                                          onDrag: (delta) =>
+                                              onGroupDrag(group, delta),
+                                          onDragEnd: onGroupDragEnd,
+                                          onPan: onPan,
+                                          onContextMenu: (pos) =>
+                                              onGroupMenu(group.id, pos),
+                                        ),
+                                      ),
+                                    Positioned.fill(
+                                      child: IgnorePointer(
+                                        child: CustomPaint(
+                                          painter: _UmlDiagramPainter(
+                                            diagram: diagram,
+                                            colors: appColors,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    for (final type in diagram.types)
+                                      Positioned(
+                                        // Selected boxes reserve a handle margin; shift
+                                        // back so the box stays put visually.
+                                        left:
+                                            type.x -
+                                            (type.name == selected
+                                                ? _umlHandleInset
+                                                : 0),
+                                        top:
+                                            type.y -
+                                            (type.name == selected
+                                                ? _umlHandleInset
+                                                : 0),
+                                        child: _UmlTypeBox(
+                                          type: type,
+                                          selected: type.name == selected,
+                                          sketch: bgStyle == 'Sketch',
+                                          stereo: _stereotypeColors(
+                                            diagram,
+                                            type.stereotype,
+                                            appColors,
+                                            nodeSkin,
+                                            identity: type.name,
+                                          ),
+                                          editing: type.name == editing,
+                                          onSelect: () => onSelect(type.name),
+                                          onDrag: (delta) =>
+                                              onBoxDrag(type, delta),
+                                          onDragEnd: onBoxDragEnd,
+                                          onPan: onPan,
+                                          onRename: (text) =>
+                                              onRename(type.name, text),
+                                          onEndEdit: onEndEdit,
+                                          onContextMenu: (pos) =>
+                                              onNodeMenu(type.name, pos),
+                                          onResize: (handle, delta) =>
+                                              onResize(type, handle, delta),
+                                          onResizeEnd: onResizeEnd,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Fixed overlays (unaffected by pan/zoom).
+                      if (diagram.heading != null)
+                        Positioned(
+                          top: 8,
+                          left: 12,
+                          right: 12,
+                          child: IgnorePointer(
+                            child: Center(
+                              child: _UmlTitleChip(text: diagram.heading!),
+                            ),
+                          ),
+                        ),
+                      Positioned(
+                        right: 8,
+                        bottom: 8,
+                        child: IgnorePointer(
+                          child: _UmlZoomBadge(scale: scale),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

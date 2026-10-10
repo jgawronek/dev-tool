@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../../../services/hash_verifier_service.dart';
 import '../../../ui/widgets.dart';
 import '../common/editors.dart';
+import '../common/shared.dart';
 
 class _HashVerifierView extends StatefulWidget {
   const _HashVerifierView();
@@ -46,56 +47,60 @@ class _HashVerifierViewState extends State<_HashVerifierView> {
     setState(() {});
   }
 
-  void _clear() {
-    _input.clear();
-    _expected.clear();
-    _key.clear();
-    _output.clear();
-    setState(() {});
-  }
-
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Wrap(
-        spacing: 8,
-        runSpacing: 6,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          const Text('Algorithm'),
-          SmallDropdown(
-            items: VerifyAlgorithm.values.map((value) => value.label).toList(),
-            initialValue: _algorithm.label,
-            onChanged: (label) {
-              setState(
-                () => _algorithm = VerifyAlgorithm.values.firstWhere(
-                  (value) => value.label == label,
+      LayoutBuilder(
+        builder: (context, constraints) {
+          final availableWidth = (constraints.maxWidth - 24).clamp(
+            0.0,
+            double.infinity,
+          );
+          return ToolToolbar(
+            children: [
+              const Text('Algorithm', style: TextStyle(fontSize: 12)),
+              SizedBox(
+                height: 32,
+                child: SmallDropdown(
+                  items: VerifyAlgorithm.values
+                      .map((value) => value.label)
+                      .toList(),
+                  initialValue: _algorithm.label,
+                  onChanged: (label) {
+                    setState(
+                      () => _algorithm = VerifyAlgorithm.values.firstWhere(
+                        (value) => value.label == label,
+                      ),
+                    );
+                    _run();
+                  },
                 ),
-              );
-              _run();
-            },
-          ),
-          if (_algorithm.keyed)
-            SizedBox(
-              width: 220,
-              child: TextField(
-                controller: _key,
-                decoration: const InputDecoration(labelText: 'HMAC key'),
-                onChanged: (_) => _run(),
               ),
-            ),
-          SizedBox(
-            width: 310,
-            child: TextField(
-              controller: _expected,
-              decoration: const InputDecoration(
-                labelText: 'Expected hex digest',
+              if (_algorithm.keyed)
+                SizedBox(
+                  height: 32,
+                  child: InlineTextField(
+                    height: 32,
+                    width: availableWidth.clamp(0.0, 220.0),
+                    controller: _key,
+                    hintText: 'HMAC key',
+                    onChanged: (_) => _run(),
+                  ),
+                ),
+              SizedBox(
+                height: 32,
+                child: InlineTextField(
+                  height: 32,
+                  width: availableWidth.clamp(0.0, 310.0),
+                  controller: _expected,
+                  hintText: 'Expected hex digest',
+                  onChanged: (_) => _run(),
+                ),
               ),
-              onChanged: (_) => _run(),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
       const SizedBox(height: 8),
       Expanded(
@@ -104,10 +109,7 @@ class _HashVerifierViewState extends State<_HashVerifierView> {
           outputController: _output,
           inputPlaceholder: 'Text to verify (UTF-8)',
           outputPlaceholder: 'Digest verification',
-          inputActions: [
-            ToolButton(label: 'Go', onPressed: _run),
-            ToolButton(label: 'Clear', onPressed: _clear),
-          ],
+          inputActions: [ToolButton(label: 'Go', onPressed: _run)],
           outputActions: [
             ToolButton(
               label: 'Copy',

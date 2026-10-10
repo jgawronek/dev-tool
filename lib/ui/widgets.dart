@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:re_editor/re_editor.dart';
 
@@ -14,10 +13,8 @@ import 'app_colors.dart';
 /// fall back to the label itself so every button still shows a tooltip.
 String actionTooltip(String label) {
   const byLabel = <String, String>{
-    'Clear': 'Clear the input and result',
     'Sample': 'Insert sample input',
     'Go': 'Run with the current input',
-    'Clipboard': 'Paste input from the clipboard',
     'Copy': 'Copy the result to the clipboard',
     'Use as input': 'Move the result into the input editor',
     'Generate': 'Generate a new value',
@@ -27,7 +24,6 @@ String actionTooltip(String label) {
     'Scan': 'Run the scan',
     'Fingerprint': 'Run firewall fingerprinting',
     'Reset': 'Reset all fields to their defaults',
-    'Reset output': 'Reset the output to its default',
     'Save PNG': 'Export the diagram as a PNG image',
     'Open logs directory': 'Open the server logs folder',
     'Open': 'Open the URL in the browser',
@@ -50,7 +46,6 @@ String actionTooltip(String label) {
 // fine for this lookup.
 final Map<IconData, String> _iconTooltips = {
   Icons.copy: 'Copy to clipboard',
-  Icons.content_paste: 'Paste from the clipboard',
   Icons.refresh: 'Refresh',
   Icons.zoom_in: 'Zoom in',
   Icons.zoom_out: 'Zoom out',
@@ -83,9 +78,8 @@ class ToolButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Note: EditorPane pulls 'Sample'/'Clear' into its context menu and hides
-    // 'Clipboard'/'Copy' from compact headers itself, so those labels render
-    // normally when a ToolButton is used outside an editor pane.
+    // EditorPane promotes Copy to a compact header icon. Other
+    // buttons remain directly available.
 
     final appColors = context.appColors;
     final Widget child;
@@ -101,13 +95,19 @@ class ToolButton extends StatelessWidget {
           onPressed: onPressed,
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-            minimumSize: const Size(0, 28),
+            minimumSize: const Size(0, 30),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(6),
+            ),
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            backgroundColor: appColors.success,
+            backgroundColor: appColors.accent,
             foregroundColor: Colors.white,
-            textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            textStyle: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-          child: const Text('Go'),
+          child: const Text('Run'),
         ),
       );
     } else {
@@ -120,7 +120,8 @@ class ToolButton extends StatelessWidget {
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          minimumSize: const Size(0, 28),
+          minimumSize: const Size(0, 30),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           side: BorderSide(color: appColors.border),
           backgroundColor: appColors.panelElevated,
@@ -309,10 +310,125 @@ class _SegmentedToggleState extends State<SegmentedToggle> {
         widget.onChanged?.call(index);
       },
       borderRadius: BorderRadius.circular(6),
-      constraints: const BoxConstraints(minHeight: 28, minWidth: 56),
+      constraints: const BoxConstraints(minHeight: 30, minWidth: 56),
       children: widget.options
-          .map((label) => Text(label, style: const TextStyle(fontSize: 11.5)))
+          .map(
+            (label) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text(label, style: const TextStyle(fontSize: 12)),
+            ),
+          )
           .toList(),
+    );
+  }
+}
+
+/// Shared framed surface for editors, previews, controls, and results.
+class ToolPanel extends StatelessWidget {
+  const ToolPanel({
+    super.key,
+    required this.title,
+    required this.child,
+    this.actions = const [],
+    this.expand = true,
+  });
+
+  final String title;
+  final Widget child;
+  final List<Widget> actions;
+  final bool expand;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.panel,
+        border: Border.all(color: colors.border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: colors.panelHeader,
+              border: Border(bottom: BorderSide(color: colors.border)),
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) => Row(
+                children: [
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth:
+                          constraints.maxWidth * (actions.isEmpty ? 1 : 0.35),
+                    ),
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: colors.editorText,
+                      ),
+                    ),
+                  ),
+                  if (actions.isNotEmpty) ...[
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              for (var i = 0; i < actions.length; i++) ...[
+                                if (i > 0) const SizedBox(width: 6),
+                                actions[i],
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          if (expand) Expanded(child: child) else child,
+        ],
+      ),
+    );
+  }
+}
+
+/// A wrapping options row that stays outside text and result surfaces.
+class ToolToolbar extends StatelessWidget {
+  const ToolToolbar({super.key, required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: context.appColors.panelHeader,
+        border: Border.all(color: context.appColors.border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: children,
+      ),
     );
   }
 }
@@ -329,11 +445,11 @@ class EditorPane extends StatelessWidget {
     this.controller,
     this.onChanged,
     this.copyAction,
-    this.pasteAction,
     this.onSubmit,
     this.scrollController,
     this.markedLines = const <int>{},
     this.showHeader = true,
+    this.bordered = true,
     this.overlay,
     this.enableFileDrop = true,
     this.softWrap = true,
@@ -350,11 +466,13 @@ class EditorPane extends StatelessWidget {
   final TextEditingController? controller;
   final ValueChanged<String>? onChanged;
   final VoidCallback? copyAction;
-  final VoidCallback? pasteAction;
   final VoidCallback? onSubmit;
   final ScrollController? scrollController;
   final Set<int> markedLines;
   final bool showHeader;
+
+  /// Disable when an enclosing panel provides the editor border.
+  final bool bordered;
   final Widget? overlay;
 
   /// When set, changing this notifier's value selects and scrolls to that
@@ -377,20 +495,9 @@ class EditorPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final headerActions = <Widget>[];
-    VoidCallback? exampleAction;
-    VoidCallback? clearAction;
     VoidCallback? promotedCopyAction;
-    VoidCallback? promotedPasteAction;
     for (final action in actions) {
       if (action is ToolButton) {
-        if (action.label == 'Sample') {
-          exampleAction ??= action.onPressed;
-          continue;
-        }
-        if (action.label == 'Clear') {
-          clearAction ??= action.onPressed;
-          continue;
-        }
         if (action.label == 'Copy') {
           // A Copy ToolButton is how callers ask for the floating copy
           // affordance. Dropping it (as the hidden-label filter used to) left
@@ -398,110 +505,72 @@ class EditorPane extends StatelessWidget {
           promotedCopyAction ??= action.onPressed;
           continue;
         }
-        if (action.label == 'Clipboard') {
-          // Likewise for pasting: the button was filtered out and never
-          // rendered, so "paste from clipboard" was unreachable.
-          promotedPasteAction ??= action.onPressed;
-          continue;
-        }
-        if (_isHiddenEditorAction(action.label, compact: !showHeader)) {
+        if (action.label == 'Go' && onChanged != null) {
           continue;
         }
       }
       headerActions.add(action);
     }
-    final resolvedCopyAction = copyAction ?? promotedCopyAction;
-    final resolvedPasteAction = pasteAction ?? promotedPasteAction;
-    final resolvedOverlay = _resolveOverlay(
-      overlay,
-      headerActions,
-      showHeader,
-      resolvedCopyAction,
-      resolvedPasteAction,
+    final resolvedCopyAction =
+        copyAction ??
+        promotedCopyAction ??
+        (showHeader && readOnly && controller != null
+            ? () => Clipboard.setData(ClipboardData(text: controller!.text))
+            : null);
+    final framed = showHeader && bordered;
+    final controls = <Widget>[
+      if (overlay != null) overlay!,
+      ...headerActions,
+      if (resolvedCopyAction != null)
+        IconButton(
+          icon: const Icon(Icons.copy_outlined, size: 17),
+          tooltip: 'Copy $label',
+          onPressed: resolvedCopyAction,
+          visualDensity: VisualDensity.compact,
+        ),
+    ];
+    final field = _EditorField(
+      label: label,
+      bordered: bordered && !framed,
+      placeholder: placeholder,
+      readOnly: readOnly,
+      controller: controller,
+      onChanged: onChanged,
+      onSubmit: onSubmit,
+      scrollController: scrollController,
+      markedLines: markedLines,
+      softWrap: softWrap,
+      copyAction: showHeader ? null : resolvedCopyAction,
+      overlay: showHeader
+          ? null
+          : _resolveOverlay(overlay, headerActions, false, resolvedCopyAction),
+      revealLine: revealLine,
+      highlightTheme: highlightTheme,
     );
-    final pane = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (showHeader) ...[
-          Container(
-            // Fixed height with centered content so the label lines up with an
-            // adjacent pane's header whether or not action buttons are present.
-            height: 38,
-            alignment: Alignment.centerLeft,
-            child: Row(
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (var i = 0; i < headerActions.length; i++) ...[
-                            if (i > 0) const SizedBox(width: 6),
-                            headerActions[i],
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+    final Widget pane;
+    if (framed) {
+      pane = ToolPanel(
+        title: label,
+        actions: controls,
+        expand: expand,
+        child: expand ? field : SizedBox(height: fixedHeight, child: field),
+      );
+    } else {
+      pane = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (showHeader)
+            SizedBox(
+              height: 44,
+              child: Row(children: [Text(label), const Spacer(), ...controls]),
             ),
-          ),
-          const SizedBox(height: 6),
+          if (expand)
+            Expanded(child: field)
+          else
+            SizedBox(height: fixedHeight, child: field),
         ],
-        if (expand)
-          Expanded(
-            child: _EditorField(
-              label: label,
-              placeholder: placeholder,
-              readOnly: readOnly,
-              controller: controller,
-              onChanged: onChanged,
-              copyAction: resolvedCopyAction,
-              pasteAction: resolvedPasteAction,
-              onSubmit: onSubmit,
-              scrollController: scrollController,
-              markedLines: markedLines,
-              overlay: resolvedOverlay,
-              softWrap: softWrap,
-              exampleAction: readOnly ? null : exampleAction,
-              clearAction: readOnly ? null : clearAction,
-              revealLine: revealLine,
-              highlightTheme: highlightTheme,
-            ),
-          )
-        else
-          SizedBox(
-            height: fixedHeight,
-            child: _EditorField(
-              label: label,
-              placeholder: placeholder,
-              readOnly: readOnly,
-              controller: controller,
-              onChanged: onChanged,
-              copyAction: resolvedCopyAction,
-              pasteAction: resolvedPasteAction,
-              onSubmit: onSubmit,
-              scrollController: scrollController,
-              markedLines: markedLines,
-              overlay: resolvedOverlay,
-              softWrap: softWrap,
-              exampleAction: readOnly ? null : exampleAction,
-              clearAction: readOnly ? null : clearAction,
-              revealLine: revealLine,
-              highlightTheme: highlightTheme,
-            ),
-          ),
-      ],
-    );
+      );
+    }
 
     final dropController = controller;
     if (!enableFileDrop || readOnly || dropController == null) return pane;
@@ -588,7 +657,6 @@ Widget? _resolveOverlay(
   List<Widget> headerActions,
   bool showHeader,
   VoidCallback? copyAction,
-  VoidCallback? pasteAction,
 ) {
   final Widget? base;
   if (overlay != null) {
@@ -603,18 +671,17 @@ Widget? _resolveOverlay(
         ? _EditorOverlayControls(actions: headerActions)
         : null;
   }
-  if (base == null && copyAction == null && pasteAction == null) return null;
+  if (base == null && copyAction == null) return null;
 
   // With no caller-supplied overlay, an empty strip leaves room for the
-  // standalone copy/paste buttons that _EditorField positions for us.
+  // standalone copy buttons that _EditorField positions for us.
   if (base == null) return null;
 
   final extras = <Widget>[
     if (copyAction != null) _FloatingCopyButton(onPressed: copyAction),
-    if (pasteAction != null) _FloatingPasteButton(onPressed: pasteAction),
   ];
   if (extras.isEmpty) return base;
-  // When a strip is present the copy/paste buttons join it; _EditorField only
+  // When a strip is present the copy buttons join it; _EditorField only
   // positions standalone buttons when there is no strip at all.
   return Row(
     mainAxisSize: MainAxisSize.min,
@@ -623,36 +690,6 @@ Widget? _resolveOverlay(
       for (final extra in extras) ...[const SizedBox(width: 6), extra],
     ],
   );
-}
-
-/// The compact icon button used to paste into a pane.
-class _FloatingPasteButton extends StatelessWidget {
-  const _FloatingPasteButton({required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final appColors = context.appColors;
-    return Tooltip(
-      message: 'Paste from clipboard',
-      child: Material(
-        color: appColors.panelElevated.withAlpha(210),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(6),
-          side: BorderSide(color: appColors.border),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onPressed,
-          child: Padding(
-            padding: const EdgeInsets.all(5),
-            child: Icon(Icons.content_paste, size: 15, color: appColors.mutedText),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 /// The compact icon button used to copy a pane's contents.
@@ -723,17 +760,15 @@ class _EditorField extends StatelessWidget {
     required this.label,
     required this.placeholder,
     required this.readOnly,
+    this.bordered = true,
     this.controller,
     this.onChanged,
     this.copyAction,
-    this.pasteAction,
     this.onSubmit,
     this.scrollController,
     this.markedLines = const <int>{},
     this.overlay,
     this.softWrap = true,
-    this.exampleAction,
-    this.clearAction,
     this.revealLine,
     this.highlightTheme,
   });
@@ -741,17 +776,15 @@ class _EditorField extends StatelessWidget {
   final String label;
   final String placeholder;
   final bool readOnly;
+  final bool bordered;
   final TextEditingController? controller;
   final ValueChanged<String>? onChanged;
   final VoidCallback? copyAction;
-  final VoidCallback? pasteAction;
   final VoidCallback? onSubmit;
   final ScrollController? scrollController;
   final Set<int> markedLines;
   final Widget? overlay;
   final bool softWrap;
-  final VoidCallback? exampleAction;
-  final VoidCallback? clearAction;
   final ValueListenable<int?>? revealLine;
   final CodeHighlightTheme? highlightTheme;
 
@@ -763,44 +796,6 @@ class _EditorField extends StatelessWidget {
     // so the scrollbar isn't pushed inward by the button.
     final reserveForCopy = overlay == null && copyAction != null;
     final contentRightPad = reserveForCopy ? 30.0 : 0.0;
-    final hasContextActions =
-        !readOnly && (exampleAction != null || clearAction != null);
-
-    Future<void> showEditorContextMenu(Offset globalPosition) async {
-      final selected = await showMenu<_EditorContextAction>(
-        context: context,
-        color: appColors.panelElevated,
-        position: RelativeRect.fromLTRB(
-          globalPosition.dx,
-          globalPosition.dy,
-          globalPosition.dx,
-          globalPosition.dy,
-        ),
-        items: [
-          if (exampleAction != null)
-            const PopupMenuItem<_EditorContextAction>(
-              value: _EditorContextAction.example,
-              child: Text('Example'),
-            ),
-          if (clearAction != null)
-            const PopupMenuItem<_EditorContextAction>(
-              value: _EditorContextAction.clear,
-              child: Text('Clear'),
-            ),
-        ],
-      );
-      switch (selected) {
-        case _EditorContextAction.example:
-          exampleAction?.call();
-          break;
-        case _EditorContextAction.clear:
-          clearAction?.call();
-          break;
-        case null:
-          break;
-      }
-    }
-
     // Virtualized editor (re_editor) renders only visible lines, so large
     // documents stay responsive. It bridges to the [TextEditingController]
     // that tools already use, so the public API is unchanged.
@@ -837,81 +832,68 @@ class _EditorField extends StatelessWidget {
     return Semantics(
       label: label,
       textField: true,
-      child: Listener(
-        onPointerDown: hasContextActions
-            ? (event) {
-                if ((event.buttons & kSecondaryMouseButton) != 0) {
-                  showEditorContextMenu(event.position);
-                }
-              }
-            : null,
-        child: Container(
-          decoration: BoxDecoration(
-            color: appColors.editorBackground,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: appColors.border),
-          ),
-          child: Stack(
-            children: [
-              if (markedLines.isNotEmpty)
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: Tooltip(
-                    message: 'Changed lines: ${markedLines.take(8).join(', ')}',
-                    child: Container(
-                      width: 4,
-                      decoration: BoxDecoration(
-                        color: appColors.warning,
-                        borderRadius: const BorderRadius.horizontal(
-                          left: Radius.circular(8),
-                        ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: appColors.editorBackground,
+          borderRadius: bordered ? BorderRadius.circular(8) : null,
+          border: bordered ? Border.all(color: appColors.border) : null,
+        ),
+        child: Stack(
+          children: [
+            if (markedLines.isNotEmpty)
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                child: Tooltip(
+                  message: 'Changed lines: ${markedLines.take(8).join(', ')}',
+                  child: Container(
+                    width: 4,
+                    decoration: BoxDecoration(
+                      color: appColors.warning,
+                      borderRadius: const BorderRadius.horizontal(
+                        left: Radius.circular(8),
                       ),
                     ),
                   ),
                 ),
-              Positioned.fill(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    markedLines.isEmpty ? 8 : 12,
-                    6,
-                    8,
-                    6,
+              ),
+            Positioned.fill(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  markedLines.isEmpty ? 8 : 12,
+                  6,
+                  8,
+                  6,
+                ),
+                child: textField,
+              ),
+            ),
+            if (overlay != null)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 460),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: overlay!,
                   ),
-                  child: textField,
+                ),
+              )
+            else if (copyAction != null)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (copyAction != null)
+                      _FloatingCopyButton(onPressed: copyAction!),
+                  ],
                 ),
               ),
-              if (overlay != null)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 460),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: overlay!,
-                    ),
-                  ),
-                )
-              else if (copyAction != null || pasteAction != null)
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (copyAction != null)
-                        _FloatingCopyButton(onPressed: copyAction!),
-                      if (copyAction != null && pasteAction != null)
-                        const SizedBox(width: 6),
-                      if (pasteAction != null)
-                        _FloatingPasteButton(onPressed: pasteAction!),
-                    ],
-                  ),
-                ),
-            ],
-          ),
+          ],
         ),
       ),
     );
@@ -1014,7 +996,7 @@ class _CodeEditorFieldState extends State<_CodeEditorField> {
     super.dispose();
   }
 
-  // Tool wrote to the TextEditingController (Sample/Clear/conversion output).
+  // Tool wrote to the TextEditingController (Sample/conversion output).
   void _onExternalTextChanged() {
     final controller = widget.controller;
     if (controller == null || _syncingToText) return;
@@ -1133,10 +1115,10 @@ class _EditorFindPanel extends StatelessWidget implements PreferredSizeWidget {
                 final label = value?.searching == true
                     ? '…'
                     : pattern.isEmpty
-                        ? ''
-                        : total == 0
-                            ? 'No results'
-                            : '$pos/$total';
+                    ? ''
+                    : total == 0
+                    ? 'No results'
+                    : '$pos/$total';
                 return Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -1162,8 +1144,9 @@ class _EditorFindPanel extends StatelessWidget implements PreferredSizeWidget {
                           ),
                           filled: true,
                           fillColor: appColors.editorBackground,
-                          contentPadding:
-                              const EdgeInsets.symmetric(horizontal: 8),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                          ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(6),
                             borderSide: BorderSide(color: appColors.border),
@@ -1187,15 +1170,38 @@ class _EditorFindPanel extends StatelessWidget implements PreferredSizeWidget {
                         ),
                       ),
                     ),
-                    _findToggle(appColors, 'Aa', value?.option.caseSensitive ?? false,
-                        controller.toggleCaseSensitive, 'Match case'),
-                    _findToggle(appColors, '.*', value?.option.regex ?? false,
-                        controller.toggleRegex, 'Regular expression'),
-                    _findIcon(appColors, Icons.keyboard_arrow_up,
-                        controller.previousMatch, 'Previous match'),
-                    _findIcon(appColors, Icons.keyboard_arrow_down,
-                        controller.nextMatch, 'Next match'),
-                    _findIcon(appColors, Icons.close, controller.close, 'Close'),
+                    _findToggle(
+                      appColors,
+                      'Aa',
+                      value?.option.caseSensitive ?? false,
+                      controller.toggleCaseSensitive,
+                      'Match case',
+                    ),
+                    _findToggle(
+                      appColors,
+                      '.*',
+                      value?.option.regex ?? false,
+                      controller.toggleRegex,
+                      'Regular expression',
+                    ),
+                    _findIcon(
+                      appColors,
+                      Icons.keyboard_arrow_up,
+                      controller.previousMatch,
+                      'Previous match',
+                    ),
+                    _findIcon(
+                      appColors,
+                      Icons.keyboard_arrow_down,
+                      controller.nextMatch,
+                      'Next match',
+                    ),
+                    _findIcon(
+                      appColors,
+                      Icons.close,
+                      controller.close,
+                      'Close',
+                    ),
                   ],
                 );
               },
@@ -1226,9 +1232,7 @@ class _EditorFindPanel extends StatelessWidget implements PreferredSizeWidget {
           decoration: BoxDecoration(
             color: active ? c.accentSoft : Colors.transparent,
             borderRadius: BorderRadius.circular(5),
-            border: Border.all(
-              color: active ? c.accent : Colors.transparent,
-            ),
+            border: Border.all(color: active ? c.accent : Colors.transparent),
           ),
           child: Text(
             label,
@@ -1261,24 +1265,10 @@ class _EditorFindPanel extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
-enum _EditorContextAction { example, clear }
-
 bool _isClipboardIcon(IconData icon) {
   return icon == Icons.content_paste ||
       icon == Icons.copy ||
       icon == Icons.copy_all;
-}
-
-/// Whether [label] should be hidden from the action strip.
-///
-/// Only the Go button is dropped, and only when the pane has no header to
-/// carry it. The other conventionally-labelled buttons used to be listed here
-/// and silently discarded; they are now handled explicitly above, where Copy
-/// and Clipboard become affordances and Sample/Clear become context-menu
-/// entries. Keeping this list to a single case means a new label cannot be
-/// dropped by accident.
-bool _isHiddenEditorAction(String label, {required bool compact}) {
-  return compact && label == 'Go';
 }
 
 class LabeledField extends StatelessWidget {
@@ -1304,27 +1294,24 @@ class LabeledField extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          SizedBox(width: 150, child: Text(label, style: const TextStyle(fontSize: 12))),
+          SizedBox(
+            width: 150,
+            child: Text(label, style: const TextStyle(fontSize: 12)),
+          ),
           Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: appColors.panelElevated,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: appColors.border),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: TextField(
-                controller: controller,
-                readOnly: readOnly,
-                decoration: InputDecoration(
-                  hintText: hintText,
-                  border: InputBorder.none,
-                  isDense: true,
-                  filled: false,
-                  hintStyle: TextStyle(color: appColors.mutedText),
+            child: TextField(
+              controller: controller,
+              readOnly: readOnly,
+              decoration: InputDecoration(
+                hintText: hintText,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
                 ),
-                style: TextStyle(fontSize: 12, color: appColors.editorText),
+                hintStyle: TextStyle(color: appColors.mutedText),
               ),
+              style: TextStyle(fontSize: 12, color: appColors.editorText),
             ),
           ),
           if (trailing != null) ...[const SizedBox(width: 8), trailing!],

@@ -1,13 +1,12 @@
 /// PHP Serializer/Unserializer tool views.
 library;
 
-import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../ui/widgets.dart';
-import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 String _phpSerialize(Object? value) {
   if (value == null) return 'N;';
@@ -167,12 +166,6 @@ class _PhpSerializerViewState extends State<_PhpSerializerView> {
     setState(() {});
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _input.text = text);
-    _run();
-  }
-
   void _setSample() {
     setState(() {
       _input.text = widget.serialize
@@ -182,37 +175,29 @@ class _PhpSerializerViewState extends State<_PhpSerializerView> {
     _run();
   }
 
-  void _clear() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    return buildSplitEditors(
-      inputActions: [
-        ToolButton(label: 'Go', onPressed: _run),
-        ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-        ToolButton(label: 'Sample', onPressed: _setSample),
-        ToolButton(label: 'Clear', onPressed: _clear),
-      ],
-      outputActions: [
-        ToolButton(
-          label: 'Copy',
-          onPressed: () => Clipboard.setData(ClipboardData(text: _output.text)),
-        ),
-      ],
-      inputController: _input,
-      outputController: _output,
-      onInputChanged: (_) => _run(),
-      inputPlaceholder: widget.serialize
-          ? 'Paste JSON to serialize into a PHP string...'
-          : 'Paste a PHP serialized string to decode...',
-      outputPlaceholder: widget.serialize
-          ? 'PHP serialized output...'
-          : 'Decoded JSON output...',
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: buildSplitEditors(
+        inputActions: [ToolButton(label: 'Go', onPressed: _run)],
+        outputActions: [
+          ToolButton(
+            label: 'Copy',
+            onPressed: () =>
+                Clipboard.setData(ClipboardData(text: _output.text)),
+          ),
+        ],
+        inputController: _input,
+        outputController: _output,
+        onInputChanged: (_) => _run(),
+        inputPlaceholder: widget.serialize
+            ? 'Paste JSON to serialize into a PHP string...'
+            : 'Paste a PHP serialized string to decode...',
+        outputPlaceholder: widget.serialize
+            ? 'PHP serialized output...'
+            : 'Decoded JSON output...',
+      ),
     );
   }
 }

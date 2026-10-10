@@ -74,6 +74,9 @@ class _ChatInputFieldState extends State<_ChatInputField> {
               ? 'Type a message... (Enter to send)'
               : 'Start a model first...',
           border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
           contentPadding: const EdgeInsets.all(12),
           hintStyle: TextStyle(color: appColors.mutedText),
         ),
@@ -287,14 +290,6 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
     });
   }
 
-  void _clearHistory() {
-    _generationSub?.cancel();
-    setState(() {
-      _messages.clear();
-      _generating = false;
-    });
-  }
-
   Future<void> _stopGeneration() async {
     await _generationSub?.cancel();
     _generationSub = null;
@@ -321,30 +316,10 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
     Widget? trailing,
     required Widget child,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: toolSurfaceDecoration(context, radius: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // The title shrinks with an ellipsis rather than pushing the card's
-          // trailing action out of bounds on a narrow panel.
-          Row(
-            children: [
-              Flexible(
-                child: Text(
-                  title,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-              if (trailing != null) ...[const SizedBox(width: 8), trailing],
-            ],
-          ),
-          const SizedBox(height: 8),
-          Expanded(child: child),
-        ],
-      ),
+    return ToolPanel(
+      title: title,
+      actions: [if (trailing != null) trailing],
+      child: Padding(padding: const EdgeInsets.all(12), child: child),
     );
   }
 
@@ -555,11 +530,6 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
                         ],
                       ),
                       const SizedBox(width: 8),
-                      ToolIconButton(
-                        icon: Icons.delete_outline,
-                        tooltip: 'Clear history',
-                        onPressed: _messages.isEmpty ? null : _clearHistory,
-                      ),
                     ],
                   ),
                 ),

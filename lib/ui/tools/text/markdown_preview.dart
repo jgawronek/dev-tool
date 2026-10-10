@@ -10,6 +10,7 @@ import '../../../services/file_dialog_service.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _MarkdownPreviewView extends StatefulWidget {
   const _MarkdownPreviewView();
@@ -31,15 +32,6 @@ class _MarkdownPreviewViewState extends State<_MarkdownPreviewView> {
     FileDropService.unregisterTarget(_dropTargetId);
     _input.dispose();
     super.dispose();
-  }
-
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() {
-      _sourceFileName = null;
-      _error = null;
-      _input.text = text;
-    });
   }
 
   Future<void> _pickFile() async {
@@ -84,18 +76,9 @@ Paragraphs are separated by a blank line.
     });
   }
 
-  void _clear() {
-    setState(() {
-      _sourceFileName = null;
-      _error = null;
-      _input.clear();
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    final split = ResizableSplit(
-      horizontal: false,
+    final split = buildAdaptiveSplit(
       initialRatio: 0.42,
       minFirstExtent: 110,
       minSecondExtent: 120,
@@ -106,11 +89,7 @@ Paragraphs are separated by a blank line.
         },
         child: EditorPane(
           label: 'Input',
-          actions: [
-            ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-            ToolButton(label: 'Sample', onPressed: _setSample),
-            ToolButton(label: 'Clear', onPressed: _clear),
-          ],
+          actions: [],
           controller: _input,
           onChanged: (_) {
             _sourceFileName = null;
@@ -131,14 +110,19 @@ Paragraphs are separated by a blank line.
         badge: 'Rendered Markdown',
       ),
     );
-    if (_error == null) return split;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(_error!, style: errorToolTextStyle(context)),
-        const SizedBox(height: 8),
-        Expanded(child: split),
-      ],
+    if (_error == null) {
+      return ToolSampleAction(onPressed: _setSample, child: split);
+    }
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(_error!, style: errorToolTextStyle(context)),
+          const SizedBox(height: 8),
+          Expanded(child: split),
+        ],
+      ),
     );
   }
 }

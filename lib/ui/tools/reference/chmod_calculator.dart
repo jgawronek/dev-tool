@@ -102,7 +102,7 @@ class _ChmodCalculatorViewState extends State<_ChmodCalculatorView> {
   Widget build(BuildContext context) {
     final info = _info;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -134,10 +134,7 @@ class _ChmodCalculatorViewState extends State<_ChmodCalculatorView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
+        ToolToolbar(
           children: [
             SizedBox(
               width: 170,
@@ -186,59 +183,65 @@ class _ChmodCalculatorViewState extends State<_ChmodCalculatorView> {
 
   Widget _buildModeCard(BuildContext context, ChmodInfo? info) {
     if (info == null) {
-      return Container(
-        decoration: toolSurfaceDecoration(context),
-        padding: const EdgeInsets.all(18),
-        child: Text(
-          'Enter a mode such as 755 or rwxr-xr-x.',
-          style: mutedToolTextStyle(context),
+      return ToolPanel(
+        title: 'Permissions',
+        expand: false,
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          child: Text(
+            'Enter a mode such as 755 or rwxr-xr-x.',
+            style: mutedToolTextStyle(context),
+          ),
         ),
       );
     }
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              _ModeBadge(label: info.octal),
-              const SizedBox(width: 10),
-              _ModeBadge(label: info.symbolic),
+    return ToolPanel(
+      title: 'Permissions',
+      expand: false,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                _ModeBadge(label: info.octal),
+                const SizedBox(width: 10),
+                _ModeBadge(label: info.symbolic),
+              ],
+            ),
+            const SizedBox(height: 14),
+            for (final chmodClass in ChmodClass.values) ...[
+              _buildClassRow(context, info, chmodClass),
+              const SizedBox(height: 4),
             ],
-          ),
-          const SizedBox(height: 14),
-          for (final chmodClass in ChmodClass.values) ...[
-            _buildClassRow(context, info, chmodClass),
-            const SizedBox(height: 4),
+            const Divider(height: 22),
+            Wrap(
+              spacing: 14,
+              runSpacing: 4,
+              children: [
+                _SpecialToggle(
+                  label: 'setuid',
+                  hint: 'u+s',
+                  value: info.setuid,
+                  onChanged: (value) => _set(info.withBits(setuid: value)),
+                ),
+                _SpecialToggle(
+                  label: 'setgid',
+                  hint: 'g+s',
+                  value: info.setgid,
+                  onChanged: (value) => _set(info.withBits(setgid: value)),
+                ),
+                _SpecialToggle(
+                  label: 'sticky',
+                  hint: '+t',
+                  value: info.sticky,
+                  onChanged: (value) => _set(info.withBits(sticky: value)),
+                ),
+              ],
+            ),
           ],
-          const Divider(height: 22),
-          Wrap(
-            spacing: 14,
-            runSpacing: 4,
-            children: [
-              _SpecialToggle(
-                label: 'setuid',
-                hint: 'u+s',
-                value: info.setuid,
-                onChanged: (value) => _set(info.withBits(setuid: value)),
-              ),
-              _SpecialToggle(
-                label: 'setgid',
-                hint: 'g+s',
-                value: info.setgid,
-                onChanged: (value) => _set(info.withBits(setgid: value)),
-              ),
-              _SpecialToggle(
-                label: 'sticky',
-                hint: '+t',
-                value: info.sticky,
-                onChanged: (value) => _set(info.withBits(sticky: value)),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -336,70 +339,58 @@ class _ChmodCalculatorViewState extends State<_ChmodCalculatorView> {
   }
 
   Widget _buildPresets(BuildContext context, ChmodInfo? info) {
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Common modes',
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 11.5,
-              color: context.appColors.editorText,
+    return ToolPanel(
+      title: 'Common modes',
+      expand: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final entry in commonModes.entries)
+                  ToolButton(
+                    label: entry.key,
+                    onPressed: () => _applyMode(entry.key),
+                  ),
+              ],
             ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final entry in commonModes.entries)
-                ToolButton(
-                  label: entry.key,
-                  onPressed: () => _applyMode(entry.key),
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            commonModes[info?.octal] ?? '',
-            style: mutedToolTextStyle(context, fontSize: 11),
-          ),
-        ],
+            const SizedBox(height: 6),
+            Text(
+              commonModes[info?.octal] ?? '',
+              style: mutedToolTextStyle(context, fontSize: 11),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildReport(BuildContext context) {
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Details',
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 11.5,
-              color: context.appColors.editorText,
+    return ToolPanel(
+      title: 'Details',
+      expand: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SelectableText(
+              _report.text.isEmpty
+                  ? 'Select permission bits to see the breakdown.'
+                  : _report.text,
+              style: TextStyle(
+                fontFamily: 'Menlo',
+                fontSize: 11.5,
+                height: 1.5,
+                color: context.appColors.editorText,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          SelectableText(
-            _report.text.isEmpty
-                ? 'Select permission bits to see the breakdown.'
-                : _report.text,
-            style: TextStyle(
-              fontFamily: 'Menlo',
-              fontSize: 11.5,
-              height: 1.5,
-              color: context.appColors.editorText,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

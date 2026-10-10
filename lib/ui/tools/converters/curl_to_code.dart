@@ -8,7 +8,7 @@ import 'package:path/path.dart' as p;
 import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/editors.dart';
-import '../common/shared.dart';
+import '../../tool_sample_action.dart';
 
 class _CurlToCodeView extends StatefulWidget {
   const _CurlToCodeView();
@@ -29,7 +29,8 @@ class _CurlToCodeViewState extends State<_CurlToCodeView> {
   // Toggleable curl building blocks → the flag(s) inserted into the command.
   static const _curlOptions = <String, String>{
     'Bearer token': "-H 'Authorization: Bearer TOKEN'",
-    'JSON body': "-H 'Content-Type: application/json' -d '{\"key\": \"value\"}'",
+    'JSON body':
+        "-H 'Content-Type: application/json' -d '{\"key\": \"value\"}'",
     'Form field': "-F 'field=value'",
     'Basic auth': "-u 'user:password'",
     'Custom header': "-H 'X-Custom-Header: value'",
@@ -79,7 +80,10 @@ class _CurlToCodeViewState extends State<_CurlToCodeView> {
       if (!text.contains(snippet)) text = '$text $snippet';
       _options.add(key);
     } else {
-      text = text.replaceFirst(' $snippet', '').replaceFirst(snippet, '').trim();
+      text = text
+          .replaceFirst(' $snippet', '')
+          .replaceFirst(snippet, '')
+          .trim();
       _options.remove(key);
     }
     setState(() => _input.text = text);
@@ -101,75 +105,60 @@ class _CurlToCodeViewState extends State<_CurlToCodeView> {
 
   @override
   Widget build(BuildContext context) {
-    return buildSplitEditors(
-      inputActions: [
-        SmallDropdown(
-          items: _methods,
-          initialValue: _method,
-          onChanged: _setMethod,
-        ),
-        _CurlOptionsMenu(
-          options: _curlOptions.keys.toList(),
-          active: _options,
-          onToggle: _toggleOption,
-        ),
-        ToolButton(label: 'Go', onPressed: _run),
-        ToolButton(
-          label: 'Clipboard',
-          onPressed: () async {
-            final text = await readClipboardText();
-            setState(() => _input.text = text);
-            _run();
-          },
-        ),
-        ToolButton(
-          label: 'Sample',
-          onPressed: () {
-            setState(() => _input.text = "curl 'https://devutils.com/'");
-            _run();
-          },
-        ),
-        ToolButton(
-          label: 'Clear',
-          onPressed: () {
-            setState(() => _input.clear());
-            _output.clear();
-          },
-        ),
-      ],
-      outputActions: [
-        SmallDropdown(
-          items: const [
-            'NodeJS / Fetch',
-            'JavaScript / axios',
-            'JavaScript / node:http',
-            'Python / Requests',
-            'PHP / cURL',
-            'PHP / Guzzle',
-            'Go / net/http',
-            'Rust / reqwest',
-            'C# / HttpClient',
-            'Java / HttpClient',
-            'Ruby / Net::HTTP',
-            'Ruby / Faraday',
-            'Swift / URLSession',
-            'Dart / http',
-            'Dart / dio',
-            'wget',
-          ],
-          initialValue: _lang,
-          onChanged: (value) {
-            setState(() => _lang = value);
-            _run();
-          },
-        ),
-        ToolButton(
-          label: 'Copy',
-          onPressed: () => Clipboard.setData(ClipboardData(text: _output.text)),
-        ),
-      ],
-      inputController: _input,
-      outputController: _output,
+    return ToolSampleAction(
+      onPressed: () {
+        setState(() => _input.text = "curl 'https://devutils.com/'");
+        _run();
+      },
+      child: buildSplitEditors(
+        inputActions: [
+          SmallDropdown(
+            items: _methods,
+            initialValue: _method,
+            onChanged: _setMethod,
+          ),
+          _CurlOptionsMenu(
+            options: _curlOptions.keys.toList(),
+            active: _options,
+            onToggle: _toggleOption,
+          ),
+          ToolButton(label: 'Go', onPressed: _run),
+        ],
+        outputActions: [
+          SmallDropdown(
+            items: const [
+              'NodeJS / Fetch',
+              'JavaScript / axios',
+              'JavaScript / node:http',
+              'Python / Requests',
+              'PHP / cURL',
+              'PHP / Guzzle',
+              'Go / net/http',
+              'Rust / reqwest',
+              'C# / HttpClient',
+              'Java / HttpClient',
+              'Ruby / Net::HTTP',
+              'Ruby / Faraday',
+              'Swift / URLSession',
+              'Dart / http',
+              'Dart / dio',
+              'wget',
+            ],
+            initialValue: _lang,
+            onChanged: (value) {
+              setState(() => _lang = value);
+              _run();
+            },
+          ),
+          ToolButton(
+            label: 'Copy',
+            onPressed: () =>
+                Clipboard.setData(ClipboardData(text: _output.text)),
+          ),
+        ],
+        inputController: _input,
+        outputController: _output,
+      ),
     );
   }
 

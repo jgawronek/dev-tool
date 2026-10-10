@@ -171,14 +171,11 @@ class _UnixTimeConverterViewState extends State<_UnixTimeConverterView> {
     final rightTimezone = _rightTimezoneLabel();
     return SingleChildScrollView(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
+            ToolToolbar(
               children: [
                 const Text(
                   'Input:',
@@ -209,6 +206,9 @@ class _UnixTimeConverterViewState extends State<_UnixTimeConverterView> {
                 controller: _input,
                 decoration: InputDecoration(
                   border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
                   isDense: true,
                   hintStyle: TextStyle(color: appColors.mutedText),
                 ),
@@ -323,101 +323,75 @@ class _TimezoneDetailsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final appColors = context.appColors;
     final details = this.details;
-    return Container(
-      decoration: toolSurfaceDecoration(context, radius: 8),
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final dropdownWidth = min(
-                190.0,
-                max(132.0, constraints.maxWidth - 102.0),
-              );
-              return Row(
+    return ToolPanel(
+      title: title,
+      expand: false,
+      actions: [
+        SmallDropdown(
+          items: timezoneOptions,
+          initialValue: selectedTimezone,
+          width: 180,
+          onChanged: onTimezoneChanged,
+        ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 12),
+            if (details == null)
+              Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(minHeight: 300),
+                alignment: Alignment.center,
+
+                child: Text(
+                  'Enter a Unix time or press Now',
+                  style: mutedToolTextStyle(context),
+                ),
+              )
+            else ...[
+              _UnixDetailRow(label: 'Date/time', value: details.dateTime),
+              _UnixDetailRow(label: 'Offset', value: details.offset),
+              _UnixDetailRow(label: 'UTC ISO', value: details.utcIso),
+              _UnixDetailRow(label: 'Relative', value: details.relative),
+              _UnixDetailRow(label: 'Unix sec', value: details.unixTime),
+              _UnixDetailRow(label: 'Unix ms', value: details.unixMilliseconds),
+              _UnixDetailRow(label: 'Unix ns', value: details.unixNanoseconds),
+              _UnixDetailRow(label: 'RFC 3339', value: details.rfc3339),
+              _UnixDetailRow(label: 'RFC 1123', value: details.rfc1123),
+              Row(
                 children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: appColors.editorText,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
+                  Expanded(
+                    child: _UnixDetailRow(
+                      label: 'Day',
+                      value: details.dayOfYear,
+                      compact: true,
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   Expanded(
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: SmallDropdown(
-                        items: timezoneOptions,
-                        initialValue: selectedTimezone,
-                        width: dropdownWidth,
-                        onChanged: onTimezoneChanged,
-                      ),
+                    child: _UnixDetailRow(
+                      label: 'Week',
+                      value: details.weekOfYear,
+                      compact: true,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _UnixDetailRow(
+                      label: 'Leap',
+                      value: details.isLeapYear,
+                      compact: true,
                     ),
                   ),
                 ],
-              );
-            },
-          ),
-          const SizedBox(height: 12),
-          if (details == null)
-            Container(
-              width: double.infinity,
-              constraints: const BoxConstraints(minHeight: 300),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: appColors.editorBackground,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: appColors.border),
               ),
-              child: Text(
-                'Enter a Unix time or press Now',
-                style: mutedToolTextStyle(context),
-              ),
-            )
-          else ...[
-            _UnixDetailRow(label: 'Date/time', value: details.dateTime),
-            _UnixDetailRow(label: 'Offset', value: details.offset),
-            _UnixDetailRow(label: 'UTC ISO', value: details.utcIso),
-            _UnixDetailRow(label: 'Relative', value: details.relative),
-            _UnixDetailRow(label: 'Unix sec', value: details.unixTime),
-            _UnixDetailRow(label: 'Unix ms', value: details.unixMilliseconds),
-            _UnixDetailRow(label: 'Unix ns', value: details.unixNanoseconds),
-            _UnixDetailRow(label: 'RFC 3339', value: details.rfc3339),
-            _UnixDetailRow(label: 'RFC 1123', value: details.rfc1123),
-            Row(
-              children: [
-                Expanded(
-                  child: _UnixDetailRow(
-                    label: 'Day',
-                    value: details.dayOfYear,
-                    compact: true,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _UnixDetailRow(
-                    label: 'Week',
-                    value: details.weekOfYear,
-                    compact: true,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _UnixDetailRow(
-                    label: 'Leap',
-                    value: details.isLeapYear,
-                    compact: true,
-                  ),
-                ),
-              ],
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

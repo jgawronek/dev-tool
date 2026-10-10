@@ -56,7 +56,7 @@ class _NumberBaseConverterViewState extends State<_NumberBaseConverterView> {
     final widthBits = int.tryParse(_width);
 
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -92,44 +92,49 @@ class _NumberBaseConverterViewState extends State<_NumberBaseConverterView> {
             ),
           const SizedBox(height: 12),
           Expanded(
-            child: ResizableSplit(
-              horizontal: true,
+            child: buildAdaptiveSplit(
               initialRatio: 0.62,
               minFirstExtent: 420,
               minSecondExtent: 300,
-              first: Container(
-                decoration: toolSurfaceDecoration(context),
-                child: parsed == null
-                    ? Center(
-                        child: Text(
-                          'Converted bases will appear here',
-                          style: mutedToolTextStyle(context),
+              first: ToolPanel(
+                title: 'Converted bases',
+                expand: true,
+                child: Container(
+                  child: parsed == null
+                      ? Center(
+                          child: Text(
+                            'Converted bases will appear here',
+                            style: mutedToolTextStyle(context),
+                          ),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.all(10),
+                          itemCount: outputs.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 8),
+                          itemBuilder: (context, index) {
+                            return _BaseOutputRow(output: outputs[index]);
+                          },
                         ),
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.all(10),
-                        itemCount: outputs.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          return _BaseOutputRow(output: outputs[index]);
-                        },
-                      ),
+                ),
               ),
-              second: Container(
-                decoration: toolSurfaceDecoration(context),
-                padding: const EdgeInsets.all(12),
-                child: parsed == null
-                    ? Center(
-                        child: Text(
-                          'Inspector details will appear here',
-                          style: mutedToolTextStyle(context),
+              second: ToolPanel(
+                title: 'Number details',
+                expand: true,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  child: parsed == null
+                      ? Center(
+                          child: Text(
+                            'Inspector details will appear here',
+                            style: mutedToolTextStyle(context),
+                          ),
+                        )
+                      : _NumberInspector(
+                          value: parsed.value,
+                          widthBits: widthBits,
+                          interpretation: _interpretation,
                         ),
-                      )
-                    : _NumberInspector(
-                        value: parsed.value,
-                        widthBits: widthBits,
-                        interpretation: _interpretation,
-                      ),
+                ),
               ),
             ),
           ),
@@ -152,77 +157,83 @@ class _NumberBaseConverterViewState extends State<_NumberBaseConverterView> {
       35,
       (index) => (index + 2).toString(),
     );
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(
-                'Input',
+    return ToolPanel(
+      title: 'Number',
+      expand: false,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  'Input',
+                  style: TextStyle(
+                    color: appColors.editorText,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                SmallDropdown(
+                  key: ValueKey('number-input-base-$_inputBase'),
+                  items: baseOptions,
+                  initialValue: _inputBase,
+                  width: 120,
+                  onChanged: (value) => setState(() => _inputBase = value),
+                ),
+                if (_inputBase == 'Custom')
+                  SmallDropdown(
+                    key: ValueKey('number-custom-base-$_customBase'),
+                    items: customBaseOptions,
+                    initialValue: _customBase,
+                    width: 82,
+                    onChanged: (value) => setState(() => _customBase = value),
+                  ),
+                SmallDropdown(
+                  key: ValueKey('number-width-$_width'),
+                  items: const ['Auto', '8', '16', '32', '64', '128', '256'],
+                  initialValue: _width,
+                  width: 104,
+                  onChanged: (value) => setState(() => _width = value),
+                ),
+                SmallDropdown(
+                  key: ValueKey('number-interpretation-$_interpretation'),
+                  items: const ['Unsigned', 'Signed'],
+                  initialValue: _interpretation,
+                  width: 118,
+                  onChanged: (value) => setState(() => _interpretation = value),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Container(
+              decoration: toolSurfaceDecoration(context, radius: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: TextField(
+                key: const ValueKey('number-base-input'),
+                controller: _input,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  isDense: true,
+                  hintText: '0b1010, 0o755, 123456, 0xDEADBEEF',
+                  hintStyle: TextStyle(color: appColors.mutedText),
+                ),
                 style: TextStyle(
                   color: appColors.editorText,
-                  fontWeight: FontWeight.w800,
+                  fontFamily: 'Menlo',
+                  fontSize: 13,
                 ),
-              ),
-              SmallDropdown(
-                key: ValueKey('number-input-base-$_inputBase'),
-                items: baseOptions,
-                initialValue: _inputBase,
-                width: 120,
-                onChanged: (value) => setState(() => _inputBase = value),
-              ),
-              if (_inputBase == 'Custom')
-                SmallDropdown(
-                  key: ValueKey('number-custom-base-$_customBase'),
-                  items: customBaseOptions,
-                  initialValue: _customBase,
-                  width: 82,
-                  onChanged: (value) => setState(() => _customBase = value),
-                ),
-              SmallDropdown(
-                key: ValueKey('number-width-$_width'),
-                items: const ['Auto', '8', '16', '32', '64', '128', '256'],
-                initialValue: _width,
-                width: 104,
-                onChanged: (value) => setState(() => _width = value),
-              ),
-              SmallDropdown(
-                key: ValueKey('number-interpretation-$_interpretation'),
-                items: const ['Unsigned', 'Signed'],
-                initialValue: _interpretation,
-                width: 118,
-                onChanged: (value) => setState(() => _interpretation = value),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Container(
-            decoration: toolSurfaceDecoration(context, radius: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: TextField(
-              key: const ValueKey('number-base-input'),
-              controller: _input,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                border: InputBorder.none,
-                isDense: true,
-                hintText: '0b1010, 0o755, 123456, 0xDEADBEEF',
-                hintStyle: TextStyle(color: appColors.mutedText),
-              ),
-              style: TextStyle(
-                color: appColors.editorText,
-                fontFamily: 'Menlo',
-                fontSize: 13,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

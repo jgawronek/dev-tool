@@ -8,6 +8,7 @@ import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/editors.dart';
 import '../common/shared.dart';
+import '../../tool_sample_action.dart';
 
 class _StringInspectorView extends StatefulWidget {
   const _StringInspectorView();
@@ -68,10 +69,6 @@ class _StringInspectorViewState extends State<_StringInspectorView> {
     _input.text = 'This is a special emoji 😀.\nAwesome, right?';
   }
 
-  void _clear() {
-    _input.clear();
-  }
-
   @override
   Widget build(BuildContext context) {
     final text = _input.text;
@@ -96,129 +93,138 @@ class _StringInspectorViewState extends State<_StringInspectorView> {
         ? selection.textInside(text).characters.length
         : 0;
 
-    return ResizableSplit(
-      horizontal: false,
-      initialRatio: 0.30,
-      minFirstExtent: 140,
-      minSecondExtent: 300,
-      first: EditorPane(
-        label: 'Input',
-        actions: [
-          ToolButton(label: 'Sample', onPressed: _setSample),
-          ToolButton(label: 'Clear', onPressed: _clear),
-        ],
-        controller: _input,
-        placeholder: 'Type or paste text to inspect...',
-        showHeader: false,
-      ),
-      second: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final columns = constraints.maxWidth >= 920 ? 7 : 4;
-              const gap = 8.0;
-              final width =
-                  (constraints.maxWidth - ((columns - 1) * gap)) / columns;
-              return Wrap(
-                spacing: gap,
-                runSpacing: gap,
-                children: [
-                  _InspectorMetricTile(
-                    label: 'Characters',
-                    value: '$chars',
-                    width: width,
-                  ),
-                  _InspectorMetricTile(
-                    label: 'Bytes',
-                    value: '$bytes',
-                    width: width,
-                  ),
-                  _InspectorMetricTile(
-                    label: 'Words',
-                    value: '$words',
-                    width: width,
-                  ),
-                  _InspectorMetricTile(
-                    label: 'Lines',
-                    value: '$lines',
-                    width: width,
-                  ),
-                  _InspectorMetricTile(
-                    label: 'Unique',
-                    value: '${counts.length}',
-                    width: width,
-                  ),
-                  _InspectorMetricTile(
-                    label: 'Cursor',
-                    value: '${cursorPosition[0]}:${cursorPosition[1]}',
-                    width: width,
-                  ),
-                  _InspectorMetricTile(
-                    label: 'Selected',
-                    value: '$selectedChars',
-                    width: width,
-                  ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: Container(
-              decoration: toolSurfaceDecoration(context),
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        'Word distribution',
-                        style: TextStyle(
-                          color: context.appColors.editorText,
-                          fontWeight: FontWeight.w700,
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: buildAdaptiveSplit(
+        initialRatio: 0.30,
+        minFirstExtent: 140,
+        minSecondExtent: 300,
+        first: EditorPane(
+          label: 'Input',
+          actions: [],
+          controller: _input,
+          placeholder: 'Type or paste text to inspect...',
+          showHeader: true,
+        ),
+        second: ToolPanel(
+          title: 'Text analysis',
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final columns = constraints.maxWidth >= 920 ? 7 : 4;
+                    const gap = 8.0;
+                    final width =
+                        (constraints.maxWidth - ((columns - 1) * gap)) /
+                        columns;
+                    return Wrap(
+                      spacing: gap,
+                      runSpacing: gap,
+                      children: [
+                        _InspectorMetricTile(
+                          label: 'Characters',
+                          value: '$chars',
+                          width: width,
                         ),
-                      ),
-                      const Spacer(),
-                      Checkbox(
-                        value: _caseSensitive,
-                        onChanged: (value) =>
-                            setState(() => _caseSensitive = value ?? true),
-                      ),
-                      Text(
-                        'Case sensitive',
-                        style: TextStyle(color: context.appColors.editorText),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: sortedCounts.isEmpty
-                        ? Center(
-                            child: Text(
-                              'No words yet',
-                              style: mutedToolTextStyle(context),
+                        _InspectorMetricTile(
+                          label: 'Bytes',
+                          value: '$bytes',
+                          width: width,
+                        ),
+                        _InspectorMetricTile(
+                          label: 'Words',
+                          value: '$words',
+                          width: width,
+                        ),
+                        _InspectorMetricTile(
+                          label: 'Lines',
+                          value: '$lines',
+                          width: width,
+                        ),
+                        _InspectorMetricTile(
+                          label: 'Unique',
+                          value: '${counts.length}',
+                          width: width,
+                        ),
+                        _InspectorMetricTile(
+                          label: 'Cursor',
+                          value: '${cursorPosition[0]}:${cursorPosition[1]}',
+                          width: width,
+                        ),
+                        _InspectorMetricTile(
+                          label: 'Selected',
+                          value: '$selectedChars',
+                          width: width,
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: Container(
+                    decoration: toolSurfaceDecoration(context),
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              'Word distribution',
+                              style: TextStyle(
+                                color: context.appColors.editorText,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                          )
-                        : ListView.separated(
-                            itemCount: sortedCounts.length,
-                            separatorBuilder: (_, _) =>
-                                const SizedBox(height: 8),
-                            itemBuilder: (context, index) {
-                              final entry = sortedCounts[index];
-                              return _WordDistributionRow(
-                                word: entry.key,
-                                count: entry.value,
-                                fraction: entry.value / maxCount,
-                              );
-                            },
-                          ),
+                            const Spacer(),
+                            Checkbox(
+                              value: _caseSensitive,
+                              onChanged: (value) => setState(
+                                () => _caseSensitive = value ?? true,
+                              ),
+                            ),
+                            Text(
+                              'Case sensitive',
+                              style: TextStyle(
+                                color: context.appColors.editorText,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: sortedCounts.isEmpty
+                              ? Center(
+                                  child: Text(
+                                    'No words yet',
+                                    style: mutedToolTextStyle(context),
+                                  ),
+                                )
+                              : ListView.separated(
+                                  itemCount: sortedCounts.length,
+                                  separatorBuilder: (_, _) =>
+                                      const SizedBox(height: 8),
+                                  itemBuilder: (context, index) {
+                                    final entry = sortedCounts[index];
+                                    return _WordDistributionRow(
+                                      word: entry.key,
+                                      count: entry.value,
+                                      fraction: entry.value / maxCount,
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

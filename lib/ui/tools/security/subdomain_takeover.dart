@@ -126,7 +126,7 @@ class _SubdomainTakeoverViewState extends State<_SubdomainTakeoverView> {
     final appColors = context.appColors;
     final progress = _progress;
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -168,8 +168,7 @@ class _SubdomainTakeoverViewState extends State<_SubdomainTakeoverView> {
           ),
           const SizedBox(height: 10),
           Expanded(
-            child: ResizableSplit(
-              horizontal: true,
+            child: buildAdaptiveSplit(
               initialRatio: 0.5,
               minFirstExtent: 360,
               minSecondExtent: 360,
@@ -184,92 +183,101 @@ class _SubdomainTakeoverViewState extends State<_SubdomainTakeoverView> {
 
   Widget _buildTakeoverControls(BuildContext context) {
     final appColors = context.appColors;
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Wraps rather than a Row so the timeout/concurrency fields stay
-          // reachable when the panel is resized very narrow.
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(
-                'Targets',
+    return ToolPanel(
+      title: 'Scan options',
+      expand: false,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Wraps rather than a Row so the timeout/concurrency fields stay
+            // reachable when the panel is resized very narrow.
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  'Targets',
+                  style: TextStyle(
+                    color: appColors.editorText,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                _takeoverOptionField(
+                  context,
+                  'Timeout',
+                  controller: _timeout,
+                  width: 72,
+                  suffix: 's',
+                ),
+                _takeoverOptionField(
+                  context,
+                  'Concurrency',
+                  controller: _concurrency,
+                  width: 72,
+                ),
+                ToolButton(label: 'Scan', onPressed: _scanning ? null : _scan),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Container(
+              decoration: toolSurfaceDecoration(context, radius: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              child: TextField(
+                key: const ValueKey('subdomain-takeover-targets'),
+                controller: _targets,
+                enabled: !_scanning,
+                minLines: 2,
+                maxLines: 4,
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  isDense: true,
+                  hintText: 'docs.example.com\nhelp.example.com',
+                  hintStyle: TextStyle(color: appColors.mutedText),
+                ),
                 style: TextStyle(
                   color: appColors.editorText,
-                  fontWeight: FontWeight.w800,
+                  fontFamily: 'Menlo',
+                  fontSize: 13,
                 ),
               ),
-              _takeoverOptionField(
-                context,
-                'Timeout',
-                controller: _timeout,
-                width: 72,
-                suffix: 's',
-              ),
-              _takeoverOptionField(
-                context,
-                'Concurrency',
-                controller: _concurrency,
-                width: 72,
-              ),
-              ToolButton(label: 'Scan', onPressed: _scanning ? null : _scan),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Container(
-            decoration: toolSurfaceDecoration(context, radius: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            child: TextField(
-              key: const ValueKey('subdomain-takeover-targets'),
-              controller: _targets,
-              enabled: !_scanning,
-              minLines: 2,
-              maxLines: 4,
-              decoration: InputDecoration(
-                border: InputBorder.none,
-                isDense: true,
-                hintText: 'docs.example.com\nhelp.example.com',
-                hintStyle: TextStyle(color: appColors.mutedText),
-              ),
-              style: TextStyle(
-                color: appColors.editorText,
-                fontFamily: 'Menlo',
-                fontSize: 13,
-              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildTakeoverResults(BuildContext context) {
     final results = _summary?.results ?? const <TakeoverScanResult>[];
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      child: results.isEmpty
-          ? Center(
-              child: Text(
-                _scanning
-                    ? 'Scanning targets...'
-                    : 'Potential takeover matches will appear here',
-                style: mutedToolTextStyle(context),
+    return ToolPanel(
+      title: 'Results',
+      expand: true,
+      child: Container(
+        child: results.isEmpty
+            ? Center(
+                child: Text(
+                  _scanning
+                      ? 'Scanning targets...'
+                      : 'Potential takeover matches will appear here',
+                  style: mutedToolTextStyle(context),
+                ),
+              )
+            : ListView.separated(
+                padding: const EdgeInsets.all(10),
+                itemCount: results.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final result = results[index];
+                  return _takeoverResultTile(context, result);
+                },
               ),
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.all(10),
-              itemCount: results.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (context, index) {
-                final result = results[index];
-                return _takeoverResultTile(context, result);
-              },
-            ),
+      ),
     );
   }
 
@@ -330,55 +338,58 @@ class _SubdomainTakeoverViewState extends State<_SubdomainTakeoverView> {
   }
 
   Widget _buildTakeoverDetails(BuildContext context) {
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              SegmentedToggle(
-                key: ValueKey('takeover-report-$_reportMode'),
-                options: const ['Details', 'JSON', 'CSV'],
-                initialIndex: switch (_reportMode) {
-                  'JSON' => 1,
-                  'CSV' => 2,
-                  _ => 0,
-                },
-                onChanged: (index) {
-                  setState(() {
-                    _reportMode = switch (index) {
-                      1 => 'JSON',
-                      2 => 'CSV',
-                      _ => 'Details',
-                    };
-                    _refreshDetails();
-                  });
-                },
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  _selected?.host ?? 'Result details',
-                  overflow: TextOverflow.ellipsis,
-                  style: mutedToolTextStyle(context),
+    return ToolPanel(
+      title: 'Details',
+      expand: true,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                SegmentedToggle(
+                  key: ValueKey('takeover-report-$_reportMode'),
+                  options: const ['Details', 'JSON', 'CSV'],
+                  initialIndex: switch (_reportMode) {
+                    'JSON' => 1,
+                    'CSV' => 2,
+                    _ => 0,
+                  },
+                  onChanged: (index) {
+                    setState(() {
+                      _reportMode = switch (index) {
+                        1 => 'JSON',
+                        2 => 'CSV',
+                        _ => 'Details',
+                      };
+                      _refreshDetails();
+                    });
+                  },
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Expanded(
-            child: EditorPane(
-              label: 'Takeover details',
-              actions: const [],
-              controller: _details,
-              readOnly: true,
-              placeholder: 'Select a scan result to inspect evidence...',
-              showHeader: false,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _selected?.host ?? 'Result details',
+                    overflow: TextOverflow.ellipsis,
+                    style: mutedToolTextStyle(context),
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 10),
+            Expanded(
+              child: EditorPane(
+                label: 'Takeover details',
+                actions: const [],
+                controller: _details,
+                readOnly: true,
+                placeholder: 'Select a scan result to inspect evidence...',
+                showHeader: true,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -405,6 +416,9 @@ class _SubdomainTakeoverViewState extends State<_SubdomainTakeoverView> {
               enabled: !_scanning,
               decoration: const InputDecoration(
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
                 isDense: true,
               ),
               style: TextStyle(

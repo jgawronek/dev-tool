@@ -10,6 +10,7 @@ import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _PasswordHashingView extends StatefulWidget {
   const _PasswordHashingView();
@@ -173,18 +174,6 @@ class _PasswordHashingViewState extends State<_PasswordHashingView> {
     _run();
   }
 
-  void _clear() {
-    setState(() {
-      _password.clear();
-      _verifyHash.clear();
-      _salt.clear();
-      _output.clear();
-      _status = '';
-      _error = null;
-      _warning = null;
-    });
-  }
-
   void _setAlgorithm(String label) {
     final match = PasswordHashAlgorithm.values.where((a) => a.label == label);
     if (match.isEmpty) return;
@@ -223,48 +212,49 @@ class _PasswordHashingViewState extends State<_PasswordHashingView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: ResizableSplit(
-            horizontal: true,
-            initialRatio: 0.42,
-            minSecondExtent: 380,
-            first: EditorPane(
-              label: 'Password',
-              actions: [
-                ToolButton(label: 'Go', onPressed: _run),
-                ToolButton(label: 'Sample', onPressed: _setSample),
-                ToolButton(label: 'Clear', onPressed: _clear),
-                SegmentedToggle(
-                  options: const ['Hash', 'Verify'],
-                  initialIndex: _verifying ? 1 : 0,
-                  onChanged: _setMode,
-                ),
-              ],
-              controller: _password,
-              onChanged: (_) => _run(),
-              placeholder: 'Enter a password...',
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        children: [
+          Expanded(
+            child: buildAdaptiveSplit(
+              initialRatio: 0.42,
+              minSecondExtent: 380,
+              first: EditorPane(
+                label: 'Password',
+                actions: [
+                  ToolButton(label: 'Go', onPressed: _run),
+
+                  SegmentedToggle(
+                    options: const ['Hash', 'Verify'],
+                    initialIndex: _verifying ? 1 : 0,
+                    onChanged: _setMode,
+                  ),
+                ],
+                controller: _password,
+                onChanged: (_) => _run(),
+                placeholder: 'Enter a password...',
+              ),
+              second: _buildPanel(context),
             ),
-            second: _buildPanel(context),
           ),
-        ),
-        if (_error != null || _warning != null || _status.isNotEmpty)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                _error ?? _warning ?? _status,
-                style: _error != null
-                    ? errorToolTextStyle(context)
-                    : _warning != null
-                        ? TextStyle(color: context.appColors.warning)
-                        : mutedToolTextStyle(context),
+          if (_error != null || _warning != null || _status.isNotEmpty)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  _error ?? _warning ?? _status,
+                  style: _error != null
+                      ? errorToolTextStyle(context)
+                      : _warning != null
+                      ? TextStyle(color: context.appColors.warning)
+                      : mutedToolTextStyle(context),
+                ),
               ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -324,15 +314,9 @@ class _PasswordHashingViewState extends State<_PasswordHashingView> {
             controller: _salt,
           ),
           if (algorithm.usesCost)
-            LabeledField(
-              label: 'Cost factor (4-31)',
-              controller: _rounds,
-            ),
+            LabeledField(label: 'Cost factor (4-31)', controller: _rounds),
           if (algorithm.usesScryptParams) ...[
-            LabeledField(
-              label: 'N (power of two)',
-              controller: _scryptN,
-            ),
+            LabeledField(label: 'N (power of two)', controller: _scryptN),
             LabeledField(label: 'r (block size)', controller: _scryptR),
             LabeledField(label: 'p (parallelism)', controller: _scryptP),
           ],
@@ -344,10 +328,7 @@ class _PasswordHashingViewState extends State<_PasswordHashingView> {
               controller: _iterations,
             ),
           if (algorithm.usesMemory) ...[
-            LabeledField(
-              label: 'Memory (KiB)',
-              controller: _memory,
-            ),
+            LabeledField(label: 'Memory (KiB)', controller: _memory),
             LabeledField(label: 'Parallelism (p)', controller: _lanes),
           ],
           if (_running)

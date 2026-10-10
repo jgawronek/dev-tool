@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _HexToAsciiView extends StatefulWidget {
   const _HexToAsciiView();
@@ -61,24 +62,9 @@ class _HexToAsciiViewState extends State<_HexToAsciiView> {
     }
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() {
-      _input.text = text;
-    });
-  }
-
   void _setSample() {
     setState(() {
       _input.text = '48 65 6C 6C 6F 20 66 72 6F 6D 20 44 65 76 55 74 69 6C 73';
-    });
-  }
-
-  void _clearInput() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-      _error = null;
     });
   }
 
@@ -88,31 +74,31 @@ class _HexToAsciiViewState extends State<_HexToAsciiView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: buildSplitEditors(
-            inputActions: [
-              ToolButton(label: 'Go', onPressed: _run),
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clearInput),
-            ],
-            outputActions: [ToolButton(label: 'Copy', onPressed: _copyOutput)],
-            inputPlaceholder: '48 65 6C 6C 6F',
-            outputPlaceholder: 'Hello',
-            inputController: _input,
-            outputController: _output,
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        children: [
+          Expanded(
+            child: buildSplitEditors(
+              inputActions: [ToolButton(label: 'Go', onPressed: _run)],
+              outputActions: [
+                ToolButton(label: 'Copy', onPressed: _copyOutput),
+              ],
+              inputPlaceholder: '48 65 6C 6C 6F',
+              outputPlaceholder: 'Hello',
+              inputController: _input,
+              outputController: _output,
+            ),
           ),
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(_error!, style: errorToolTextStyle(context)),
-          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(_error!, style: errorToolTextStyle(context)),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -150,22 +136,8 @@ class _AsciiToHexViewState extends State<_AsciiToHexView> {
     setState(() => _output.text = buffer.toString());
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() {
-      _input.text = text;
-    });
-  }
-
   void _setSample() {
     setState(() => _input.text = 'Hello from DevUtils');
-  }
-
-  void _clearInput() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-    });
   }
 
   Future<void> _copyOutput() async {
@@ -174,18 +146,16 @@ class _AsciiToHexViewState extends State<_AsciiToHexView> {
 
   @override
   Widget build(BuildContext context) {
-    return buildSplitEditors(
-      inputActions: [
-        ToolButton(label: 'Go', onPressed: _run),
-        ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-        ToolButton(label: 'Sample', onPressed: _setSample),
-        ToolButton(label: 'Clear', onPressed: _clearInput),
-      ],
-      outputActions: [ToolButton(label: 'Copy', onPressed: _copyOutput)],
-      inputPlaceholder: 'Hello from DevUtils',
-      outputPlaceholder: '48 65 6C 6C 6F',
-      inputController: _input,
-      outputController: _output,
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: buildSplitEditors(
+        inputActions: [ToolButton(label: 'Go', onPressed: _run)],
+        outputActions: [ToolButton(label: 'Copy', onPressed: _copyOutput)],
+        inputPlaceholder: 'Hello from DevUtils',
+        outputPlaceholder: '48 65 6C 6C 6F',
+        inputController: _input,
+        outputController: _output,
+      ),
     );
   }
 }
@@ -257,67 +227,49 @@ class _HexAsciiConverterViewState extends State<_HexAsciiConverterView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: buildSplitEditors(
-            inputActions: [
-              ToolButton(label: 'Go', onPressed: _run),
-              ToolButton(
-                label: 'Clipboard',
-                onPressed: () async {
-                  final text = await readClipboardText();
-                  setState(() => _input.text = text);
-                  _run();
-                },
-              ),
-              ToolButton(
-                label: 'Sample',
-                onPressed: () {
-                  setState(
-                    () =>
-                        _input.text = _hexToAscii ? '48 65 6C 6C 6F' : 'Hello',
-                  );
-                  _run();
-                },
-              ),
-              ToolButton(
-                label: 'Clear',
-                onPressed: () {
-                  setState(() => _input.clear());
-                  _output.clear();
-                },
-              ),
-              SegmentedToggle(
-                options: const ['Hex → ASCII', 'ASCII → Hex'],
-                initialIndex: _hexToAscii ? 0 : 1,
-                onChanged: (index) {
-                  setState(() => _hexToAscii = index == 0);
-                  _run();
-                },
-              ),
-            ],
-            outputActions: [
-              ToolButton(
-                label: 'Copy',
-                onPressed: () =>
-                    Clipboard.setData(ClipboardData(text: _output.text)),
-              ),
-            ],
-            inputController: _input,
-            outputController: _output,
-            inputPlaceholder: _hexToAscii ? '48 65 6C 6C 6F' : 'Hello',
-            outputPlaceholder: _hexToAscii ? 'Hello' : '48 65 6C 6C 6F',
+    return ToolSampleAction(
+      onPressed: () {
+        setState(() => _input.text = _hexToAscii ? '48 65 6C 6C 6F' : 'Hello');
+        _run();
+      },
+      child: Column(
+        children: [
+          Expanded(
+            child: buildSplitEditors(
+              inputActions: [
+                ToolButton(label: 'Go', onPressed: _run),
+
+                SegmentedToggle(
+                  options: const ['Hex → ASCII', 'ASCII → Hex'],
+                  initialIndex: _hexToAscii ? 0 : 1,
+                  onChanged: (index) {
+                    setState(() => _hexToAscii = index == 0);
+                    _run();
+                  },
+                ),
+              ],
+              outputActions: [
+                ToolButton(
+                  label: 'Copy',
+                  onPressed: () =>
+                      Clipboard.setData(ClipboardData(text: _output.text)),
+                ),
+              ],
+              inputController: _input,
+              outputController: _output,
+              inputPlaceholder: _hexToAscii ? '48 65 6C 6C 6F' : 'Hello',
+              outputPlaceholder: _hexToAscii ? 'Hello' : '48 65 6C 6C 6F',
+            ),
           ),
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(_error!, style: errorToolTextStyle(context)),
-          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(_error!, style: errorToolTextStyle(context)),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

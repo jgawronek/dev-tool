@@ -11,6 +11,7 @@ import '../../../services/file_dialog_service.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _JsonToCodeView extends StatefulWidget {
   const _JsonToCodeView();
@@ -96,78 +97,79 @@ class _JsonToCodeViewState extends State<_JsonToCodeView> {
   @override
   Widget build(BuildContext context) {
     final swiftSelected = _lang == 'Swift';
-    final optionsPanel = Container(
-      padding: const EdgeInsets.all(12),
-      decoration: toolSurfaceDecoration(context),
-      child: Material(
-        type: MaterialType.transparency,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Options', style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-          if (swiftSelected) ...[
-            CheckboxListTile(
-              value: _plainTypes,
-              onChanged: (value) {
-                setState(() => _plainTypes = value ?? false);
-                _run();
-              },
-              title: const Text('Plain types only (no Codable)'),
-              controlAffinity: ListTileControlAffinity.leading,
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-            ),
-            CheckboxListTile(
-              value: _initializers,
-              onChanged: (value) {
-                setState(() => _initializers = value ?? false);
-                _run();
-              },
-              title: const Text('Generate memberwise initializers'),
-              controlAffinity: ListTileControlAffinity.leading,
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-            ),
-            CheckboxListTile(
-              value: _codingKeys,
-              onChanged: _plainTypes
-                  ? null
-                  : (value) {
-                      setState(() => _codingKeys = value ?? false);
-                      _run();
-                    },
-              title: const Text('Explicit CodingKeys'),
-              controlAffinity: ListTileControlAffinity.leading,
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-            ),
-            const SizedBox(height: 8),
-            ToolButton(
-              label: 'Reset to Defaults',
-              onPressed: () {
-                setState(() {
-                  _plainTypes = false;
-                  _initializers = true;
-                  _codingKeys = true;
-                });
-                _run();
-              },
-            ),
-          ] else
-            Text(
-              'No options for $_lang output.',
-              style: mutedToolTextStyle(context, fontSize: 12),
-            ),
-          ],
+    final optionsPanel = ToolPanel(
+      title: 'Options',
+      expand: false,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+
+        child: Material(
+          type: MaterialType.transparency,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (swiftSelected) ...[
+                CheckboxListTile(
+                  value: _plainTypes,
+                  onChanged: (value) {
+                    setState(() => _plainTypes = value ?? false);
+                    _run();
+                  },
+                  title: const Text('Plain types only (no Codable)'),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+                CheckboxListTile(
+                  value: _initializers,
+                  onChanged: (value) {
+                    setState(() => _initializers = value ?? false);
+                    _run();
+                  },
+                  title: const Text('Generate memberwise initializers'),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+                CheckboxListTile(
+                  value: _codingKeys,
+                  onChanged: _plainTypes
+                      ? null
+                      : (value) {
+                          setState(() => _codingKeys = value ?? false);
+                          _run();
+                        },
+                  title: const Text('Explicit CodingKeys'),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+                const SizedBox(height: 8),
+                ToolButton(
+                  label: 'Reset to Defaults',
+                  onPressed: () {
+                    setState(() {
+                      _plainTypes = false;
+                      _initializers = true;
+                      _codingKeys = true;
+                    });
+                    _run();
+                  },
+                ),
+              ] else
+                Text(
+                  'No options for $_lang output.',
+                  style: mutedToolTextStyle(context, fontSize: 12),
+                ),
+            ],
+          ),
         ),
       ),
     );
     final body = LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 1100;
-        final editors = ResizableSplit(
-          horizontal: true,
+        final editors = buildAdaptiveSplit(
           first: FileDropTargetRegion(
             targetId: _dropTargetId,
             onDropped: (paths) {
@@ -176,37 +178,6 @@ class _JsonToCodeViewState extends State<_JsonToCodeView> {
             child: EditorPane(
               label: 'Input',
               actions: [
-                ToolButton(
-                  label: 'Clipboard',
-                  onPressed: () async {
-                    final text = await readClipboardText();
-                    setState(() {
-                      _sourceFileName = null;
-                      _input.text = text;
-                    });
-                    _run();
-                  },
-                ),
-                ToolButton(
-                  label: 'Sample',
-                  onPressed: () {
-                    setState(() {
-                      _sourceFileName = null;
-                      _input.text = '{"name":"DevUtils"}';
-                    });
-                    _run();
-                  },
-                ),
-                ToolButton(
-                  label: 'Clear',
-                  onPressed: () {
-                    setState(() {
-                      _sourceFileName = null;
-                      _input.clear();
-                    });
-                    _output.clear();
-                  },
-                ),
                 const SmallDropdown(items: ['JSON'], initialValue: 'JSON'),
               ],
               controller: _input,
@@ -265,14 +236,34 @@ class _JsonToCodeViewState extends State<_JsonToCodeView> {
       },
     );
 
-    if (_error == null) return body;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(_error!, style: errorToolTextStyle(context)),
-        const SizedBox(height: 8),
-        Expanded(child: body),
-      ],
+    if (_error == null) {
+      return ToolSampleAction(
+        onPressed: () {
+          setState(() {
+            _sourceFileName = null;
+            _input.text = '{"name":"DevUtils"}';
+          });
+          _run();
+        },
+        child: body,
+      );
+    }
+    return ToolSampleAction(
+      onPressed: () {
+        setState(() {
+          _sourceFileName = null;
+          _input.text = '{"name":"DevUtils"}';
+        });
+        _run();
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(_error!, style: errorToolTextStyle(context)),
+          const SizedBox(height: 8),
+          Expanded(child: body),
+        ],
+      ),
     );
   }
 }

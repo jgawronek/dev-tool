@@ -67,9 +67,9 @@ class ToolState {
       favorites: ValueNotifier<Set<String>>(
         prefs.getStringList('favorites')?.toSet() ?? <String>{},
       ),
-      darkMode: ValueNotifier<bool>(prefs.getBool('darkMode') ?? true),
+      darkMode: ValueNotifier<bool>(prefs.getBool('darkMode') ?? false),
       colorTheme: ValueNotifier<String>(
-        prefs.getString('colorTheme') ?? 'Classic Blue',
+        prefs.getString('colorTheme') ?? 'Sandstone',
       ),
       sidebarWidth: ValueNotifier<double>(
         _normalizeSidebarWidth(prefs.getDouble('sidebarWidth') ?? 250),
@@ -84,8 +84,8 @@ class ToolState {
       selectedToolId: ValueNotifier<String>('unix_time_converter'),
       searchQuery: ValueNotifier<String>(''),
       favorites: ValueNotifier<Set<String>>(<String>{}),
-      darkMode: ValueNotifier<bool>(true),
-      colorTheme: ValueNotifier<String>('Classic Blue'),
+      darkMode: ValueNotifier<bool>(false),
+      colorTheme: ValueNotifier<String>('Sandstone'),
       sidebarWidth: ValueNotifier<double>(250),
       workspace: WorkspaceState.inMemory(),
     );

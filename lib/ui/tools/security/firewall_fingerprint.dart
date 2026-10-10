@@ -8,6 +8,7 @@ import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _FirewallFingerprintView extends StatefulWidget {
   const _FirewallFingerprintView();
@@ -115,7 +116,7 @@ class _FirewallFingerprintViewState extends State<_FirewallFingerprintView> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -143,8 +144,7 @@ class _FirewallFingerprintViewState extends State<_FirewallFingerprintView> {
           ),
           const SizedBox(height: 10),
           Expanded(
-            child: ResizableSplit(
-              horizontal: true,
+            child: buildAdaptiveSplit(
               initialRatio: 0.52,
               minFirstExtent: 340,
               minSecondExtent: 320,
@@ -159,66 +159,81 @@ class _FirewallFingerprintViewState extends State<_FirewallFingerprintView> {
 
   Widget _buildFirewallControls(BuildContext context) {
     final appColors = context.appColors;
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      padding: const EdgeInsets.all(12),
-      child: Wrap(
-        spacing: 10,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          Text(
-            'Target',
-            style: TextStyle(
-              color: appColors.editorText,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          SizedBox(
-            width: 330,
-            child: _firewallTextField(
-              key: const ValueKey('firewall-fingerprint-target'),
-              controller: _target,
-              hint: 'https://example.com/',
-              onSubmitted: (_) => _scan(),
-            ),
-          ),
-          _firewallMiniField(
-            context,
-            'Timeout',
-            _timeout,
-            width: 64,
-            suffix: 's',
-          ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
+    return ToolSampleAction(
+      onPressed: _loading ? null : _setSample,
+      child: ToolPanel(
+        title: 'Probe options',
+        expand: false,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Checkbox(
-                value: _findAll,
-                onChanged: _loading
-                    ? null
-                    : (value) => setState(() => _findAll = value ?? true),
+              Text(
+                'Target',
+                style: TextStyle(
+                  color: appColors.editorText,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-              Text('Find all', style: TextStyle(color: appColors.editorText)),
+              SizedBox(
+                width: 330,
+                child: _firewallTextField(
+                  key: const ValueKey('firewall-fingerprint-target'),
+                  controller: _target,
+                  hint: 'https://example.com/',
+                  onSubmitted: (_) => _scan(),
+                ),
+              ),
+              _firewallMiniField(
+                context,
+                'Timeout',
+                _timeout,
+                width: 64,
+                suffix: 's',
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Checkbox(
+                    value: _findAll,
+                    onChanged: _loading
+                        ? null
+                        : (value) => setState(() => _findAll = value ?? true),
+                  ),
+                  Text(
+                    'Find all',
+                    style: TextStyle(color: appColors.editorText),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Checkbox(
+                    value: _followRedirects,
+                    onChanged: _loading
+                        ? null
+                        : (value) {
+                            setState(() => _followRedirects = value ?? true);
+                          },
+                  ),
+                  Text(
+                    'Redirects',
+                    style: TextStyle(color: appColors.editorText),
+                  ),
+                ],
+              ),
+
+              ToolButton(
+                label: 'Fingerprint',
+                onPressed: _loading ? null : _scan,
+              ),
             ],
           ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Checkbox(
-                value: _followRedirects,
-                onChanged: _loading
-                    ? null
-                    : (value) {
-                        setState(() => _followRedirects = value ?? true);
-                      },
-              ),
-              Text('Redirects', style: TextStyle(color: appColors.editorText)),
-            ],
-          ),
-          ToolButton(label: 'Sample', onPressed: _loading ? null : _setSample),
-          ToolButton(label: 'Fingerprint', onPressed: _loading ? null : _scan),
-        ],
+        ),
       ),
     );
   }
@@ -226,34 +241,37 @@ class _FirewallFingerprintViewState extends State<_FirewallFingerprintView> {
   Widget _buildFirewallResults(BuildContext context) {
     final result = _result;
     final detections = result?.detections ?? const <FirewallDetection>[];
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      child: result == null
-          ? Center(
-              child: Text(
-                _loading
-                    ? 'Running probes...'
-                    : 'Firewall matches will appear here',
-                style: mutedToolTextStyle(context),
+    return ToolPanel(
+      title: 'Results',
+      expand: true,
+      child: Container(
+        child: result == null
+            ? Center(
+                child: Text(
+                  _loading
+                      ? 'Running probes...'
+                      : 'Firewall matches will appear here',
+                  style: mutedToolTextStyle(context),
+                ),
+              )
+            : ListView(
+                padding: const EdgeInsets.all(10),
+                children: [
+                  _firewallSummary(context, result),
+                  const SizedBox(height: 10),
+                  if (detections.isEmpty && result.genericDetected)
+                    _genericFirewallTile(context, result.genericReason)
+                  else if (detections.isEmpty)
+                    Text(
+                      'No WAF detected by signature or generic probes.',
+                      style: mutedToolTextStyle(context),
+                    )
+                  else
+                    for (final detection in detections)
+                      _firewallDetectionTile(context, detection),
+                ],
               ),
-            )
-          : ListView(
-              padding: const EdgeInsets.all(10),
-              children: [
-                _firewallSummary(context, result),
-                const SizedBox(height: 10),
-                if (detections.isEmpty && result.genericDetected)
-                  _genericFirewallTile(context, result.genericReason)
-                else if (detections.isEmpty)
-                  Text(
-                    'No WAF detected by signature or generic probes.',
-                    style: mutedToolTextStyle(context),
-                  )
-                else
-                  for (final detection in detections)
-                    _firewallDetectionTile(context, detection),
-              ],
-            ),
+      ),
     );
   }
 
@@ -348,52 +366,55 @@ class _FirewallFingerprintViewState extends State<_FirewallFingerprintView> {
   }
 
   Widget _buildFirewallDetails(BuildContext context) {
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                SegmentedToggle(
-                  options: const ['Probes', 'Report'],
-                  initialIndex: _detailsIndex,
-                  onChanged: (index) => setState(() => _detailsIndex = index),
-                ),
-                if (_detailsIndex == 1) ...[
-                  const SizedBox(width: 10),
-                  SmallDropdown(
-                    key: ValueKey('firewall-report-$_reportMode'),
-                    items: const ['JSON', 'Text'],
-                    initialValue: _reportMode,
-                    width: 90,
-                    onChanged: (value) {
-                      setState(() => _reportMode = value);
-                      _refreshFirewallReport();
-                    },
+    return ToolPanel(
+      title: 'Details',
+      expand: true,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  SegmentedToggle(
+                    options: const ['Probes', 'Report'],
+                    initialIndex: _detailsIndex,
+                    onChanged: (index) => setState(() => _detailsIndex = index),
                   ),
+                  if (_detailsIndex == 1) ...[
+                    const SizedBox(width: 10),
+                    SmallDropdown(
+                      key: ValueKey('firewall-report-$_reportMode'),
+                      items: const ['JSON', 'Text'],
+                      initialValue: _reportMode,
+                      width: 90,
+                      onChanged: (value) {
+                        setState(() => _reportMode = value);
+                        _refreshFirewallReport();
+                      },
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          Expanded(
-            child: _detailsIndex == 0
-                ? _buildProbeList(context)
-                : EditorPane(
-                    label: 'Report',
-                    actions: const [],
-                    controller: _report,
-                    readOnly: true,
-                    placeholder:
-                        'Run a fingerprint scan to generate a report...',
-                    showHeader: false,
-                  ),
-          ),
-        ],
+            const SizedBox(height: 10),
+            Expanded(
+              child: _detailsIndex == 0
+                  ? _buildProbeList(context)
+                  : EditorPane(
+                      label: 'Report',
+                      actions: const [],
+                      controller: _report,
+                      readOnly: true,
+                      placeholder:
+                          'Run a fingerprint scan to generate a report...',
+                      showHeader: true,
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -547,6 +568,9 @@ class _FirewallFingerprintViewState extends State<_FirewallFingerprintView> {
         onSubmitted: onSubmitted,
         decoration: InputDecoration(
           border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
           isDense: true,
           hintText: hint,
           hintStyle: TextStyle(color: appColors.mutedText),

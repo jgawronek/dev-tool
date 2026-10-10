@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../ui/widgets.dart';
 import '../common/editors.dart';
-import '../common/shared.dart';
+import '../../tool_sample_action.dart';
 
 class _Asn1Node {
   _Asn1Node(this.tag, this.content, this.children);
@@ -319,44 +319,27 @@ class _CertificateDecoderViewState extends State<_CertificateDecoderView> {
 
   @override
   Widget build(BuildContext context) {
-    return buildSplitEditors(
-      inputActions: [
-        ToolButton(label: 'Go', onPressed: _run),
-        ToolButton(
-          label: 'Clipboard',
-          onPressed: () async {
-            final text = await readClipboardText();
-            setState(() => _input.text = text);
-            _run();
-          },
-        ),
-        ToolButton(
-          label: 'Sample',
-          onPressed: () {
-            setState(() => _input.text = _sampleCertificate);
-            _run();
-          },
-        ),
-        ToolButton(
-          label: 'Clear',
-          onPressed: () {
-            setState(() => _input.clear());
-            _output.clear();
-          },
-        ),
-      ],
-      outputActions: [
-        ToolButton(
-          label: 'Copy',
-          onPressed: () => Clipboard.setData(ClipboardData(text: _output.text)),
-        ),
-      ],
-      inputController: _input,
-      outputController: _output,
-      onInputChanged: (_) => _run(),
-      inputPlaceholder:
-          'Paste a PEM certificate (-----BEGIN CERTIFICATE-----)...',
-      outputPlaceholder: 'Decoded certificate details...',
+    return ToolSampleAction(
+      onPressed: () {
+        setState(() => _input.text = _sampleCertificate);
+        _run();
+      },
+      child: buildSplitEditors(
+        inputActions: [ToolButton(label: 'Go', onPressed: _run)],
+        outputActions: [
+          ToolButton(
+            label: 'Copy',
+            onPressed: () =>
+                Clipboard.setData(ClipboardData(text: _output.text)),
+          ),
+        ],
+        inputController: _input,
+        outputController: _output,
+        onInputChanged: (_) => _run(),
+        inputPlaceholder:
+            'Paste a PEM certificate (-----BEGIN CERTIFICATE-----)...',
+        outputPlaceholder: 'Decoded certificate details...',
+      ),
     );
   }
 }

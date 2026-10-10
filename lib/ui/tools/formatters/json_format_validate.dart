@@ -8,6 +8,7 @@ import '../../../services/json_operations_service.dart';
 import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
+import '../../tool_sample_action.dart';
 
 class JsonPanelCompareDetails {
   const JsonPanelCompareDetails({
@@ -85,71 +86,70 @@ class _JsonFormatValidateViewState extends State<_JsonFormatValidateView> {
     });
   }
 
-  void _clearSource() {
-    setState(() => _session.clear());
-  }
-
   @override
   Widget build(BuildContext context) {
     final compare = widget.compare;
-    return Column(
-      children: [
-        if (compare != null) ...[
-          _JsonCompareStrip(compare: compare),
+    return ToolSampleAction(
+      onPressed: _setExample,
+      child: Column(
+        children: [
+          if (compare != null) ...[
+            _JsonCompareStrip(compare: compare),
+            const SizedBox(height: 8),
+          ],
+          _JsonStatsHeader(statusListenable: _session.status),
           const SizedBox(height: 8),
-        ],
-        _JsonStatsHeader(statusListenable: _session.status),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              const Text('Operation', style: TextStyle(fontSize: 12)),
-              SmallDropdown(
-                items: JsonOperation.values.map((item) => item.label).toList(),
-                initialValue: _session.operation.label,
-                onChanged: (label) => _setOperation(
-                  JsonOperation.values.firstWhere(
-                    (item) => item.label == label,
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                const Text('Operation', style: TextStyle(fontSize: 12)),
+                SmallDropdown(
+                  items: JsonOperation.values
+                      .map((item) => item.label)
+                      .toList(),
+                  initialValue: _session.operation.label,
+                  onChanged: (label) => _setOperation(
+                    JsonOperation.values.firstWhere(
+                      (item) => item.label == label,
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: JsonSplitEditors(
-            inputController: _session.input,
-            outputController: _session.output,
-            inputScrollController: _session.inputScroll,
-            outputScrollController: _session.outputScroll,
-            inputMarkedLines: compare?.changedLines ?? const <int>{},
-            inputRatio: _inputRatio,
-            onInputRatioChanged: (value) => setState(() => _inputRatio = value),
-            onInputChanged: _formatLive,
-            horizontal: true,
-            inputSoftWrap: _wrap,
-            outputSoftWrap: _wrap,
-            inputActions: [
-              ToolButton(label: 'Sample', onPressed: _setExample),
-              ToolButton(label: 'Clear', onPressed: _clearSource),
-            ],
-            outputActions: const [],
-            showInputHeader: false,
-            showOutputHeader: false,
-            outputOverlay: _JsonFormatOutputOverlay(
-              indent: _session.indent,
-              wrap: _wrap,
-              onIndentChanged: _setIndent,
-              onWrapChanged: (value) => setState(() => _wrap = value),
+              ],
             ),
           ),
-        ),
-      ],
+          const SizedBox(height: 8),
+          Expanded(
+            child: JsonSplitEditors(
+              inputController: _session.input,
+              outputController: _session.output,
+              inputScrollController: _session.inputScroll,
+              outputScrollController: _session.outputScroll,
+              inputMarkedLines: compare?.changedLines ?? const <int>{},
+              inputRatio: _inputRatio,
+              onInputRatioChanged: (value) =>
+                  setState(() => _inputRatio = value),
+              onInputChanged: _formatLive,
+              horizontal: true,
+              inputSoftWrap: _wrap,
+              outputSoftWrap: _wrap,
+              inputActions: [],
+              outputActions: const [],
+              showInputHeader: true,
+              showOutputHeader: true,
+              outputOverlay: _JsonFormatOutputOverlay(
+                indent: _session.indent,
+                wrap: _wrap,
+                onIndentChanged: _setIndent,
+                onWrapChanged: (value) => setState(() => _wrap = value),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

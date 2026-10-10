@@ -108,17 +108,6 @@ class _FileChecksumViewState extends State<_FileChecksumView> {
     return buffer.toString().trimRight();
   }
 
-  void _clear() {
-    setState(() {
-      _path.clear();
-      _outcome = null;
-      _expected.clear();
-      _report.clear();
-      _error = null;
-      _status = 'Choose a file or drop one onto the panel.';
-    });
-  }
-
   Future<void> _copyReport() async {
     await Clipboard.setData(ClipboardData(text: _report.text));
   }
@@ -132,7 +121,10 @@ class _FileChecksumViewState extends State<_FileChecksumView> {
   @override
   Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _buildInputControls(context),
+        const SizedBox(height: 12),
         Expanded(
           child: buildSplitEditors(
             outputActions: [
@@ -145,11 +137,11 @@ class _FileChecksumViewState extends State<_FileChecksumView> {
             outputLabel: 'Checksums',
             inputPlaceholder: 'No file selected',
             outputPlaceholder: 'Digests appear here...',
-            showInputHeader: false,
-            showOutputHeader: false,
+            showInputHeader: true,
+            showOutputHeader: true,
             // EditorPane only renders inputActions when no overlay is given,
             // so the file controls are composed into the overlay row.
-            inputOverlay: _buildInputControls(context),
+
             inputDropTargetId: _dropTargetId,
             onInputDropped: _handleDrop,
           ),
@@ -173,71 +165,55 @@ class _FileChecksumViewState extends State<_FileChecksumView> {
 
   Widget _buildInputControls(BuildContext context) {
     final appColors = context.appColors;
-    return Container(
-      decoration: toolSurfaceDecoration(context, radius: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      // The overlay is width-constrained, so scroll rather than overflow.
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ToolButton(label: 'Choose file...', onPressed: _pickFile),
-            const SizedBox(width: 6),
-            ToolButton(label: 'Clear', onPressed: _clear),
-            const SizedBox(width: 12),
-            const Text(
-              'Expected digest',
-              style: TextStyle(fontSize: 11.5),
+    return ToolToolbar(
+      children: [
+        ToolButton(label: 'Choose file...', onPressed: _pickFile),
+        const SizedBox(width: 6),
+
+        const SizedBox(width: 12),
+        const Text('Expected digest', style: TextStyle(fontSize: 11.5)),
+        const SizedBox(width: 8),
+        ConstrainedBox(
+          constraints: const BoxConstraints.tightFor(width: 320),
+          child: TextField(
+            controller: _expected,
+            onSubmitted: (_) => _path.text.isEmpty ? null : _run(_path.text),
+            style: TextStyle(
+              color: appColors.editorText,
+              fontFamily: 'Menlo',
+              fontSize: 11.5,
             ),
-            const SizedBox(width: 8),
-            ConstrainedBox(
-              constraints: const BoxConstraints.tightFor(width: 320),
-              child: TextField(
-                controller: _expected,
-                onSubmitted: (_) =>
-                    _path.text.isEmpty ? null : _run(_path.text),
-                style: TextStyle(
-                  color: appColors.editorText,
-                  fontFamily: 'Menlo',
-                  fontSize: 11.5,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Paste a checksum to verify',
-                  hintStyle: TextStyle(
-                    color: appColors.mutedText,
-                    fontSize: 11.5,
-                  ),
-                  isDense: true,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(5),
-                    borderSide: BorderSide(color: appColors.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(5),
-                    borderSide: BorderSide(color: appColors.border),
-                  ),
-                ),
+            decoration: InputDecoration(
+              hintText: 'Paste a checksum to verify',
+              hintStyle: TextStyle(color: appColors.mutedText, fontSize: 11.5),
+              isDense: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(5),
+                borderSide: BorderSide(color: appColors.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(5),
+                borderSide: BorderSide(color: appColors.border),
               ),
             ),
-            const SizedBox(width: 8),
-            ToolButton(
-              label: 'Verify',
-              onPressed: _path.text.isEmpty || _running
-                  ? null
-                  : () => _run(_path.text),
-            ),
-            if (_running) ...[
-              const SizedBox(width: 8),
-              const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ],
-          ],
+          ),
         ),
-      ),
+        const SizedBox(width: 8),
+        ToolButton(
+          label: 'Verify',
+          onPressed: _path.text.isEmpty || _running
+              ? null
+              : () => _run(_path.text),
+        ),
+        if (_running) ...[
+          const SizedBox(width: 8),
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ],
+      ],
     );
   }
 }

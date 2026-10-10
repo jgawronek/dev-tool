@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _Base64StringView extends StatefulWidget {
   const _Base64StringView();
@@ -71,25 +72,12 @@ class _Base64StringViewState extends State<_Base64StringView> {
     return value;
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _input.text = text);
-  }
-
   void _setSample() {
     setState(
       () => _input.text = _encode
           ? 'Hello from DevUtils'
           : 'SGVsbG8gZnJvbSBEZXZVdGlscw==',
     );
-  }
-
-  void _clearInput() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-      _error = null;
-    });
   }
 
   Future<void> _copyOutput() async {
@@ -102,43 +90,44 @@ class _Base64StringViewState extends State<_Base64StringView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: buildVerticalEditors(
-            inputActions: [
-              ToolButton(label: 'Go', onPressed: _run),
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clearInput),
-              const ToolIconButton(icon: Icons.settings),
-              SegmentedToggle(
-                options: const ['Encode', 'Decode'],
-                initialIndex: _encode ? 0 : 1,
-                onChanged: (index) {
-                  setState(() => _encode = index == 0);
-                  _run();
-                },
-              ),
-            ],
-            outputActions: [
-              ToolButton(label: 'Copy', onPressed: _copyOutput),
-              ToolButton(label: 'Use as input', onPressed: _useAsInput),
-            ],
-            inputController: _input,
-            outputController: _output,
-            inputPlaceholder: _encode ? 'Hello from DevUtils' : 'SGVsbG8=',
-            outputPlaceholder: _encode ? 'SGVsbG8=' : 'Hello',
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        children: [
+          Expanded(
+            child: buildVerticalEditors(
+              inputActions: [
+                ToolButton(label: 'Go', onPressed: _run),
+
+                const ToolIconButton(icon: Icons.settings),
+                SegmentedToggle(
+                  options: const ['Encode', 'Decode'],
+                  initialIndex: _encode ? 0 : 1,
+                  onChanged: (index) {
+                    setState(() => _encode = index == 0);
+                    _run();
+                  },
+                ),
+              ],
+              outputActions: [
+                ToolButton(label: 'Copy', onPressed: _copyOutput),
+                ToolButton(label: 'Use as input', onPressed: _useAsInput),
+              ],
+              inputController: _input,
+              outputController: _output,
+              inputPlaceholder: _encode ? 'Hello from DevUtils' : 'SGVsbG8=',
+              outputPlaceholder: _encode ? 'SGVsbG8=' : 'Hello',
+            ),
           ),
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(_error!, style: errorToolTextStyle(context)),
-          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(_error!, style: errorToolTextStyle(context)),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

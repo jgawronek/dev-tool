@@ -5,8 +5,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../ui/widgets.dart';
-import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _HtmlEntityView extends StatefulWidget {
   const _HtmlEntityView();
@@ -34,20 +34,8 @@ class _HtmlEntityViewState extends State<_HtmlEntityView> {
     });
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _input.text = text);
-  }
-
   void _setSample() {
     setState(() => _input.text = '<h1>Hello</h1>');
-  }
-
-  void _clearInput() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-    });
   }
 
   Future<void> _copyOutput() async {
@@ -56,30 +44,31 @@ class _HtmlEntityViewState extends State<_HtmlEntityView> {
 
   @override
   Widget build(BuildContext context) {
-    return buildVerticalEditors(
-      inputActions: [
-        ToolButton(label: 'Go', onPressed: _run),
-        ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-        ToolButton(label: 'Sample', onPressed: _setSample),
-        ToolButton(label: 'Clear', onPressed: _clearInput),
-        const ToolIconButton(icon: Icons.settings),
-        SegmentedToggle(
-          options: const ['Encode', 'Decode'],
-          initialIndex: _encode ? 0 : 1,
-          onChanged: (index) {
-            setState(() => _encode = index == 0);
-            _run();
-          },
-        ),
-      ],
-      outputActions: [
-        ToolButton(label: 'Copy', onPressed: _copyOutput),
-        const ToolButton(label: 'Use as input'),
-      ],
-      inputPlaceholder: '<h1>Hello</h1>',
-      outputPlaceholder: '&lt;h1&gt;Hello&lt;/h1&gt;',
-      inputController: _input,
-      outputController: _output,
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: buildVerticalEditors(
+        inputActions: [
+          ToolButton(label: 'Go', onPressed: _run),
+
+          const ToolIconButton(icon: Icons.settings),
+          SegmentedToggle(
+            options: const ['Encode', 'Decode'],
+            initialIndex: _encode ? 0 : 1,
+            onChanged: (index) {
+              setState(() => _encode = index == 0);
+              _run();
+            },
+          ),
+        ],
+        outputActions: [
+          ToolButton(label: 'Copy', onPressed: _copyOutput),
+          const ToolButton(label: 'Use as input'),
+        ],
+        inputPlaceholder: '<h1>Hello</h1>',
+        outputPlaceholder: '&lt;h1&gt;Hello&lt;/h1&gt;',
+        inputController: _input,
+        outputController: _output,
+      ),
     );
   }
 }

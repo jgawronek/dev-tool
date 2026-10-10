@@ -8,6 +8,7 @@ import '../../../ui/widgets.dart';
 import '../common/editors.dart';
 import '../common/shared.dart';
 import '../../../services/asn1_service.dart';
+import '../../tool_sample_action.dart';
 
 class _Asn1DecoderView extends StatefulWidget {
   const _Asn1DecoderView();
@@ -58,10 +59,9 @@ class _Asn1DecoderViewState extends State<_Asn1DecoderView> {
         }
       }
     }
-    final cleaned = text.replaceAll(RegExp(r'0x'), '').replaceAll(
-      RegExp(r'[\s:,_-]'),
-      '',
-    );
+    final cleaned = text
+        .replaceAll(RegExp(r'0x'), '')
+        .replaceAll(RegExp(r'[\s:,_-]'), '');
     if (cleaned.isEmpty) {
       throw const FormatException('No hex digits found in the input.');
     }
@@ -111,71 +111,64 @@ class _Asn1DecoderViewState extends State<_Asn1DecoderView> {
     _run();
   }
 
-  void _clear() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-      _error = null;
-      _status = null;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: buildSplitEditors(
-            inputActions: [
-              ToolButton(label: 'Go', onPressed: _run),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clear),
-              SegmentedToggle(
-                options: const ['ASN.1 (DER)', 'Generic TLV'],
-                initialIndex: _mode.index,
-                onChanged: (index) {
-                  setState(() => _mode = Asn1DecodeMode.values[index]);
-                  _run();
-                },
-              ),
-              ToolButton(
-                label: _pem ? 'Input: PEM/Base64/hex' : 'Input: hex only',
-                onPressed: () {
-                  setState(() => _pem = !_pem);
-                  _run();
-                },
-              ),
-            ],
-            outputActions: [
-              ToolButton(
-                label: 'Copy',
-                onPressed: () =>
-                    Clipboard.setData(ClipboardData(text: _output.text)),
-              ),
-            ],
-            inputController: _input,
-            outputController: _output,
-            inputPlaceholder: 'Paste a PEM certificate or DER/hex bytes',
-            outputPlaceholder: 'Tag tree',
-          ),
-        ),
-        if (_error != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(_error!, style: errorToolTextStyle(context)),
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        children: [
+          Expanded(
+            child: buildSplitEditors(
+              inputActions: [
+                ToolButton(label: 'Go', onPressed: _run),
+
+                SegmentedToggle(
+                  options: const ['ASN.1 (DER)', 'Generic TLV'],
+                  initialIndex: _mode.index,
+                  onChanged: (index) {
+                    setState(() => _mode = Asn1DecodeMode.values[index]);
+                    _run();
+                  },
+                ),
+                ToolButton(
+                  label: _pem ? 'Input: PEM/Base64/hex' : 'Input: hex only',
+                  onPressed: () {
+                    setState(() => _pem = !_pem);
+                    _run();
+                  },
+                ),
+              ],
+              outputActions: [
+                ToolButton(
+                  label: 'Copy',
+                  onPressed: () =>
+                      Clipboard.setData(ClipboardData(text: _output.text)),
+                ),
+              ],
+              inputController: _input,
+              outputController: _output,
+              inputPlaceholder: 'Paste a PEM certificate or DER/hex bytes',
+              outputPlaceholder: 'Tag tree',
             ),
           ),
-        if (_status != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(_status!, style: mutedToolTextStyle(context)),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(_error!, style: errorToolTextStyle(context)),
+              ),
             ),
-          ),
-      ],
+          if (_status != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(_status!, style: mutedToolTextStyle(context)),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

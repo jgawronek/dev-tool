@@ -1,13 +1,12 @@
 /// User agent generator/validator tool view.
 library;
 
-import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../ui/widgets.dart';
-import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _UserAgentToolView extends StatefulWidget {
   const _UserAgentToolView();
@@ -44,12 +43,6 @@ class _UserAgentToolViewState extends State<_UserAgentToolView> {
     setState(() {});
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _input.text = text);
-    _validate();
-  }
-
   void _setSample() {
     final sample = _UaGenerator.generate(
       browser: _UaBrowser.chrome,
@@ -59,46 +52,40 @@ class _UserAgentToolViewState extends State<_UserAgentToolView> {
     _validate();
   }
 
-  void _clear() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    return buildSplitEditors(
-      inputLabel: 'User Agent',
-      outputLabel: 'Analysis',
-      inputActions: [
-        ToolButton(label: 'Go', onPressed: _validate),
-        ToolButton(label: 'Generate', onPressed: _generate),
-        SmallDropdown(
-          items: _UaGenerator.browserLabels,
-          initialValue: _browser,
-          onChanged: (value) => setState(() => _browser = value),
-        ),
-        SmallDropdown(
-          items: _UaGenerator.platformLabels,
-          initialValue: _platform,
-          onChanged: (value) => setState(() => _platform = value),
-        ),
-        ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-        ToolButton(label: 'Sample', onPressed: _setSample),
-        ToolButton(label: 'Clear', onPressed: _clear),
-      ],
-      outputActions: [
-        ToolButton(
-          label: 'Copy',
-          onPressed: () => Clipboard.setData(ClipboardData(text: _output.text)),
-        ),
-      ],
-      inputController: _input,
-      outputController: _output,
-      inputPlaceholder: 'Paste or generate a user agent...',
-      outputPlaceholder: 'Analysis appears here...',
-      onInputChanged: (_) => _validate(),
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: buildSplitEditors(
+        inputLabel: 'User Agent',
+        outputLabel: 'Analysis',
+        inputActions: [
+          ToolButton(label: 'Go', onPressed: _validate),
+          ToolButton(label: 'Generate', onPressed: _generate),
+          SmallDropdown(
+            items: _UaGenerator.browserLabels,
+            initialValue: _browser,
+            onChanged: (value) => setState(() => _browser = value),
+          ),
+          SmallDropdown(
+            items: _UaGenerator.platformLabels,
+            initialValue: _platform,
+            onChanged: (value) => setState(() => _platform = value),
+          ),
+        ],
+        outputActions: [
+          ToolButton(
+            label: 'Copy',
+            onPressed: () =>
+                Clipboard.setData(ClipboardData(text: _output.text)),
+          ),
+        ],
+        inputController: _input,
+        outputController: _output,
+        inputPlaceholder: 'Paste or generate a user agent...',
+        outputPlaceholder: 'Analysis appears here...',
+        onInputChanged: (_) => _validate(),
+      ),
     );
   }
 }

@@ -8,6 +8,7 @@ import '../../../services/base_encoding_service.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _BaseEncodingsView extends StatefulWidget {
   const _BaseEncodingsView();
@@ -52,12 +53,6 @@ class _BaseEncodingsViewState extends State<_BaseEncodingsView> {
     });
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _input.text = text);
-    _run();
-  }
-
   void _setSample() {
     setState(() {
       _input.text = _encode
@@ -80,15 +75,6 @@ class _BaseEncodingsViewState extends State<_BaseEncodingsView> {
       case BaseEncoding.bech32:
         return 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4';
     }
-  }
-
-  void _clear() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-      _summary = '';
-      _error = null;
-    });
   }
 
   Future<void> _copyOutput() async {
@@ -120,55 +106,56 @@ class _BaseEncodingsViewState extends State<_BaseEncodingsView> {
   @override
   Widget build(BuildContext context) {
     final labels = BaseEncoding.values.map((e) => e.label).toList();
-    return Column(
-      children: [
-        Expanded(
-          child: buildVerticalEditors(
-            inputActions: [
-              ToolButton(label: 'Go', onPressed: _run),
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clear),
-              SegmentedToggle(
-                options: const ['Encode', 'Decode'],
-                initialIndex: _encode ? 0 : 1,
-                onChanged: _setMode,
-              ),
-            ],
-            outputActions: [
-              ToolButton(label: 'Copy', onPressed: _copyOutput),
-              ToolButton(label: 'Use as input', onPressed: _useAsInput),
-            ],
-            inputController: _input,
-            outputController: _output,
-            onInputChanged: (_) => _run(),
-            inputPlaceholder: _encode
-                ? 'Text to encode...'
-                : 'Paste ${_encoding.label} to decode...',
-            outputPlaceholder: _encode
-                ? '${_encoding.label} output...'
-                : 'Decoded text...',
-            outputOverlay: SmallDropdown(
-              items: labels,
-              initialValue: _encoding.label,
-              onChanged: _setEncoding,
-            ),
-          ),
-        ),
-        if (_error != null || _summary.isNotEmpty)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                _error ?? _summary,
-                style: _error != null
-                    ? errorToolTextStyle(context)
-                    : mutedToolTextStyle(context),
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        children: [
+          Expanded(
+            child: buildVerticalEditors(
+              inputActions: [
+                ToolButton(label: 'Go', onPressed: _run),
+
+                SegmentedToggle(
+                  options: const ['Encode', 'Decode'],
+                  initialIndex: _encode ? 0 : 1,
+                  onChanged: _setMode,
+                ),
+              ],
+              outputActions: [
+                ToolButton(label: 'Copy', onPressed: _copyOutput),
+                ToolButton(label: 'Use as input', onPressed: _useAsInput),
+              ],
+              inputController: _input,
+              outputController: _output,
+              onInputChanged: (_) => _run(),
+              inputPlaceholder: _encode
+                  ? 'Text to encode...'
+                  : 'Paste ${_encoding.label} to decode...',
+              outputPlaceholder: _encode
+                  ? '${_encoding.label} output...'
+                  : 'Decoded text...',
+              outputOverlay: SmallDropdown(
+                items: labels,
+                initialValue: _encoding.label,
+                onChanged: _setEncoding,
               ),
             ),
           ),
-      ],
+          if (_error != null || _summary.isNotEmpty)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  _error ?? _summary,
+                  style: _error != null
+                      ? errorToolTextStyle(context)
+                      : mutedToolTextStyle(context),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

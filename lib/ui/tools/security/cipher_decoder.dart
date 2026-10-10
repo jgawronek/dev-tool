@@ -10,6 +10,7 @@ import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _CipherDecoderView extends StatefulWidget {
   const _CipherDecoderView();
@@ -44,11 +45,11 @@ class _CipherDecoderViewState extends State<_CipherDecoderView> {
   }
 
   CipherOptions get _options => CipherOptions(
-        shift: int.tryParse(_shift.text.trim()) ?? 13,
-        key: _key.text,
-        rails: int.tryParse(_rails.text.trim()) ?? 3,
-        baconVariant: 'Classic 24',
-      );
+    shift: int.tryParse(_shift.text.trim()) ?? 13,
+    key: _key.text,
+    rails: int.tryParse(_rails.text.trim()) ?? 3,
+    baconVariant: 'Classic 24',
+  );
 
   Future<void> _run() async {
     final text = _input.text;
@@ -87,7 +88,7 @@ class _CipherDecoderViewState extends State<_CipherDecoderView> {
         _status = candidates.isEmpty
             ? 'No single-step cipher produced readable text.'
             : '${candidates.length} readable result(s); best is '
-                '${candidates.first.cipher} at ${candidates.first.scoreLabel}.';
+                  '${candidates.first.cipher} at ${candidates.first.scoreLabel}.';
       } else if (mode == 1) {
         output = decodeCipher(text, kind, options);
         final score = readability(output);
@@ -102,7 +103,7 @@ class _CipherDecoderViewState extends State<_CipherDecoderView> {
         _status = candidates.isEmpty
             ? 'Nothing scored above the readability threshold.'
             : '${candidates.length} result(s); best is '
-                '${candidates.first.cipher} at ${candidates.first.scoreLabel}.';
+                  '${candidates.first.cipher} at ${candidates.first.scoreLabel}.';
       }
     } catch (error) {
       failure = '$error';
@@ -118,32 +119,17 @@ class _CipherDecoderViewState extends State<_CipherDecoderView> {
     });
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _input.text = text);
-    _run();
-  }
-
   void _setSample() {
     setState(() {
       _input.text = switch (_mode) {
-        2 => 'uryyb' // "hello" with Caesar 13
-            '',
+        2 =>
+          'uryyb' // "hello" with Caesar 13
+              '',
         1 => 'uryyb 32',
         _ => 'uryyb 32',
       };
     });
     _run();
-  }
-
-  void _clear() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-      _candidates = const [];
-      _status = '';
-      _error = null;
-    });
   }
 
   Future<void> _copyOutput() async {
@@ -190,98 +176,99 @@ class _CipherDecoderViewState extends State<_CipherDecoderView> {
   @override
   Widget build(BuildContext context) {
     final labels = CipherKind.values.map((c) => c.label).toList();
-    return Column(
-      children: [
-        Expanded(
-          child: buildVerticalEditors(
-            inputActions: [
-              ToolButton(label: 'Go', onPressed: _run),
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clear),
-              SegmentedToggle(
-                options: const ['Identify', 'Decode', 'Brute force'],
-                initialIndex: _mode,
-                onChanged: _setMode,
-              ),
-            ],
-            outputActions: [
-              ToolButton(label: 'Copy', onPressed: _copyOutput),
-              ToolButton(label: 'Use as input', onPressed: _useAsInput),
-            ],
-            inputController: _input,
-            outputController: _output,
-            onInputChanged: (_) => _run(),
-            inputPlaceholder: 'Ciphertext...',
-            outputPlaceholder: 'Plaintext...',
-            outputOverlay: _buildControls(context, labels),
-          ),
-        ),
-        if (_candidates.length > 1) _buildCandidateList(context),
-        if (_error != null || _status.isNotEmpty)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                _error ?? _status,
-                style: _error != null
-                    ? errorToolTextStyle(context)
-                    : mutedToolTextStyle(context),
-              ),
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        children: [
+          _buildControls(context, labels),
+          const SizedBox(height: 12),
+          Expanded(
+            child: buildVerticalEditors(
+              inputActions: [
+                ToolButton(label: 'Go', onPressed: _run),
+
+                SegmentedToggle(
+                  options: const ['Identify', 'Decode', 'Brute force'],
+                  initialIndex: _mode,
+                  onChanged: _setMode,
+                ),
+              ],
+              outputActions: [
+                ToolButton(label: 'Copy', onPressed: _copyOutput),
+                ToolButton(label: 'Use as input', onPressed: _useAsInput),
+              ],
+              inputController: _input,
+              outputController: _output,
+              onInputChanged: (_) => _run(),
+              inputPlaceholder: 'Ciphertext...',
+              outputPlaceholder: 'Plaintext...',
             ),
           ),
-      ],
+          if (_candidates.length > 1) _buildCandidateList(context),
+          if (_error != null || _status.isNotEmpty)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  _error ?? _status,
+                  style: _error != null
+                      ? errorToolTextStyle(context)
+                      : mutedToolTextStyle(context),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
   Widget _buildControls(BuildContext context, List<String> labels) {
     final showCipher = _mode == 1;
     final kind = _kind;
-    return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (showCipher) ...[
-            SmallDropdown(
-              items: labels,
-              initialValue: kind.label,
-              onChanged: _setCipher,
-            ),
-            const SizedBox(width: 6),
-            if (kind.needsShift) ...[
-              const Text('Shift', style: TextStyle(fontSize: 11.5)),
-              const SizedBox(width: 4),
-              SizedBox(width: 46, child: _MiniField(controller: _shift)),
-              const SizedBox(width: 8),
-            ],
-            if (kind.needsKey) ...[
-              const Text('Key', style: TextStyle(fontSize: 11.5)),
-              const SizedBox(width: 4),
-              SizedBox(width: 96, child: _MiniField(controller: _key)),
-              const SizedBox(width: 8),
-            ],
-            if (kind == CipherKind.railFence) ...[
-              const Text('Rails', style: TextStyle(fontSize: 11.5)),
-              const SizedBox(width: 4),
-              SizedBox(width: 40, child: _MiniField(controller: _rails)),
-              const SizedBox(width: 8),
-            ],
-          ] else
-            Text(
-              _mode == 0
-                  ? 'Tries every single-step cipher'
-                  : 'All Caesar shifts, ROT47, Vigenere, and XOR keys',
-              style: mutedToolTextStyle(context, fontSize: 11.5),
-            ),
-          if (_running) ...[
-            const SizedBox(width: 6),
-            const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
+    return ToolToolbar(
+      children: [
+        if (showCipher) ...[
+          SmallDropdown(
+            items: labels,
+            initialValue: kind.label,
+            onChanged: _setCipher,
+          ),
+          const SizedBox(width: 6),
+          if (kind.needsShift) ...[
+            const Text('Shift', style: TextStyle(fontSize: 11.5)),
+            const SizedBox(width: 4),
+            SizedBox(width: 46, child: _MiniField(controller: _shift)),
+            const SizedBox(width: 8),
           ],
+          if (kind.needsKey) ...[
+            const Text('Key', style: TextStyle(fontSize: 11.5)),
+            const SizedBox(width: 4),
+            SizedBox(width: 96, child: _MiniField(controller: _key)),
+            const SizedBox(width: 8),
+          ],
+          if (kind == CipherKind.railFence) ...[
+            const Text('Rails', style: TextStyle(fontSize: 11.5)),
+            const SizedBox(width: 4),
+            SizedBox(width: 40, child: _MiniField(controller: _rails)),
+            const SizedBox(width: 8),
+          ],
+        ] else
+          Text(
+            _mode == 0
+                ? 'Tries every single-step cipher'
+                : 'All Caesar shifts, ROT47, Vigenere, and XOR keys',
+            style: mutedToolTextStyle(context, fontSize: 11.5),
+          ),
+        if (_running) ...[
+          const SizedBox(width: 6),
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
         ],
+      ],
     );
   }
 

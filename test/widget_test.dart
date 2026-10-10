@@ -446,7 +446,6 @@ void main() {
     await tester.pumpWidget(DevToolApp(state: ToolState.inMemory()));
 
     expect(find.text('Search tools'), findsOneWidget);
-    expect(find.text('Workspace'), findsOneWidget);
     expect(find.text('Open a tool from the sidebar'), findsOneWidget);
   });
 
@@ -589,112 +588,64 @@ void main() {
     await tester.pumpWidget(DevToolApp(state: state));
 
     expect(find.text('Search tools'), findsNothing);
-    expect(find.byTooltip('JSON Format/Validate'), findsOneWidget);
-  });
-
-  test('Workspace tiles every visible panel', () {
-    final workspace = WorkspaceState.inMemory();
-    workspace.openTool('json_format_validate', forceNew: true);
-    workspace.openTool('base64_string_encode_decode', forceNew: true);
-    workspace.openTool('jwt_debugger', forceNew: true);
-
-    workspace.tileVisiblePanels(const Size(1200, 800));
-
-    final visible = workspace.panels.value
-        .where((panel) => !panel.isMinimized)
-        .toList();
-    expect(visible, hasLength(3));
     expect(
-      visible.map((panel) => panel.dockMode),
-      everyElement(PanelDockMode.tiled),
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Tooltip &&
+            (widget.message ?? '').startsWith('JSON Format/Validate'),
+      ),
+      findsOneWidget,
     );
-
-    final bounds = visible.map((panel) => panel.bounds).toList();
-    for (var i = 0; i < bounds.length; i++) {
-      expect(bounds[i].left, greaterThanOrEqualTo(0));
-      expect(bounds[i].top, greaterThanOrEqualTo(0));
-      expect(bounds[i].right, lessThanOrEqualTo(1200));
-      expect(bounds[i].bottom, lessThanOrEqualTo(800));
-      for (var j = i + 1; j < bounds.length; j++) {
-        expect(bounds[i].overlaps(bounds[j]), isFalse);
-      }
-    }
   });
 
-  test('Workspace groups panels docked to the same side as tabs', () {
+  test('Workspace tabs focus, close, and re-order without geometry', () {
     final workspace = WorkspaceState.inMemory();
-    final first = workspace.openTool('json_format_validate', forceNew: true);
-    final second = workspace.openTool(
-      'base64_string_encode_decode',
-      forceNew: true,
-    );
+    final json = workspace.openTool('json_format_validate');
+    workspace.openTool('jwt_debugger');
+    workspace.openTool('regexp_tester');
 
-    workspace.snapPanel(
-      first.instanceId,
-      PanelDockMode.left,
-      const Size(1200, 800),
-    );
-    workspace.snapPanel(
-      second.instanceId,
-      PanelDockMode.left,
-      const Size(1200, 800),
-    );
+    // Re-opening focuses the existing tab instead of adding a second one.
+    expect(workspace.openTool('jwt_debugger').instanceId,
+        workspace.panels.value[1].instanceId);
+    expect(workspace.panels.value, hasLength(3));
 
-    final leftPanels = workspace.panels.value
-        .where((panel) => panel.dockMode == PanelDockMode.left)
-        .toList();
-    expect(leftPanels, hasLength(2));
-    for (final panel in leftPanels) {
-      expectRectClose(panel.bounds, const Rect.fromLTWH(14, 14, 579, 772));
-    }
+    workspace.openTool('json_format_validate', forceNew: true);
+    expect(workspace.panels.value, hasLength(4));
 
-    workspace.closePanel(first.instanceId);
+    // From the newest tab (second JSON), go one tab left.
+    workspace.selectAdjacent(-1);
+    expect(workspace.focusedPanel?.toolId, 'regexp_tester');
 
-    final remaining = workspace.panelById(second.instanceId)!;
-    expectRectClose(remaining.bounds, const Rect.fromLTWH(14, 14, 579, 772));
-    expect(workspace.focusedPanelId.value, second.instanceId);
+    final moved = workspace.panels.value.last;
+    workspace.movePanel(moved.instanceId, -2);
+    expect(workspace.panels.value[1].instanceId, moved.instanceId);
+
+    workspace.closePanel(workspace.panels.value[2].instanceId);
+    expect(workspace.panels.value, hasLength(3));
+    expect(workspace.focusedPanelId.value, isNotNull);
+    expect(workspace.panelById(json.instanceId), isNotNull);
   });
 
-  test('Workspace keeps left and right dock tab groups independent', () {
-    final workspace = WorkspaceState.inMemory();
-    final left = workspace.openTool('json_format_validate', forceNew: true);
-    final rightFirst = workspace.openTool(
-      'base64_string_encode_decode',
-      forceNew: true,
-    );
-    final rightSecond = workspace.openTool('jwt_debugger', forceNew: true);
-
-    workspace.snapPanel(
-      left.instanceId,
-      PanelDockMode.left,
-      const Size(1200, 800),
-    );
-    workspace.snapPanel(
-      rightFirst.instanceId,
-      PanelDockMode.right,
-      const Size(1200, 800),
-    );
-    workspace.snapPanel(
-      rightSecond.instanceId,
-      PanelDockMode.right,
-      const Size(1200, 800),
-    );
-
-    expectRectClose(
-      workspace.panelById(left.instanceId)!.bounds,
-      const Rect.fromLTWH(14, 14, 579, 772),
-    );
-
-    final rightPanels = workspace.panels.value
-        .where((panel) => panel.dockMode == PanelDockMode.right)
-        .toList();
-    expect(rightPanels, hasLength(2));
-    for (final panel in rightPanels) {
-      expectRectClose(panel.bounds, const Rect.fromLTWH(607, 14, 579, 772));
-    }
+  test('Legacy floating-panel data migrates to tabs', () {
+    final legacy = ToolInstance.fromJson({
+      'instanceId': 'tool-1-1',
+      'toolId': 'jwt_debugger',
+      'title': 'JWT Debugger',
+      'left': 300.0,
+      'top': 40.0,
+      'width': 760.0,
+      'height': 560.0,
+      'dockMode': 'left',
+      'zIndex': 7,
+      'isMinimized': true,
+      'createdAt': '2026-01-01T00:00:00.000',
+    });
+    expect(legacy, isNotNull);
+    expect(legacy!.toolId, 'jwt_debugger');
+    expect(legacy.title, 'JWT Debugger');
   });
 
-  testWidgets('Dock tab groups render one active panel at a time', (
+  testWidgets('Tabs show one tool at a time and switching works', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
@@ -702,20 +653,11 @@ void main() {
     final state = ToolState.inMemory();
     final jwt = state.workspace.openTool('jwt_debugger', forceNew: true);
     final regexp = state.workspace.openTool('regexp_tester', forceNew: true);
-    state.workspace.snapPanel(
-      jwt.instanceId,
-      PanelDockMode.left,
-      const Size(1200, 800),
-    );
-    state.workspace.snapPanel(
-      regexp.instanceId,
-      PanelDockMode.left,
-      const Size(1200, 800),
-    );
 
     await tester.pumpWidget(DevToolApp(state: state));
     await tester.pumpAndSettle();
 
+    // The most recently opened tab is active.
     expect(find.text('RegExp:'), findsOneWidget);
     expect(find.text('Header'), findsNothing);
 
@@ -725,6 +667,28 @@ void main() {
     expect(find.text('Header'), findsOneWidget);
     expect(find.text('RegExp:'), findsNothing);
     expect(state.workspace.focusedPanelId.value, jwt.instanceId);
+
+    await tester.tap(find.text('RegExp Tester').first);
+    await tester.pumpAndSettle();
+    expect(state.workspace.focusedPanelId.value, regexp.instanceId);
+  });
+
+  testWidgets('Offline pill reflects the tool network mode', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final state = ToolState.inMemory();
+    state.workspace.openTool('jwt_debugger');
+    await tester.pumpWidget(DevToolApp(state: state));
+    await tester.pumpAndSettle();
+    expect(find.text('Offline tool'), findsOneWidget);
+    expect(find.text('Network'), findsNothing);
+
+    state.workspace.openTool('port_scanner');
+    await tester.pumpAndSettle();
+    expect(find.text('Network'), findsOneWidget);
+    expect(find.text('Offline tool'), findsNothing);
   });
 
   testWidgets('Clipboard paste icons are hidden from tool panels', (
@@ -1559,23 +1523,23 @@ module.exports = greet;''',
     const verticalHandle = ValueKey('split-editor-vertical-resize-handle');
     const tools = <String, List<ValueKey<String>>>{
       'base64_image_encode_decode': [horizontalHandle],
-      'url_parser': [verticalHandle],
+      'url_parser': [horizontalHandle],
       'uuid_ulid_generate_decode': [horizontalHandle],
-      'html_preview': [verticalHandle],
+      'html_preview': [horizontalHandle],
       'text_diff_checker': [horizontalHandle, verticalHandle],
       'lorem_ipsum_generator': [horizontalHandle],
-      'qr_code_reader_generator': [verticalHandle],
-      'string_inspector': [verticalHandle],
-      'markdown_preview': [verticalHandle],
+      'qr_code_reader_generator': [horizontalHandle],
+      'string_inspector': [horizontalHandle],
+      'markdown_preview': [horizontalHandle],
       'color_converter': [horizontalHandle],
       'random_string_generator': [horizontalHandle],
-      'svg_to_css': [verticalHandle],
+      'svg_to_css': [horizontalHandle, verticalHandle],
       'json_to_code': [horizontalHandle],
       'hash_generator': [horizontalHandle],
       'text_encryption': [horizontalHandle],
       'payload_embedder': [horizontalHandle],
-      'jwt_debugger': [verticalHandle],
-      'regexp_tester': [verticalHandle],
+      'jwt_debugger': [horizontalHandle],
+      'regexp_tester': [horizontalHandle],
       'port_scanner': [horizontalHandle],
       'network_scanner': [horizontalHandle],
       'firewall_fingerprint': [horizontalHandle],

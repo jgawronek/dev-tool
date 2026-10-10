@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../ui/app_colors.dart';
+import '../../../ui/widgets.dart';
 import '../common/editors.dart';
 import '../common/shared.dart';
 
@@ -148,8 +149,7 @@ class _ColorConverterViewState extends State<_ColorConverterView> {
 
   @override
   Widget build(BuildContext context) {
-    return ResizableSplit(
-      horizontal: true,
+    return buildAdaptiveSplit(
       initialRatio: 0.74,
       minFirstExtent: 420,
       minSecondExtent: 280,
@@ -176,49 +176,51 @@ class _ColorConverterViewState extends State<_ColorConverterView> {
       ('HWB', _hwb.text),
       ('CMYK', _cmyk.text),
     ];
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Container(
-        decoration: toolSurfaceDecoration(context),
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Text(
-                  'Input',
-                  style: TextStyle(
-                    color: appColors.editorText,
-                    fontWeight: FontWeight.w800,
+    return ToolPanel(
+      title: 'Color values',
+      child: Padding(
+        padding: EdgeInsets.zero,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'Input',
+                    style: TextStyle(
+                      color: appColors.editorText,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: InlineTextField(
-                    hintText: '#5CC07F, rgb(92, 192, 127)',
-                    controller: _input,
-                    onChanged: _updateFromInput,
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: InlineTextField(
+                      hintText: '#5CC07F, rgb(92, 192, 127)',
+                      controller: _input,
+                      onChanged: _updateFromInput,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 8),
-              Text(_error!, style: errorToolTextStyle(context)),
-            ],
-            const SizedBox(height: 12),
-            Expanded(
-              child: ListView.separated(
-                itemCount: rows.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final row = rows[index];
-                  return _ColorValueRow(label: row.$1, value: row.$2);
-                },
+                ],
               ),
-            ),
-          ],
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                Text(_error!, style: errorToolTextStyle(context)),
+              ],
+              const SizedBox(height: 12),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: rows.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final row = rows[index];
+                    return _ColorValueRow(label: row.$1, value: row.$2);
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -525,154 +527,152 @@ class _ColorPalettePanel extends StatelessWidget {
       Color(0xFFF8FAFC),
     ];
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 16, 16, 16),
-      child: Container(
-        key: const ValueKey('color-converter-swatch-panel'),
-        decoration: toolSurfaceDecoration(context),
-        padding: const EdgeInsets.all(12),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Palette',
-                style: TextStyle(
-                  color: appColors.editorText,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 10),
-              MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: GestureDetector(
-                  onTap: () async {
-                    final picked = await _showColorPickerDialog(context, color);
-                    if (picked != null) onColorChanged(picked);
-                  },
-                  child: Tooltip(
-                    message: 'Click to pick a color',
-                    child: Container(
-                      height: 104,
-                      decoration: BoxDecoration(
-                        color: color,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: appColors.border),
-                      ),
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Text(
-                            hex.isEmpty ? '#000000' : hex.toUpperCase(),
-                            style: TextStyle(
-                              color: textColor,
-                              fontFamily: 'Menlo',
-                              fontSize: 24,
-                              fontWeight: FontWeight.w800,
+    return ToolPanel(
+      title: 'Palette',
+      child: Padding(
+        padding: EdgeInsets.zero,
+        child: Container(
+          key: const ValueKey('color-converter-swatch-panel'),
+
+          padding: const EdgeInsets.all(12),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () async {
+                      final picked = await _showColorPickerDialog(
+                        context,
+                        color,
+                      );
+                      if (picked != null) onColorChanged(picked);
+                    },
+                    child: Tooltip(
+                      message: 'Click to pick a color',
+                      child: Container(
+                        height: 104,
+                        decoration: BoxDecoration(
+                          color: color,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: appColors.border),
+                        ),
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Text(
+                              hex.isEmpty ? '#000000' : hex.toUpperCase(),
+                              style: TextStyle(
+                                color: textColor,
+                                fontFamily: 'Menlo',
+                                fontSize: 24,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            rgb,
-                            style: TextStyle(
-                              color: textColor.withAlpha(225),
-                              fontFamily: 'Menlo',
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
+                            const SizedBox(height: 4),
+                            Text(
+                              rgb,
+                              style: TextStyle(
+                                color: textColor.withAlpha(225),
+                                fontFamily: 'Menlo',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              _ColorSlider(
-                label: 'Hue',
-                value: hsv.hue,
-                min: 0,
-                max: 360,
-                divisions: 360,
-                displayValue: '${hsv.hue.round()}deg',
-                onChanged: (value) {
-                  onColorChanged(hsv.withHue(value).toColor());
-                },
-              ),
-              _ColorSlider(
-                label: 'Saturation',
-                value: hsv.saturation * 100,
-                min: 0,
-                max: 100,
-                divisions: 100,
-                displayValue: '${(hsv.saturation * 100).round()}%',
-                onChanged: (value) {
-                  onColorChanged(hsv.withSaturation(value / 100).toColor());
-                },
-              ),
-              _ColorSlider(
-                label: 'Value',
-                value: hsv.value * 100,
-                min: 0,
-                max: 100,
-                divisions: 100,
-                displayValue: '${(hsv.value * 100).round()}%',
-                onChanged: (value) {
-                  onColorChanged(hsv.withValue(value / 100).toColor());
-                },
-              ),
-              _ColorSlider(
-                label: 'Alpha',
-                value: alpha.toDouble(),
-                min: 0,
-                max: 255,
-                divisions: 255,
-                displayValue: alpha.toString(),
-                onChanged: (value) {
-                  onColorChanged(
-                    Color.fromARGB(
-                      value.round(),
-                      _colorComponent(color.r),
-                      _colorComponent(color.g),
-                      _colorComponent(color.b),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 10),
-              Text(
-                'Presets',
-                style: TextStyle(
-                  color: appColors.mutedText,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
+                const SizedBox(height: 12),
+                _ColorSlider(
+                  label: 'Hue',
+                  value: hsv.hue,
+                  min: 0,
+                  max: 360,
+                  divisions: 360,
+                  displayValue: '${hsv.hue.round()}deg',
+                  onChanged: (value) {
+                    onColorChanged(hsv.withHue(value).toColor());
+                  },
                 ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final preset in presets)
-                    _PaletteChip(
-                      color: preset,
-                      selected: _sameColorIgnoringAlpha(color, preset),
-                      onTap: () {
-                        onColorChanged(
-                          Color.fromARGB(
-                            alpha,
-                            _colorComponent(preset.r),
-                            _colorComponent(preset.g),
-                            _colorComponent(preset.b),
-                          ),
-                        );
-                      },
-                    ),
-                ],
-              ),
-            ],
+                _ColorSlider(
+                  label: 'Saturation',
+                  value: hsv.saturation * 100,
+                  min: 0,
+                  max: 100,
+                  divisions: 100,
+                  displayValue: '${(hsv.saturation * 100).round()}%',
+                  onChanged: (value) {
+                    onColorChanged(hsv.withSaturation(value / 100).toColor());
+                  },
+                ),
+                _ColorSlider(
+                  label: 'Value',
+                  value: hsv.value * 100,
+                  min: 0,
+                  max: 100,
+                  divisions: 100,
+                  displayValue: '${(hsv.value * 100).round()}%',
+                  onChanged: (value) {
+                    onColorChanged(hsv.withValue(value / 100).toColor());
+                  },
+                ),
+                _ColorSlider(
+                  label: 'Alpha',
+                  value: alpha.toDouble(),
+                  min: 0,
+                  max: 255,
+                  divisions: 255,
+                  displayValue: alpha.toString(),
+                  onChanged: (value) {
+                    onColorChanged(
+                      Color.fromARGB(
+                        value.round(),
+                        _colorComponent(color.r),
+                        _colorComponent(color.g),
+                        _colorComponent(color.b),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Presets',
+                  style: TextStyle(
+                    color: appColors.mutedText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final preset in presets)
+                      _PaletteChip(
+                        color: preset,
+                        selected: _sameColorIgnoringAlpha(color, preset),
+                        onTap: () {
+                          onColorChanged(
+                            Color.fromARGB(
+                              alpha,
+                              _colorComponent(preset.r),
+                              _colorComponent(preset.g),
+                              _colorComponent(preset.b),
+                            ),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -824,6 +824,7 @@ class _ColorValueRow extends StatelessWidget {
                 ),
               ),
             ),
+            const SizedBox(width: 12),
             Expanded(
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,

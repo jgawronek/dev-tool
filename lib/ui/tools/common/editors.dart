@@ -14,19 +14,20 @@ Widget buildSplitEditors({
   List<Widget> inputActions = const [],
   List<Widget> outputActions = const [],
   bool outputReadOnly = true,
+  bool outputFirst = false,
   String inputPlaceholder = 'Enter text...',
   String outputPlaceholder = 'Output...',
   TextEditingController? inputController,
   TextEditingController? outputController,
   ValueChanged<String>? onInputChanged,
-  bool horizontal = false,
+  bool? horizontal,
   VoidCallback? onInputSubmit,
   ScrollController? inputScrollController,
   ScrollController? outputScrollController,
   Set<int> inputMarkedLines = const <int>{},
   Set<int> outputMarkedLines = const <int>{},
-  bool showInputHeader = false,
-  bool showOutputHeader = false,
+  bool showInputHeader = true,
+  bool showOutputHeader = true,
   Widget? inputOverlay,
   Widget? outputOverlay,
   String? inputDropTargetId,
@@ -68,7 +69,39 @@ Widget buildSplitEditors({
     showHeader: showOutputHeader,
     overlay: outputOverlay,
   );
-  return ResizableSplit(horizontal: horizontal, first: input, second: output);
+  return LayoutBuilder(
+    builder: (context, constraints) => ResizableSplit(
+      horizontal: horizontal ?? constraints.maxWidth >= 800,
+      first: outputFirst ? output : input,
+      second: outputFirst ? input : output,
+    ),
+  );
+}
+
+/// A [ResizableSplit] that goes side-by-side (vertical divider) once the
+/// content area is wide enough, and stacks vertically below that.
+Widget buildAdaptiveSplit({
+  double breakpoint = 800,
+  required Widget first,
+  required Widget second,
+  double initialRatio = 0.5,
+  double minFirstExtent = 120,
+  double minSecondExtent = 120,
+}) {
+  return LayoutBuilder(
+    builder: (context, constraints) => ResizableSplit(
+      horizontal: constraints.maxWidth >= breakpoint,
+      first: first,
+      second: second,
+      initialRatio: initialRatio,
+      minFirstExtent: constraints.maxWidth >= breakpoint
+          ? minFirstExtent
+          : min(minFirstExtent, 160),
+      minSecondExtent: constraints.maxWidth >= breakpoint
+          ? minSecondExtent
+          : min(minSecondExtent, 160),
+    ),
+  );
 }
 
 Widget buildVerticalEditors({
@@ -86,8 +119,8 @@ Widget buildVerticalEditors({
   ScrollController? outputScrollController,
   Set<int> inputMarkedLines = const <int>{},
   Set<int> outputMarkedLines = const <int>{},
-  bool showInputHeader = false,
-  bool showOutputHeader = false,
+  bool showInputHeader = true,
+  bool showOutputHeader = true,
   Widget? inputOverlay,
   Widget? outputOverlay,
 }) {
@@ -110,7 +143,6 @@ Widget buildVerticalEditors({
     showOutputHeader: showOutputHeader,
     inputOverlay: inputOverlay,
     outputOverlay: outputOverlay,
-    horizontal: false,
   );
 }
 
@@ -143,7 +175,7 @@ class ResizableSplitState extends State<ResizableSplit> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        const splitterExtent = 6.0;
+        const splitterExtent = 14.0;
         final maxExtent = widget.horizontal
             ? constraints.maxWidth
             : constraints.maxHeight;
@@ -269,8 +301,8 @@ class EditorSplitter extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onPanUpdate: (details) => onDrag(details.delta),
         child: SizedBox(
-          width: horizontal ? 6 : double.infinity,
-          height: horizontal ? double.infinity : 6,
+          width: horizontal ? 14 : double.infinity,
+          height: horizontal ? double.infinity : 14,
           child: Center(
             child: Container(
               width: horizontal ? 2 : 52,

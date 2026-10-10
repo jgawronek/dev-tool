@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../ui/widgets.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _RandomStringGeneratorView extends StatefulWidget {
   const _RandomStringGeneratorView();
@@ -98,81 +99,91 @@ class _RandomStringGeneratorViewState
 
   @override
   Widget build(BuildContext context) {
-    return ResizableSplit(
-      horizontal: true,
-      initialRatio: 0.62,
-      minFirstExtent: 360,
-      minSecondExtent: 320,
-      first: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
+    return ToolSampleAction(
+      onPressed: _generate,
+      child: buildAdaptiveSplit(
+        initialRatio: 0.62,
+        minFirstExtent: 360,
+        minSecondExtent: 320,
+        first: ToolPanel(
+          title: 'Options',
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Presets:',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  SmallDropdown(
-                    items: const [
-                      'Password',
-                      'API key',
-                      'PIN',
-                      'Token',
-                      'Slug',
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      const Text(
+                        'Presets:',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      SmallDropdown(
+                        items: const [
+                          'Password',
+                          'API key',
+                          'PIN',
+                          'Token',
+                          'Slug',
+                        ],
+                        initialValue: _preset,
+                        onChanged: _applyPreset,
+                      ),
                     ],
-                    initialValue: _preset,
-                    onChanged: _applyPreset,
                   ),
-                  ToolButton(label: 'Sample', onPressed: _generate),
+                  const SizedBox(height: 12),
+                  LabeledField(label: 'Seed', controller: _seed),
+                  LabeledField(
+                    label: 'Uppercased Characters',
+                    controller: _upper,
+                  ),
+                  LabeledField(
+                    label: 'Lowercased Characters',
+                    controller: _lower,
+                  ),
+                  LabeledField(label: 'Symbols', controller: _symbols),
+                  LabeledField(label: 'Digits', controller: _digits),
+                  LabeledField(label: 'Words', controller: _words),
+                  const LabeledField(label: 'Separator'),
+                  const LabeledField(label: 'Separating Group Size'),
+                  const LabeledField(label: 'Custom Character Set'),
                 ],
               ),
-              const SizedBox(height: 12),
-              LabeledField(label: 'Seed', controller: _seed),
-              LabeledField(label: 'Uppercased Characters', controller: _upper),
-              LabeledField(label: 'Lowercased Characters', controller: _lower),
-              LabeledField(label: 'Symbols', controller: _symbols),
-              LabeledField(label: 'Digits', controller: _digits),
-              LabeledField(label: 'Words', controller: _words),
-              const LabeledField(label: 'Separator'),
-              const LabeledField(label: 'Separating Group Size'),
-              const LabeledField(label: 'Custom Character Set'),
-            ],
-          ),
-        ),
-      ),
-      second: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Checkbox(value: true, onChanged: null),
-              const Text('Colors'),
-              const Spacer(),
-              SmallDropdown(
-                items: const ['x10', 'x20'],
-                initialValue: _count,
-                onChanged: (value) => setState(() => _count = value),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: EditorPane(
-              label: '',
-              actions: const [],
-              controller: _output,
-              readOnly: true,
-              placeholder: 'Generated strings...',
-              copyAction: _copyOutput,
             ),
           ),
-        ],
+        ),
+        second: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Checkbox(value: true, onChanged: null),
+                const Text('Colors'),
+                const Spacer(),
+                SmallDropdown(
+                  items: const ['x10', 'x20'],
+                  initialValue: _count,
+                  onChanged: (value) => setState(() => _count = value),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: EditorPane(
+                label: 'Generated strings',
+                actions: const [],
+                controller: _output,
+                readOnly: true,
+                placeholder: 'Generated strings...',
+                copyAction: _copyOutput,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

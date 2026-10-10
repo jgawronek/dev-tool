@@ -9,6 +9,7 @@ import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _PortScannerView extends StatefulWidget {
   const _PortScannerView();
@@ -270,7 +271,7 @@ class _PortScannerViewState extends State<_PortScannerView> {
     final appColors = context.appColors;
     final progress = _progress;
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -312,8 +313,7 @@ class _PortScannerViewState extends State<_PortScannerView> {
           ),
           const SizedBox(height: 10),
           Expanded(
-            child: ResizableSplit(
-              horizontal: true,
+            child: buildAdaptiveSplit(
               initialRatio: 0.56,
               minFirstExtent: 360,
               minSecondExtent: 320,
@@ -328,155 +328,158 @@ class _PortScannerViewState extends State<_PortScannerView> {
 
   Widget _buildControls(BuildContext context) {
     final appColors = context.appColors;
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
+    return ToolSampleAction(
+      onPressed: _scanning ? null : _setSample,
+      child: ToolPanel(
+        title: 'Scan options',
+        expand: false,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'Target',
-                style: TextStyle(
-                  color: appColors.editorText,
-                  fontWeight: FontWeight.w700,
-                ),
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    'Target',
+                    style: TextStyle(
+                      color: appColors.editorText,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 280,
+                    child: _compactTextField(
+                      key: const ValueKey('port-scanner-target'),
+                      controller: _target,
+                      hint: 'example.com or 192.0.2.10',
+                      enabled: !_scanning,
+                      onSubmitted: (_) => _startScan(),
+                    ),
+                  ),
+                  SmallDropdown(
+                    key: ValueKey('port-profile-$_profileName'),
+                    items: _profileNames,
+                    initialValue: _profileName,
+                    width: 180,
+                    onChanged: (value) {
+                      setState(() {
+                        _profileName = value;
+                        _syncProfileFields();
+                      });
+                    },
+                  ),
+                  SizedBox(
+                    width: 250,
+                    child: _compactTextField(
+                      controller: _ports,
+                      hint: '22,80,443 or 8000-8010',
+                      enabled: _isCustomProfile && !_scanning,
+                    ),
+                  ),
+
+                  ToolButton(
+                    label: 'Scan',
+                    onPressed: _scanning ? null : _startScan,
+                  ),
+                  ToolButton(
+                    label: 'Recon',
+                    onPressed: _reconLoading ? null : _runRecon,
+                  ),
+                  ToolButton(
+                    label: 'Stop',
+                    onPressed: _scanning ? _stopScan : null,
+                  ),
+                ],
               ),
-              SizedBox(
-                width: 280,
-                child: _compactTextField(
-                  key: const ValueKey('port-scanner-target'),
-                  controller: _target,
-                  hint: 'example.com or 192.0.2.10',
-                  enabled: !_scanning,
-                  onSubmitted: (_) => _startScan(),
-                ),
-              ),
-              SmallDropdown(
-                key: ValueKey('port-profile-$_profileName'),
-                items: _profileNames,
-                initialValue: _profileName,
-                width: 180,
-                onChanged: (value) {
-                  setState(() {
-                    _profileName = value;
-                    _syncProfileFields();
-                  });
-                },
-              ),
-              SizedBox(
-                width: 250,
-                child: _compactTextField(
-                  controller: _ports,
-                  hint: '22,80,443 or 8000-8010',
-                  enabled: _isCustomProfile && !_scanning,
-                ),
-              ),
-              ToolButton(
-                label: 'Sample',
-                onPressed: _scanning ? null : _setSample,
-              ),
-              ToolButton(
-                label: 'Scan',
-                onPressed: _scanning ? null : _startScan,
-              ),
-              ToolButton(
-                label: 'Recon',
-                onPressed: _reconLoading ? null : _runRecon,
-              ),
-              ToolButton(
-                label: 'Stop',
-                onPressed: _scanning ? _stopScan : null,
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _miniLabeledField(
+                    context,
+                    'Timeout',
+                    width: 84,
+                    controller: _timeout,
+                    suffix: 's',
+                    enabled: !_scanning,
+                  ),
+                  _miniLabeledField(
+                    context,
+                    'Concurrency',
+                    width: 76,
+                    controller: _concurrency,
+                    enabled: !_scanning,
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Checkbox(
+                        value: _grabBanners,
+                        onChanged: _scanning
+                            ? null
+                            : (value) {
+                                setState(() => _grabBanners = value ?? true);
+                              },
+                      ),
+                      Text(
+                        'Banners',
+                        style: TextStyle(color: appColors.editorText),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Checkbox(
+                        value: _tlsDetails,
+                        onChanged: _scanning
+                            ? null
+                            : (value) {
+                                setState(() => _tlsDetails = value ?? true);
+                              },
+                      ),
+                      Text(
+                        'TLS details',
+                        style: TextStyle(color: appColors.editorText),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Checkbox(
+                        value: _httpProbe,
+                        onChanged: _scanning
+                            ? null
+                            : (value) {
+                                setState(() => _httpProbe = value ?? true);
+                              },
+                      ),
+                      Text(
+                        'HTTP HEAD',
+                        style: TextStyle(color: appColors.editorText),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    _isCustomProfile
+                        ? 'Custom list'
+                        : PortScannerService.profileByName(
+                            _profileName,
+                          ).description,
+                    style: mutedToolTextStyle(context),
+                  ),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              _miniLabeledField(
-                context,
-                'Timeout',
-                width: 84,
-                controller: _timeout,
-                suffix: 's',
-                enabled: !_scanning,
-              ),
-              _miniLabeledField(
-                context,
-                'Concurrency',
-                width: 76,
-                controller: _concurrency,
-                enabled: !_scanning,
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Checkbox(
-                    value: _grabBanners,
-                    onChanged: _scanning
-                        ? null
-                        : (value) {
-                            setState(() => _grabBanners = value ?? true);
-                          },
-                  ),
-                  Text(
-                    'Banners',
-                    style: TextStyle(color: appColors.editorText),
-                  ),
-                ],
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Checkbox(
-                    value: _tlsDetails,
-                    onChanged: _scanning
-                        ? null
-                        : (value) {
-                            setState(() => _tlsDetails = value ?? true);
-                          },
-                  ),
-                  Text(
-                    'TLS details',
-                    style: TextStyle(color: appColors.editorText),
-                  ),
-                ],
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Checkbox(
-                    value: _httpProbe,
-                    onChanged: _scanning
-                        ? null
-                        : (value) {
-                            setState(() => _httpProbe = value ?? true);
-                          },
-                  ),
-                  Text(
-                    'HTTP HEAD',
-                    style: TextStyle(color: appColors.editorText),
-                  ),
-                ],
-              ),
-              Text(
-                _isCustomProfile
-                    ? 'Custom list'
-                    : PortScannerService.profileByName(
-                        _profileName,
-                      ).description,
-                style: mutedToolTextStyle(context),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -671,47 +674,50 @@ class _PortScannerViewState extends State<_PortScannerView> {
   }
 
   Widget _buildDetailsPanel(BuildContext context) {
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                SegmentedToggle(
-                  options: const ['Details', 'Recon', 'Report', 'History'],
-                  initialIndex: _detailsIndex,
-                  onChanged: (index) => setState(() => _detailsIndex = index),
-                ),
-                if (_detailsIndex == 2) ...[
-                  const SizedBox(width: 10),
-                  SmallDropdown(
-                    key: ValueKey('port-report-$_reportMode'),
-                    items: const ['JSON', 'CSV'],
-                    initialValue: _reportMode,
-                    width: 90,
-                    onChanged: (value) {
-                      setState(() => _reportMode = value);
-                      _refreshReport();
-                    },
+    return ToolPanel(
+      title: 'Port details',
+      expand: true,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  SegmentedToggle(
+                    options: const ['Details', 'Recon', 'Report', 'History'],
+                    initialIndex: _detailsIndex,
+                    onChanged: (index) => setState(() => _detailsIndex = index),
                   ),
+                  if (_detailsIndex == 2) ...[
+                    const SizedBox(width: 10),
+                    SmallDropdown(
+                      key: ValueKey('port-report-$_reportMode'),
+                      items: const ['JSON', 'CSV'],
+                      initialValue: _reportMode,
+                      width: 90,
+                      onChanged: (value) {
+                        setState(() => _reportMode = value);
+                        _refreshReport();
+                      },
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          Expanded(
-            child: switch (_detailsIndex) {
-              0 => _buildScoreDetails(context),
-              1 => _buildReconDetails(context),
-              2 => _buildReportPanel(context),
-              _ => _buildHistoryPanel(context),
-            },
-          ),
-        ],
+            const SizedBox(height: 10),
+            Expanded(
+              child: switch (_detailsIndex) {
+                0 => _buildScoreDetails(context),
+                1 => _buildReconDetails(context),
+                2 => _buildReportPanel(context),
+                _ => _buildHistoryPanel(context),
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -888,7 +894,7 @@ class _PortScannerViewState extends State<_PortScannerView> {
       controller: _report,
       readOnly: true,
       placeholder: 'Run a scan or recon to generate a report...',
-      showHeader: false,
+      showHeader: true,
     );
   }
 
@@ -1163,6 +1169,9 @@ class _PortScannerViewState extends State<_PortScannerView> {
         onSubmitted: onSubmitted,
         decoration: InputDecoration(
           border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
           isDense: true,
           hintText: hint,
           hintStyle: TextStyle(color: appColors.mutedText),

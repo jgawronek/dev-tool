@@ -66,6 +66,22 @@ class _SidebarState extends State<Sidebar> {
       color: appColors.sidebar,
       child: Column(
         children: [
+          if (!compact)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 22, 16, 10),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'DevUtils',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.5,
+                    color: appColors.editorText,
+                  ),
+                ),
+              ),
+            ),
           if (compact)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10),
@@ -82,7 +98,7 @@ class _SidebarState extends State<Sidebar> {
                 onChanged: widget.onSearch,
                 style: const TextStyle(fontSize: 12.5),
                 decoration: InputDecoration(
-                  hintText: 'Search tools',
+                  hintText: 'Find a tool',
                   hintStyle: const TextStyle(fontSize: 12.5),
                   // Tighten the field vertically (the global input padding is
                   // roomier than a sidebar search needs).
@@ -117,12 +133,12 @@ class _SidebarState extends State<Sidebar> {
                 ),
               ),
             ),
-          const Divider(height: 1),
+          const SizedBox(height: 8),
           Expanded(
             child: ListView(
               controller: _scrollController,
               padding: EdgeInsets.symmetric(
-                horizontal: compact ? 6 : 8,
+                horizontal: compact ? 6 : 12,
                 vertical: 4,
               ),
               children: [
@@ -195,7 +211,11 @@ class _SidebarItem extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: compact ? 2 : 0.5),
       child: Tooltip(
-        message: compact ? tool.name : '',
+        message: compact
+            ? (tool.subtitle.isEmpty
+                  ? tool.name
+                  : '${tool.name} — ${tool.subtitle}')
+            : '',
         waitDuration: const Duration(milliseconds: 350),
         child: Semantics(
           label: tool.name,
@@ -212,7 +232,7 @@ class _SidebarItem extends StatelessWidget {
                 height: compact ? 34 : null,
                 padding: compact
                     ? const EdgeInsets.symmetric(horizontal: 6, vertical: 5)
-                    : const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    : const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 child: compact
                     ? Stack(
                         alignment: Alignment.center,
@@ -242,16 +262,20 @@ class _SidebarItem extends StatelessWidget {
                         children: [
                           Icon(
                             tool.icon,
-                            size: 16,
-                            color: appColors.editorText,
+                            size: 17,
+                            color: selected
+                                ? appColors.accent
+                                : appColors.editorText,
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               tool.name,
                               style: TextStyle(
-                                fontSize: 12,
-                                color: appColors.editorText,
+                                fontSize: 12.5,
+                                color: selected
+                                    ? appColors.accent
+                                    : appColors.editorText,
                                 fontWeight: selected
                                     ? FontWeight.w600
                                     : FontWeight.w500,

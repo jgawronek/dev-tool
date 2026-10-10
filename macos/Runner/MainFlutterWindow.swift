@@ -3,6 +3,7 @@ import FlutterMacOS
 
 class MainFlutterWindow: NSWindow, NSDraggingDestination {
   private var fileDropChannel: FlutterMethodChannel?
+  private var documentationChannel: FlutterMethodChannel?
   private var statusItem: NSStatusItem?
 
   override func awakeFromNib() {
@@ -24,8 +25,36 @@ class MainFlutterWindow: NSWindow, NSDraggingDestination {
     configureFileDialogs(flutterViewController)
     configureFileDrop(flutterViewController)
     configureAppearance(flutterViewController)
+    documentationChannel = FlutterMethodChannel(
+      name: "devutils/documentation",
+      binaryMessenger: flutterViewController.engine.binaryMessenger)
+    documentationChannel?.setMethodCallHandler { [weak self] call, result in
+      if call.method == "ready" {
+        self?.configureDocumentationMenu()
+        result(nil)
+      } else {
+        result(FlutterMethodNotImplemented)
+      }
+    }
 
     super.awakeFromNib()
+  }
+
+  func configureDocumentationMenu() {
+    guard let helpMenu = NSApp.helpMenu
+      ?? NSApp.mainMenu?.items.first(where: { $0.title == "Help" })?.submenu,
+      helpMenu.item(withTitle: "Documentation") == nil else { return }
+    NSApp.helpMenu = helpMenu
+    let item = NSMenuItem(
+      title: "Documentation", action: #selector(openDocumentation), keyEquivalent: "d")
+    item.keyEquivalentModifierMask = [.command, .shift]
+    item.target = self
+    helpMenu.addItem(item)
+  }
+
+  @objc private func openDocumentation() {
+    showMainWindow()
+    documentationChannel?.invokeMethod("open", arguments: nil)
   }
 
   private func configureAppearance(_ flutterViewController: FlutterViewController) {

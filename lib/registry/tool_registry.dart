@@ -10,6 +10,7 @@ class ToolRegistry {
       name: 'Unix Time Converter',
       icon: Icons.schedule,
       builder: (_) => buildUnixTimeConverter(),
+      subtitle: 'Convert Unix timestamps to and from calendar dates',
       category: 'Converters',
     ),
     DevTool(
@@ -17,6 +18,7 @@ class ToolRegistry {
       name: 'JSON Format/Validate',
       icon: Icons.data_object,
       builder: (_) => buildJsonFormatValidate(),
+      subtitle: 'Pretty-print, minify, and validate JSON as you type',
       category: 'Formatters',
     ),
     DevTool(
@@ -24,6 +26,7 @@ class ToolRegistry {
       name: 'Base64 String Encode/Decode',
       icon: Icons.code,
       builder: (_) => buildBase64String(),
+      subtitle: 'Encode and decode Base64 text safely',
       category: 'Encoders',
     ),
     DevTool(
@@ -31,6 +34,7 @@ class ToolRegistry {
       name: 'Base64 Image Encode/Decode',
       icon: Icons.image,
       builder: (_) => buildBase64Image(),
+      subtitle: 'Convert images to and from Base64 data URLs',
       category: 'Encoders',
     ),
     DevTool(
@@ -38,6 +42,7 @@ class ToolRegistry {
       name: 'Compress / Decompress',
       icon: Icons.compress,
       builder: (_) => buildCompression(),
+      subtitle: 'Compress and decompress text with gzip and friends',
       category: 'Compression',
     ),
     DevTool(
@@ -45,6 +50,7 @@ class ToolRegistry {
       name: 'Base32/58/62/85/Bech32',
       icon: Icons.tag,
       builder: (_) => buildBaseEncodings(),
+      subtitle: 'Convert text between Base32, Base58, Base62, and Bech32',
       category: 'Encoders',
     ),
     DevTool(
@@ -52,6 +58,7 @@ class ToolRegistry {
       name: 'JWT Debugger',
       icon: Icons.vpn_key,
       builder: (_) => buildJwtDebugger(),
+      subtitle: 'Decode, verify, and inspect JSON Web Tokens',
       category: 'Security',
     ),
     DevTool(
@@ -59,6 +66,7 @@ class ToolRegistry {
       name: 'Auth TOTP',
       icon: Icons.lock_clock,
       builder: (_) => buildAuthTotp(),
+      subtitle: 'Generate and manage two-factor authentication codes',
       category: 'Security',
     ),
     DevTool(
@@ -66,6 +74,7 @@ class ToolRegistry {
       name: 'RegExp Tester',
       icon: Icons.search,
       builder: (_) => buildRegExpTester(),
+      subtitle: 'Test regular expressions with live match highlighting',
       category: 'Text',
       minSize: const Size(480, 560),
     ),
@@ -74,6 +83,7 @@ class ToolRegistry {
       name: 'URL Encode/Decode',
       icon: Icons.link,
       builder: (_) => buildUrlEncodeDecode(),
+      subtitle: 'Percent-encode and decode URLs and query values',
       category: 'Encoders',
     ),
     DevTool(
@@ -81,6 +91,8 @@ class ToolRegistry {
       name: 'URL Parser',
       icon: Icons.link_outlined,
       builder: (_) => buildUrlParser(),
+      subtitle: 'Inspect URLs and send HTTP requests',
+      isOffline: false,
       category: 'Parsers',
     ),
     DevTool(
@@ -88,22 +100,27 @@ class ToolRegistry {
       name: 'Subdomain Finder',
       icon: Icons.travel_explore,
       builder: (_) => buildSubdomainFinder(),
+      subtitle: 'Discover subdomains via certificate transparency logs',
       category: 'Network',
       minSize: const Size(480, 560),
+      isOffline: false,
     ),
     DevTool(
       id: 'subdomain_takeover',
       name: 'Subdomain Takeover Check',
       icon: Icons.domain_verification,
       builder: (_) => buildSubdomainTakeover(),
+      subtitle: 'Check subdomains for takeover-vulnerable records',
       category: 'Security',
       minSize: const Size(480, 600),
+      isOffline: false,
     ),
     DevTool(
       id: 'subnet_calculator',
       name: 'Subnet Calculator',
       icon: Icons.lan_outlined,
       builder: (_) => buildSubnetCalculator(),
+      subtitle: 'IPv4 CIDR notation and subnet masks at a glance',
       category: 'Network',
     ),
     DevTool(
@@ -111,37 +128,46 @@ class ToolRegistry {
       name: 'Port Scanner',
       icon: Icons.radar,
       builder: (_) => buildPortScanner(),
+      subtitle: 'Probe TCP ports with profiles and banner grabs',
       category: 'Network',
       minSize: const Size(560, 540),
+      isOffline: false,
     ),
     DevTool(
       id: 'network_scanner',
       name: 'Network Scanner',
       icon: Icons.lan,
       builder: (_) => buildNetworkScanner(),
+      subtitle: 'Sweep LAN ranges for live hosts and open ports',
       category: 'Network',
       minSize: const Size(580, 600),
+      isOffline: false,
     ),
     DevTool(
       id: 'local_server',
       name: 'Local Server',
       icon: Icons.dns,
       builder: (_) => buildLocalServer(),
+      subtitle: 'Serve files locally with live request logging',
       category: 'Network',
+      isOffline: false,
     ),
     DevTool(
       id: 'firewall_fingerprint',
       name: 'Firewall Fingerprint',
       icon: Icons.shield,
       builder: (_) => buildFirewallFingerprint(),
+      subtitle: 'Detect firewalls and WAFs from response fingerprints',
       category: 'Security',
       minSize: const Size(480, 500),
+      isOffline: false,
     ),
     DevTool(
       id: 'html_entity_encode_decode',
       name: 'HTML Entity Encode/Decode',
       icon: Icons.html,
       builder: (_) => buildHtmlEntityEncodeDecode(),
+      subtitle: 'Escape and unescape HTML entities',
       category: 'Encoders',
     ),
     DevTool(
@@ -149,6 +175,7 @@ class ToolRegistry {
       name: 'Backslash Escape/Unescape',
       icon: Icons.wrap_text,
       builder: (_) => buildBackslashEscapeUnescape(),
+      subtitle: 'Escape and unescape backslash and C-style sequences',
       category: 'Text',
     ),
     DevTool(
@@ -156,6 +183,7 @@ class ToolRegistry {
       name: 'UUID/ULID Generate/Decode',
       icon: Icons.grid_3x3,
       builder: (_) => buildUuidUlid(),
+      subtitle: 'Generate and decode UUIDs and ULIDs',
       category: 'Generators',
       minSize: const Size(480, 520),
     ),
@@ -164,6 +192,7 @@ class ToolRegistry {
       name: 'HTML Preview',
       icon: Icons.preview,
       builder: (_) => buildHtmlPreview(),
+      subtitle: 'Render HTML with a live sandboxed preview',
       category: 'Preview',
     ),
     DevTool(
@@ -171,6 +200,7 @@ class ToolRegistry {
       name: 'Text Diff Checker',
       icon: Icons.compare_arrows,
       builder: (_) => buildTextDiffChecker(),
+      subtitle: 'Compare two texts with line-level diffs',
       category: 'Text',
       minSize: const Size(480, 520),
     ),
@@ -179,6 +209,7 @@ class ToolRegistry {
       name: 'YAML ↔ JSON',
       icon: Icons.swap_horiz,
       builder: (_) => buildYamlJsonConverter(),
+      subtitle: 'Convert between YAML and JSON in both directions',
       category: 'Converters',
     ),
     DevTool(
@@ -186,6 +217,7 @@ class ToolRegistry {
       name: 'Number Base Converter',
       icon: Icons.calculate,
       builder: (_) => buildNumberBaseConverter(),
+      subtitle: 'Convert integers between binary, decimal, hex, and custom bases',
       category: 'Converters',
       minSize: const Size(480, 360),
     ),
@@ -194,6 +226,7 @@ class ToolRegistry {
       name: 'HTML Beautify/Minify',
       icon: Icons.format_align_left,
       builder: (_) => buildHtmlBeautifyMinify('HTML'),
+      subtitle: 'Beautify or minify HTML markup',
       category: 'Formatters',
     ),
     DevTool(
@@ -201,6 +234,7 @@ class ToolRegistry {
       name: 'CSS Beautify/Minify',
       icon: Icons.format_align_left,
       builder: (_) => buildHtmlBeautifyMinify('CSS'),
+      subtitle: 'Beautify or minify CSS stylesheets',
       category: 'Formatters',
     ),
     DevTool(
@@ -208,6 +242,7 @@ class ToolRegistry {
       name: 'JS/TS Beautify/Minify',
       icon: Icons.format_align_left,
       builder: (_) => buildHtmlBeautifyMinify('JS'),
+      subtitle: 'Beautify or minify JavaScript and TypeScript',
       category: 'Formatters',
     ),
     DevTool(
@@ -215,6 +250,7 @@ class ToolRegistry {
       name: 'RB Beautify/Minify',
       icon: Icons.format_align_left,
       builder: (_) => buildHtmlBeautifyMinify('RB'),
+      subtitle: 'Beautify or minify Ruby code',
       category: 'Formatters',
     ),
     DevTool(
@@ -222,6 +258,7 @@ class ToolRegistry {
       name: 'XML Beautify/Minify',
       icon: Icons.format_align_left,
       builder: (_) => buildXmlBeautifyMinify(),
+      subtitle: 'Beautify or minify XML documents',
       category: 'Formatters',
     ),
     DevTool(
@@ -229,6 +266,7 @@ class ToolRegistry {
       name: 'Lorem Ipsum Generator',
       icon: Icons.text_fields,
       builder: (_) => buildLoremIpsum(),
+      subtitle: 'Generate placeholder text by words, sentences, or paragraphs',
       category: 'Generators',
       minSize: const Size(580, 280),
     ),
@@ -237,6 +275,7 @@ class ToolRegistry {
       name: 'Password Generator',
       icon: Icons.key,
       builder: (_) => buildPasswordGenerator(),
+      subtitle: 'Create strong random passwords with custom rules',
       category: 'Generators',
       minSize: const Size(580, 280),
     ),
@@ -245,6 +284,7 @@ class ToolRegistry {
       name: 'QR Code Reader/Generator',
       icon: Icons.qr_code,
       builder: (_) => buildQrCode(),
+      subtitle: 'Generate QR codes and read them from images',
       category: 'Generators',
     ),
     DevTool(
@@ -252,6 +292,7 @@ class ToolRegistry {
       name: 'Semver Calculator',
       icon: Icons.compare_arrows,
       builder: (_) => buildSemVerCalculator(),
+      subtitle: 'Compare semantic versions and preview version bumps',
       category: 'Text',
       minSize: const Size(660, 280),
     ),
@@ -260,6 +301,7 @@ class ToolRegistry {
       name: 'String Inspector',
       icon: Icons.subject,
       builder: (_) => buildStringInspector(),
+      subtitle: 'Inspect length, bytes, characters, and line stats',
       category: 'Text',
     ),
     DevTool(
@@ -267,6 +309,7 @@ class ToolRegistry {
       name: 'String Case Converter',
       icon: Icons.text_fields,
       builder: (_) => buildStringCaseConverter(),
+      subtitle: 'Convert text between camel, snake, kebab, and title cases',
       category: 'Text',
     ),
     DevTool(
@@ -274,6 +317,7 @@ class ToolRegistry {
       name: 'JSON ↔ CSV',
       icon: Icons.table_chart,
       builder: (_) => buildJsonCsvConverter(),
+      subtitle: 'Convert between JSON and CSV tables',
       category: 'Converters',
     ),
     DevTool(
@@ -281,6 +325,7 @@ class ToolRegistry {
       name: 'File Checksum',
       icon: Icons.verified_outlined,
       builder: (_) => buildFileChecksum(),
+      subtitle: 'Hash files with MD5, SHA-1, SHA-256, and more',
       category: 'Security',
     ),
     DevTool(
@@ -288,6 +333,7 @@ class ToolRegistry {
       name: 'Hash Generator',
       icon: Icons.fingerprint,
       builder: (_) => buildHashGenerator(),
+      subtitle: 'Hash text with dozens of algorithms',
       category: 'Security',
     ),
     DevTool(
@@ -295,6 +341,7 @@ class ToolRegistry {
       name: 'Text Encryption/Decryption',
       icon: Icons.lock,
       builder: (_) => buildTextEncryption(),
+      subtitle: 'Encrypt and decrypt text with symmetric ciphers',
       category: 'Security',
       minSize: const Size(480, 480),
     ),
@@ -303,6 +350,7 @@ class ToolRegistry {
       name: 'Password Hashing',
       icon: Icons.password,
       builder: (_) => buildPasswordHashing(),
+      subtitle: 'Hash and verify passwords with adaptive KDFs',
       category: 'Security',
     ),
     DevTool(
@@ -310,6 +358,7 @@ class ToolRegistry {
       name: 'Payload Embed/Extract',
       icon: Icons.folder_zip,
       builder: (_) => buildPayloadEmbedder(),
+      subtitle: 'Embed and extract payloads around template markers',
       category: 'Security',
     ),
     DevTool(
@@ -317,6 +366,7 @@ class ToolRegistry {
       name: 'User Agent Generator/Validator',
       icon: Icons.language,
       builder: (_) => buildUserAgentTool(),
+      subtitle: 'Generate and validate realistic user-agent strings',
       category: 'Security',
     ),
     DevTool(
@@ -324,6 +374,7 @@ class ToolRegistry {
       name: 'AntiBot Detection',
       icon: Icons.security,
       builder: (_) => buildAntiBotDetection(),
+      subtitle: 'Identify anti-bot protections from page fingerprints',
       category: 'Security',
     ),
     DevTool(
@@ -331,6 +382,7 @@ class ToolRegistry {
       name: 'Offline LLM',
       icon: Icons.smart_toy,
       builder: (_) => buildOfflineLlm(),
+      subtitle: 'Run local language models privately on your machine',
       category: 'AI',
       minSize: const Size(480, 560),
     ),
@@ -339,6 +391,7 @@ class ToolRegistry {
       name: 'HTML to JSX',
       icon: Icons.code,
       builder: (_) => buildHtmlToJsx(),
+      subtitle: 'Convert HTML markup into JSX components',
       category: 'Converters',
     ),
     DevTool(
@@ -346,6 +399,7 @@ class ToolRegistry {
       name: 'JS to TS Converter',
       icon: Icons.code,
       builder: (_) => buildJsToTsConverter(),
+      subtitle: 'Annotate JavaScript with inferred TypeScript types',
       category: 'Converters',
     ),
     DevTool(
@@ -353,6 +407,7 @@ class ToolRegistry {
       name: 'Markdown Preview',
       icon: Icons.notes,
       builder: (_) => buildMarkdownPreview(),
+      subtitle: 'Write Markdown with an instant rendered preview',
       category: 'Preview',
     ),
     DevTool(
@@ -360,6 +415,7 @@ class ToolRegistry {
       name: 'SQL Formatter',
       icon: Icons.storage,
       builder: (_) => buildSqlFormatter(),
+      subtitle: 'Format and beautify SQL queries',
       category: 'Formatters',
     ),
     DevTool(
@@ -367,6 +423,7 @@ class ToolRegistry {
       name: 'Cron Job Parser',
       icon: Icons.schedule,
       builder: (_) => buildCronJobParser(),
+      subtitle: 'Explain cron expressions and upcoming runs',
       category: 'Parsers',
     ),
     DevTool(
@@ -374,6 +431,7 @@ class ToolRegistry {
       name: 'Color Converter',
       icon: Icons.palette,
       builder: (_) => buildColorConverter(),
+      subtitle: 'Convert between hex, RGB, HSL, and named colors',
       category: 'Converters',
     ),
     DevTool(
@@ -381,6 +439,7 @@ class ToolRegistry {
       name: 'PHP to JS',
       icon: Icons.code,
       builder: (_) => buildPhpToJs(),
+      subtitle: 'Translate PHP snippets into JavaScript',
       category: 'Converters',
     ),
     DevTool(
@@ -388,6 +447,7 @@ class ToolRegistry {
       name: 'PHP Serializer',
       icon: Icons.code,
       builder: (_) => buildPhpTool('PHP Serializer'),
+      subtitle: 'Serialize values into the PHP wire format',
       category: 'Text',
     ),
     DevTool(
@@ -395,6 +455,7 @@ class ToolRegistry {
       name: 'PHP Unserializer',
       icon: Icons.code,
       builder: (_) => buildPhpTool('PHP Unserializer'),
+      subtitle: 'Unpack PHP serialized payloads',
       category: 'Text',
     ),
     DevTool(
@@ -402,6 +463,7 @@ class ToolRegistry {
       name: 'Random String Generator',
       icon: Icons.shuffle,
       builder: (_) => buildRandomStringGenerator(),
+      subtitle: 'Generate random strings with custom alphabets',
       category: 'Generators',
       minSize: const Size(600, 280),
     ),
@@ -410,6 +472,7 @@ class ToolRegistry {
       name: 'SVG to CSS',
       icon: Icons.brush,
       builder: (_) => buildSvgToCss(),
+      subtitle: 'Turn SVG markup into CSS backgrounds and masks',
       category: 'Converters',
     ),
     DevTool(
@@ -417,6 +480,7 @@ class ToolRegistry {
       name: 'cURL to Code',
       icon: Icons.send,
       builder: (_) => buildCurlToCode(),
+      subtitle: 'Convert cURL commands into code in many languages',
       category: 'Converters',
     ),
     DevTool(
@@ -424,6 +488,7 @@ class ToolRegistry {
       name: 'JSON to Code',
       icon: Icons.code,
       builder: (_) => buildJsonToCode(),
+      subtitle: 'Generate typed models from JSON samples',
       category: 'Generators',
     ),
     DevTool(
@@ -431,6 +496,7 @@ class ToolRegistry {
       name: 'Cipher Decoder',
       icon: Icons.lock_open,
       builder: (_) => buildCipherDecoder(),
+      subtitle: 'Decode classic ciphers like Caesar, Vigenere, and ROT13',
       category: 'Security',
     ),
     DevTool(
@@ -438,6 +504,7 @@ class ToolRegistry {
       name: 'Certificate Decoder (X.509)',
       icon: Icons.verified,
       builder: (_) => buildCertificateDecoder(),
+      subtitle: 'Decode X.509 certificates from PEM or DER',
       category: 'Security',
     ),
     DevTool(
@@ -445,6 +512,7 @@ class ToolRegistry {
       name: 'Hex ↔ ASCII',
       icon: Icons.code,
       builder: (_) => buildHexAsciiConverter(),
+      subtitle: 'Convert between hex bytes and ASCII text',
       category: 'Converters',
     ),
     DevTool(
@@ -452,6 +520,7 @@ class ToolRegistry {
       name: 'Line Sort/Dedupe',
       icon: Icons.sort,
       builder: (_) => buildLineSortDedupe(),
+      subtitle: 'Sort, deduplicate, and clean lines of text',
       category: 'Text',
     ),
     DevTool(
@@ -459,6 +528,7 @@ class ToolRegistry {
       name: 'PlantUML Class Diagram',
       icon: Icons.account_tree,
       builder: (_) => buildUmlClassDiagram(),
+      subtitle: 'Draft PlantUML class diagrams and export them as PNG',
       category: 'Diagrams',
     ),
     DevTool(
@@ -466,6 +536,7 @@ class ToolRegistry {
       name: 'Chmod Calculator',
       icon: Icons.lock_outline,
       builder: (_) => buildChmodCalculator(),
+      subtitle: 'Translate Unix permission bits to and from octal',
       category: 'Reference',
       minSize: const Size(480, 420),
     ),
@@ -474,6 +545,7 @@ class ToolRegistry {
       name: 'MIME Types',
       icon: Icons.table_view,
       builder: (_) => buildMimeTypes(),
+      subtitle: 'Look up MIME types by name, type, or extension',
       category: 'Reference',
       minSize: const Size(500, 280),
     ),
@@ -482,6 +554,7 @@ class ToolRegistry {
       name: 'Preferences',
       icon: Icons.settings,
       builder: (_) => buildPreferences(),
+      subtitle: 'Theme, appearance, and app settings',
       showDemo: false,
       category: 'Preferences',
     ),
@@ -490,6 +563,7 @@ class ToolRegistry {
       name: 'Leetspeak Converter',
       icon: Icons.abc,
       builder: (_) => buildLeetspeakConverter(),
+      subtitle: 'Convert text to and from leetspeak',
       category: 'Text',
     ),
     DevTool(
@@ -497,6 +571,7 @@ class ToolRegistry {
       name: 'Timestamp Extractor',
       icon: Icons.schedule,
       builder: (_) => buildTimestampExtractor(),
+      subtitle: 'Find and decode timestamps hidden in text',
       category: 'Parsers',
     ),
     DevTool(
@@ -504,6 +579,7 @@ class ToolRegistry {
       name: 'Access Log Parser',
       icon: Icons.receipt_long,
       builder: (_) => buildAccessLogParser(),
+      subtitle: 'Parse and summarize web server access logs',
       category: 'Parsers',
     ),
     DevTool(
@@ -511,6 +587,7 @@ class ToolRegistry {
       name: 'Session Cookie Decoder',
       icon: Icons.cookie,
       builder: (_) => buildSessionCookieDecoder(),
+      subtitle: 'Decode session cookies from popular frameworks',
       category: 'Security',
     ),
     DevTool(
@@ -518,6 +595,7 @@ class ToolRegistry {
       name: 'ASN.1 / TLV Decoder',
       icon: Icons.account_tree,
       builder: (_) => buildAsn1Decoder(),
+      subtitle: 'Decode ASN.1 TLV structures from hex or Base64',
       category: 'Security',
     ),
     DevTool(
@@ -525,6 +603,7 @@ class ToolRegistry {
       name: 'JS/TS Obfuscator',
       icon: Icons.blur_on,
       builder: (_) => buildJsObfuscator(),
+      subtitle: 'Obfuscate JavaScript and TypeScript for shipping',
       category: 'Security',
     ),
     DevTool(
@@ -532,6 +611,7 @@ class ToolRegistry {
       name: 'Hash/HMAC Verifier',
       icon: Icons.fact_check,
       builder: (_) => buildHashVerifier(),
+      subtitle: 'Verify text or files against published digests and HMACs',
       category: 'Security',
     ),
     DevTool(
@@ -539,6 +619,7 @@ class ToolRegistry {
       name: 'URL Query Editor',
       icon: Icons.link,
       builder: (_) => buildQueryEditor(),
+      subtitle: 'Add, sort, and inspect URL query parameters',
       category: 'Parsers',
     ),
     DevTool(
@@ -546,6 +627,7 @@ class ToolRegistry {
       name: 'CSV Inspector',
       icon: Icons.table_rows,
       builder: (_) => buildCsvInspector(),
+      subtitle: 'Filter, sort, and inspect CSV data',
       category: 'Parsers',
     ),
     DevTool(
@@ -553,6 +635,7 @@ class ToolRegistry {
       name: 'Date/Time Difference',
       icon: Icons.date_range,
       builder: (_) => buildDateDifference(),
+      subtitle: 'Calculate elapsed time between dates across time zones',
       category: 'Converters',
     ),
   ];

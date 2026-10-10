@@ -5,8 +5,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../ui/widgets.dart';
-import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _BackslashEscapeView extends StatefulWidget {
   const _BackslashEscapeView();
@@ -36,22 +36,10 @@ class _BackslashEscapeViewState extends State<_BackslashEscapeView> {
     });
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _input.text = text);
-  }
-
   void _setSample() {
     setState(
       () => _input.text = _escape ? 'Line 1\nLine 2' : 'Line 1\\nLine 2',
     );
-  }
-
-  void _clearInput() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-    });
   }
 
   Future<void> _copyOutput() async {
@@ -64,29 +52,30 @@ class _BackslashEscapeViewState extends State<_BackslashEscapeView> {
 
   @override
   Widget build(BuildContext context) {
-    return buildVerticalEditors(
-      inputActions: [
-        ToolButton(label: 'Go', onPressed: _run),
-        ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-        ToolButton(label: 'Sample', onPressed: _setSample),
-        ToolButton(label: 'Clear', onPressed: _clearInput),
-        SegmentedToggle(
-          options: const ['Escape', 'Unescape'],
-          initialIndex: _escape ? 0 : 1,
-          onChanged: (index) {
-            setState(() => _escape = index == 0);
-            _run();
-          },
-        ),
-      ],
-      outputActions: [
-        ToolButton(label: 'Copy', onPressed: _copyOutput),
-        ToolButton(label: 'Use as input', onPressed: _useAsInput),
-      ],
-      inputController: _input,
-      outputController: _output,
-      inputPlaceholder: 'Line 1\\nLine 2',
-      outputPlaceholder: 'Line 1\nLine 2',
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: buildVerticalEditors(
+        inputActions: [
+          ToolButton(label: 'Go', onPressed: _run),
+
+          SegmentedToggle(
+            options: const ['Escape', 'Unescape'],
+            initialIndex: _escape ? 0 : 1,
+            onChanged: (index) {
+              setState(() => _escape = index == 0);
+              _run();
+            },
+          ),
+        ],
+        outputActions: [
+          ToolButton(label: 'Copy', onPressed: _copyOutput),
+          ToolButton(label: 'Use as input', onPressed: _useAsInput),
+        ],
+        inputController: _input,
+        outputController: _output,
+        inputPlaceholder: 'Line 1\\nLine 2',
+        outputPlaceholder: 'Line 1\nLine 2',
+      ),
     );
   }
 }

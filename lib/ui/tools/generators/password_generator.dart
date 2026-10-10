@@ -17,6 +17,10 @@ class _PasswordGeneratorView extends StatefulWidget {
 }
 
 class _PasswordGeneratorViewState extends State<_PasswordGeneratorView> {
+  final TextEditingController _count = TextEditingController(text: '1');
+  int _generatedCount = 0;
+  String? _countError;
+
   final TextEditingController _length = TextEditingController(text: '20');
   final TextEditingController _words = TextEditingController(text: '6');
   final TextEditingController _separator = TextEditingController(text: '-');
@@ -43,6 +47,7 @@ class _PasswordGeneratorViewState extends State<_PasswordGeneratorView> {
 
   @override
   void dispose() {
+    _count.dispose();
     _length.dispose();
     _words.dispose();
     _separator.dispose();
@@ -51,21 +56,29 @@ class _PasswordGeneratorViewState extends State<_PasswordGeneratorView> {
   }
 
   PasswordOptions get _options => PasswordOptions(
-        style: _style,
-        length: int.tryParse(_length.text.trim()) ?? 20,
-        words: int.tryParse(_words.text.trim()) ?? 4,
-        separator: _separator.text.isEmpty ? '-' : _separator.text,
-        includeUpper: _includeUpper,
-        includeDigits: _includeDigits,
-        includeSymbols: _includeSymbols,
-        capitalizeWords: _capitalizeWords,
-      );
+    style: _style,
+    length: int.tryParse(_length.text.trim()) ?? 20,
+    words: int.tryParse(_words.text.trim()) ?? 4,
+    separator: _separator.text.isEmpty ? '-' : _separator.text,
+    includeUpper: _includeUpper,
+    includeDigits: _includeDigits,
+    includeSymbols: _includeSymbols,
+    capitalizeWords: _capitalizeWords,
+  );
 
   void _generate() {
-    final secret = generateSecret(_options);
+    final count = int.tryParse(_count.text.trim());
+    if (count == null || count < 1 || count > 500) {
+      setState(() => _countError = 'Enter a number from 1 to 500.');
+      return;
+    }
+    final options = _options;
+    final secrets = List.generate(count, (_) => generateSecret(options));
     setState(() {
-      _secret = secret;
-      _value.text = secret.value;
+      _countError = null;
+      _generatedCount = count;
+      _secret = secrets.first;
+      _value.text = secrets.map((secret) => secret.value).join('\n');
     });
   }
 
@@ -77,14 +90,13 @@ class _PasswordGeneratorViewState extends State<_PasswordGeneratorView> {
   @override
   Widget build(BuildContext context) {
     final secret = _secret;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+    return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildResult(context, secret),
           const SizedBox(height: 12),
-          Expanded(child: _buildControls(context)),
+          _buildControls(context),
         ],
       ),
     );
@@ -93,98 +105,123 @@ class _PasswordGeneratorViewState extends State<_PasswordGeneratorView> {
   Widget _buildResult(BuildContext context, GeneratedSecret secret) {
     final appColors = context.appColors;
     final weak = secret.bitsOfEntropy < 40;
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
+    return ToolPanel(
+      title: _generatedCount > 1
+          ? 'Generated passwords ($_generatedCount)'
+          : 'Generated password',
+      expand: false,
+      actions: [
+        ToolButton(
+          label: _generatedCount > 1 ? 'Copy all' : 'Copy',
+          onPressed: _value.text.isEmpty ? null : () => _copy(_value.text),
+        ),
+        ToolButton(
+          label: 'Regenerate',
+          onPressed: _countError == null ? _generate : null,
+        ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 240),
+              child: SingleChildScrollView(
                 child: SelectableText(
-                  secret.value.isEmpty ? 'Press Generate' : secret.value,
+                  _value.text.isEmpty ? 'Press Generate' : _value.text,
                   style: TextStyle(
                     fontFamily: 'Menlo',
                     fontSize: 14,
-                    color: secret.value.isEmpty
+                    color: _value.text.isEmpty
                         ? appColors.mutedText
                         : appColors.editorText,
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              ToolButton(label: 'Copy', onPressed: () => _copy(secret.value)),
-              ToolButton(label: 'Regenerate', onPressed: _generate),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            secret.summary,
-            style: mutedToolTextStyle(context, fontSize: 11.5),
-          ),
-          if (secret.bitsOfEntropy > 0) ...[
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 14,
-              runSpacing: 2,
-              children: [
-                Text(
-                  'Online crack: ${estimateCrackTime(secret.bitsOfEntropy)}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: weak ? appColors.warning : appColors.mutedText,
-                  ),
-                ),
-                Text(
-                  'Offline (fast hash): '
-                  '${estimateOfflineCrackTime(secret.bitsOfEntropy)}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: weak ? appColors.warning : appColors.mutedText,
-                  ),
-                ),
-              ],
             ),
+            const SizedBox(height: 8),
+            Text(
+              _generatedCount > 1
+                  ? 'Per password: ${secret.summary}'
+                  : secret.summary,
+              style: mutedToolTextStyle(context, fontSize: 11.5),
+            ),
+            if (secret.bitsOfEntropy > 0) ...[
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 14,
+                runSpacing: 2,
+                children: [
+                  Text(
+                    'Online crack: ${estimateCrackTime(secret.bitsOfEntropy)}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: weak ? appColors.warning : appColors.mutedText,
+                    ),
+                  ),
+                  Text(
+                    'Offline (fast hash): '
+                    '${estimateOfflineCrackTime(secret.bitsOfEntropy)}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: weak ? appColors.warning : appColors.mutedText,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildControls(BuildContext context) {
     final style = _style;
-    return SingleChildScrollView(
+    return ToolPanel(
+      title: 'Options',
+      expand: false,
       child: Container(
-        decoration: toolSurfaceDecoration(context),
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              spacing: 12,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 const Text('Style', style: TextStyle(fontSize: 12)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: SmallDropdown(
-                    items: PasswordStyle.values
-                        .map((s) => s.label)
-                        .toList(),
-                    initialValue: style.label,
-                    onChanged: (value) {
-                      final match =
-                          PasswordStyle.values.where((s) => s.label == value);
-                      if (match.isEmpty) return;
-                      setState(() => _style = match.first);
-                      _generate();
-                    },
+                SmallDropdown(
+                  items: PasswordStyle.values.map((s) => s.label).toList(),
+                  initialValue: style.label,
+                  onChanged: (value) {
+                    final match = PasswordStyle.values.where(
+                      (s) => s.label == value,
+                    );
+                    if (match.isEmpty) return;
+                    setState(() => _style = match.first);
+                    _generate();
+                  },
+                ),
+                SizedBox(
+                  width: 240,
+                  child: _NumberField(
+                    label: 'Count (1–500)',
+                    controller: _count,
+                    errorText: _countError,
+                    onChanged: (_) => _generate(),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 6),
             if (style == PasswordStyle.random)
-              Row(
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   SizedBox(
                     width: 200,
@@ -227,7 +264,10 @@ class _PasswordGeneratorViewState extends State<_PasswordGeneratorView> {
                 ],
               ),
             if (style == PasswordStyle.passphrase)
-              Row(
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   SizedBox(
                     width: 160,
@@ -267,7 +307,7 @@ class _PasswordGeneratorViewState extends State<_PasswordGeneratorView> {
               ),
             if (style == PasswordStyle.uuidToken)
               const Text(
-                'A 128-bit random token in UUID format. No options.',
+                'A 128-bit random token in UUID format.',
                 style: TextStyle(fontSize: 11.5),
               ),
           ],
@@ -279,11 +319,13 @@ class _PasswordGeneratorViewState extends State<_PasswordGeneratorView> {
 
 class _NumberField extends StatelessWidget {
   const _NumberField({
+    this.errorText,
     required this.label,
     required this.controller,
     required this.onChanged,
   });
 
+  final String? errorText;
   final String label;
   final TextEditingController controller;
   final ValueChanged<String> onChanged;
@@ -302,6 +344,7 @@ class _NumberField extends StatelessWidget {
       ),
       decoration: InputDecoration(
         labelText: label,
+        errorText: errorText,
         labelStyle: TextStyle(fontSize: 11, color: appColors.mutedText),
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),

@@ -238,7 +238,7 @@ class _NetworkScannerViewState extends State<_NetworkScannerView> {
     final appColors = context.appColors;
     final progress = _progress;
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -280,8 +280,7 @@ class _NetworkScannerViewState extends State<_NetworkScannerView> {
           ),
           const SizedBox(height: 10),
           Expanded(
-            child: ResizableSplit(
-              horizontal: true,
+            child: buildAdaptiveSplit(
               initialRatio: 0.54,
               minFirstExtent: 360,
               minSecondExtent: 320,
@@ -296,122 +295,125 @@ class _NetworkScannerViewState extends State<_NetworkScannerView> {
 
   Widget _buildControls(BuildContext context) {
     final appColors = context.appColors;
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(
-                'Network',
-                style: TextStyle(
-                  color: appColors.editorText,
-                  fontWeight: FontWeight.w700,
+    return ToolPanel(
+      title: 'Scan options',
+      expand: false,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  'Network',
+                  style: TextStyle(
+                    color: appColors.editorText,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              SizedBox(
-                width: 320,
-                child: _networkTextField(
-                  key: const ValueKey('network-scanner-targets'),
-                  controller: _targets,
-                  hint: '192.168.1.0/24',
+                SizedBox(
+                  width: 320,
+                  child: _networkTextField(
+                    key: const ValueKey('network-scanner-targets'),
+                    controller: _targets,
+                    hint: '192.168.1.0/24',
+                    enabled: !_scanning,
+                    onSubmitted: (_) => _startScan(),
+                  ),
+                ),
+                ToolButton(
+                  label: 'Detect LAN',
+                  onPressed: _scanning || _localNetworks.isEmpty
+                      ? null
+                      : () {
+                          setState(
+                            () => _targets.text = _localNetworks.first.cidr,
+                          );
+                        },
+                ),
+                SmallDropdown(
+                  key: ValueKey('network-profile-$_profileName'),
+                  items: _profileNames,
+                  initialValue: _profileName,
+                  width: 180,
+                  onChanged: (value) {
+                    setState(() {
+                      _profileName = value;
+                      _syncProfileFields();
+                    });
+                  },
+                ),
+                SizedBox(
+                  width: 260,
+                  child: _networkTextField(
+                    controller: _ports,
+                    hint: '22,80,443 or 8000-8010',
+                    enabled: _isCustomProfile && !_scanning && _tcpProbe,
+                  ),
+                ),
+                ToolButton(
+                  label: 'Scan',
+                  onPressed: _scanning ? null : _startScan,
+                ),
+                ToolButton(
+                  label: 'Stop',
+                  onPressed: _scanning ? _stopScan : null,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _networkMiniField(
+                  context,
+                  'Timeout',
+                  controller: _timeout,
+                  width: 74,
+                  suffix: 's',
                   enabled: !_scanning,
-                  onSubmitted: (_) => _startScan(),
                 ),
-              ),
-              ToolButton(
-                label: 'Detect LAN',
-                onPressed: _scanning || _localNetworks.isEmpty
-                    ? null
-                    : () {
-                        setState(
-                          () => _targets.text = _localNetworks.first.cidr,
-                        );
-                      },
-              ),
-              SmallDropdown(
-                key: ValueKey('network-profile-$_profileName'),
-                items: _profileNames,
-                initialValue: _profileName,
-                width: 180,
-                onChanged: (value) {
-                  setState(() {
-                    _profileName = value;
-                    _syncProfileFields();
-                  });
-                },
-              ),
-              SizedBox(
-                width: 260,
-                child: _networkTextField(
-                  controller: _ports,
-                  hint: '22,80,443 or 8000-8010',
-                  enabled: _isCustomProfile && !_scanning && _tcpProbe,
+                _networkMiniField(
+                  context,
+                  'Concurrency',
+                  controller: _concurrency,
+                  width: 70,
+                  enabled: !_scanning,
                 ),
-              ),
-              ToolButton(
-                label: 'Scan',
-                onPressed: _scanning ? null : _startScan,
-              ),
-              ToolButton(
-                label: 'Stop',
-                onPressed: _scanning ? _stopScan : null,
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              _networkMiniField(
-                context,
-                'Timeout',
-                controller: _timeout,
-                width: 74,
-                suffix: 's',
-                enabled: !_scanning,
-              ),
-              _networkMiniField(
-                context,
-                'Concurrency',
-                controller: _concurrency,
-                width: 70,
-                enabled: !_scanning,
-              ),
-              _networkCheckbox(
-                context,
-                label: 'Ping',
-                value: _ping,
-                onChanged: _scanning
-                    ? null
-                    : (value) => setState(() => _ping = value ?? true),
-              ),
-              _networkCheckbox(
-                context,
-                label: 'TCP ports',
-                value: _tcpProbe,
-                onChanged: _scanning
-                    ? null
-                    : (value) => setState(() => _tcpProbe = value ?? true),
-              ),
-              Text(
-                _isCustomProfile
-                    ? 'Custom device discovery'
-                    : NetworkScannerService.profileByName(
-                        _profileName,
-                      ).description,
-                style: mutedToolTextStyle(context),
-              ),
-            ],
-          ),
-        ],
+                _networkCheckbox(
+                  context,
+                  label: 'Ping',
+                  value: _ping,
+                  onChanged: _scanning
+                      ? null
+                      : (value) => setState(() => _ping = value ?? true),
+                ),
+                _networkCheckbox(
+                  context,
+                  label: 'TCP ports',
+                  value: _tcpProbe,
+                  onChanged: _scanning
+                      ? null
+                      : (value) => setState(() => _tcpProbe = value ?? true),
+                ),
+                Text(
+                  _isCustomProfile
+                      ? 'Custom device discovery'
+                      : NetworkScannerService.profileByName(
+                          _profileName,
+                        ).description,
+                  style: mutedToolTextStyle(context),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -419,34 +421,37 @@ class _NetworkScannerViewState extends State<_NetworkScannerView> {
   Widget _buildResultsPanel(BuildContext context) {
     final summary = _summary;
     final results = summary?.results ?? const <NetworkDeviceResult>[];
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      child: results.isEmpty && (summary?.warnings.isEmpty ?? true)
-          ? Center(
-              child: Text(
-                _scanning
-                    ? 'Scanning network...'
-                    : 'Responsive devices will appear here',
-                style: mutedToolTextStyle(context),
-              ),
-            )
-          : ListView(
-              padding: const EdgeInsets.all(10),
-              children: [
-                _buildNetworkStats(context, summary),
-                if (summary != null && summary.warnings.isNotEmpty) ...[
+    return ToolPanel(
+      title: 'Devices',
+      expand: true,
+      child: Container(
+        child: results.isEmpty && (summary?.warnings.isEmpty ?? true)
+            ? Center(
+                child: Text(
+                  _scanning
+                      ? 'Scanning network...'
+                      : 'Responsive devices will appear here',
+                  style: mutedToolTextStyle(context),
+                ),
+              )
+            : ListView(
+                padding: const EdgeInsets.all(10),
+                children: [
+                  _buildNetworkStats(context, summary),
+                  if (summary != null && summary.warnings.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    for (final warning in summary.warnings)
+                      _networkWarningTile(context, warning),
+                  ],
                   const SizedBox(height: 8),
-                  for (final warning in summary.warnings)
-                    _networkWarningTile(context, warning),
+                  for (final result in results)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _networkResultTile(context, result),
+                    ),
                 ],
-                const SizedBox(height: 8),
-                for (final result in results)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: _networkResultTile(context, result),
-                  ),
-              ],
-            ),
+              ),
+      ),
     );
   }
 
@@ -552,51 +557,54 @@ class _NetworkScannerViewState extends State<_NetworkScannerView> {
   }
 
   Widget _buildDetailsPanel(BuildContext context) {
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                SegmentedToggle(
-                  options: const ['Evidence', 'Report'],
-                  initialIndex: _detailsIndex,
-                  onChanged: (index) => setState(() => _detailsIndex = index),
-                ),
-                if (_detailsIndex == 1) ...[
-                  const SizedBox(width: 10),
-                  SmallDropdown(
-                    key: ValueKey('network-report-$_reportMode'),
-                    items: const ['JSON', 'CSV'],
-                    initialValue: _reportMode,
-                    width: 90,
-                    onChanged: (value) {
-                      setState(() => _reportMode = value);
-                      _refreshReport();
-                    },
+    return ToolPanel(
+      title: 'Device details',
+      expand: true,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  SegmentedToggle(
+                    options: const ['Evidence', 'Report'],
+                    initialIndex: _detailsIndex,
+                    onChanged: (index) => setState(() => _detailsIndex = index),
                   ),
+                  if (_detailsIndex == 1) ...[
+                    const SizedBox(width: 10),
+                    SmallDropdown(
+                      key: ValueKey('network-report-$_reportMode'),
+                      items: const ['JSON', 'CSV'],
+                      initialValue: _reportMode,
+                      width: 90,
+                      onChanged: (value) {
+                        setState(() => _reportMode = value);
+                        _refreshReport();
+                      },
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          Expanded(
-            child: _detailsIndex == 0
-                ? _buildEvidencePanel(context)
-                : EditorPane(
-                    label: 'Report',
-                    actions: const [],
-                    controller: _report,
-                    readOnly: true,
-                    placeholder: 'Run a network scan to generate a report...',
-                    showHeader: false,
-                  ),
-          ),
-        ],
+            const SizedBox(height: 10),
+            Expanded(
+              child: _detailsIndex == 0
+                  ? _buildEvidencePanel(context)
+                  : EditorPane(
+                      label: 'Report',
+                      actions: const [],
+                      controller: _report,
+                      readOnly: true,
+                      placeholder: 'Run a network scan to generate a report...',
+                      showHeader: true,
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -767,10 +775,7 @@ class _NetworkScannerViewState extends State<_NetworkScannerView> {
         children: [
           Text('- ', style: TextStyle(color: context.appColors.mutedText)),
           Expanded(
-            child: Text(
-              text,
-              style: mutedToolTextStyle(context, fontSize: 12),
-            ),
+            child: Text(text, style: mutedToolTextStyle(context, fontSize: 12)),
           ),
         ],
       ),
@@ -839,6 +844,9 @@ class _NetworkScannerViewState extends State<_NetworkScannerView> {
         onSubmitted: onSubmitted,
         decoration: InputDecoration(
           border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
           isDense: true,
           hintText: hint,
           hintStyle: TextStyle(color: appColors.mutedText),

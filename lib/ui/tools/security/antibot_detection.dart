@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
+import '../../tool_sample_action.dart';
 
 class _AntiBotDetectorView extends StatefulWidget {
   const _AntiBotDetectorView();
@@ -143,96 +144,87 @@ class _AntiBotDetectorViewState extends State<_AntiBotDetectorView> {
         .toList();
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _url.text = text.trim());
-  }
-
   void _setSample() {
     setState(() => _url.text = 'https://example.com');
-  }
-
-  void _clear() {
-    setState(() {
-      _url.clear();
-      _output.clear();
-      _error = null;
-    });
   }
 
   @override
   Widget build(BuildContext context) {
     final appColors = context.appColors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // URL input row
-        Row(
-          children: [
-            const Text('URL', style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Container(
-                decoration: toolSurfaceDecoration(context, radius: 6),
-                child: TextField(
-                  controller: _url,
-                  decoration: InputDecoration(
-                    hintText: 'https://example.com',
-                    border: InputBorder.none,
-                    hintStyle: TextStyle(color: appColors.mutedText),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // URL input row
+          Row(
+            children: [
+              const Text('URL', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Container(
+                  decoration: toolSurfaceDecoration(context, radius: 6),
+                  child: TextField(
+                    controller: _url,
+                    decoration: InputDecoration(
+                      hintText: 'https://example.com',
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      hintStyle: TextStyle(color: appColors.mutedText),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      isDense: true,
                     ),
-                    isDense: true,
+                    style: TextStyle(
+                      fontFamily: 'Menlo',
+                      fontSize: 12,
+                      color: appColors.editorText,
+                    ),
+                    onSubmitted: (_) => _analyze(),
                   ),
-                  style: TextStyle(
-                    fontFamily: 'Menlo',
-                    fontSize: 12,
-                    color: appColors.editorText,
-                  ),
-                  onSubmitted: (_) => _analyze(),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            ToolButton(label: 'Go', onPressed: _analyze),
-            ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-            ToolButton(label: 'Sample', onPressed: _setSample),
-            ToolButton(label: 'Clear', onPressed: _clear),
-            if (_loading)
-              const Padding(
-                padding: EdgeInsets.only(left: 8),
-                child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+              const SizedBox(width: 8),
+              ToolButton(label: 'Go', onPressed: _analyze),
+
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.only(left: 8),
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        // Report output
-        Expanded(
-          child: EditorPane(
-            label: 'Report',
-            actions: [
-              ToolButton(
-                label: 'Copy',
-                onPressed: () =>
-                    Clipboard.setData(ClipboardData(text: _output.text)),
-              ),
             ],
-            placeholder: 'Detection results appear here...',
-            readOnly: true,
-            controller: _output,
           ),
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 8),
-          Text(_error!, style: errorToolTextStyle(context)),
+          const SizedBox(height: 12),
+          // Report output
+          Expanded(
+            child: EditorPane(
+              label: 'Report',
+              actions: [
+                ToolButton(
+                  label: 'Copy',
+                  onPressed: () =>
+                      Clipboard.setData(ClipboardData(text: _output.text)),
+                ),
+              ],
+              placeholder: 'Detection results appear here...',
+              readOnly: true,
+              controller: _output,
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(_error!, style: errorToolTextStyle(context)),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

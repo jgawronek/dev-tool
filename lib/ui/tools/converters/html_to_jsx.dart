@@ -3,9 +3,9 @@ library;
 
 import 'dart:math';
 import 'package:flutter/material.dart';
-import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _HtmlToJsxView extends StatefulWidget {
   const _HtmlToJsxView();
@@ -56,40 +56,32 @@ class _HtmlToJsxViewState extends State<_HtmlToJsxView> {
     _convert();
   }
 
-  void _clear() {
-    setState(() {
-      _input.clear();
-      _output.clear();
-      _error = null;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (_error != null) ...[
-          Text(_error!, style: errorToolTextStyle(context)),
-          const SizedBox(height: 8),
-        ],
-        Expanded(
-          child: buildSplitEditors(
-            inputPlaceholder: 'Paste HTML here...',
-            outputPlaceholder: 'JSX output...',
-            inputController: _input,
-            outputController: _output,
-            onInputChanged: (_) => _convert(),
-            inputActions: [
-              ToolButton(label: 'Sample', onPressed: _setExample),
-              ToolButton(label: 'Clear', onPressed: _clear),
-            ],
-            outputActions: const [],
-            showInputHeader: false,
-            showOutputHeader: false,
+    return ToolSampleAction(
+      onPressed: _setExample,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_error != null) ...[
+            Text(_error!, style: errorToolTextStyle(context)),
+            const SizedBox(height: 8),
+          ],
+          Expanded(
+            child: buildSplitEditors(
+              inputPlaceholder: 'Paste HTML here...',
+              outputPlaceholder: 'JSX output...',
+              inputController: _input,
+              outputController: _output,
+              onInputChanged: (_) => _convert(),
+              inputActions: [],
+              outputActions: const [],
+              showInputHeader: true,
+              showOutputHeader: true,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

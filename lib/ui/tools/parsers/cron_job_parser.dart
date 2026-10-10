@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
+import '../../tool_sample_action.dart';
 
 class _CronJobParserView extends StatefulWidget {
   const _CronJobParserView();
@@ -209,78 +210,110 @@ class _CronJobParserViewState extends State<_CronJobParserView> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+    return ToolSampleAction(
+      onPressed: () {
+        _input.text = '*/5 * * * *';
+        _parse();
+      },
+      child: SingleChildScrollView(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Flexible(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    clipBehavior: Clip.none,
-                    child: Row(
-                      children: [
-                        ToolButton(
-                          label: 'Clipboard',
-                          onPressed: () async {
-                            final text = await readClipboardText();
-                            setState(() => _input.text = text);
-                            _parse();
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        ToolButton(
-                          label: 'Sample',
-                          onPressed: () {
-                            setState(() => _input.text = '*/5 * * * *');
-                            _parse();
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        ToolButton(
-                          label: 'Clear',
-                          onPressed: () {
-                            setState(() => _input.clear());
-                            _parse();
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        ToolButton(
-                          label: 'Copy',
-                          onPressed: () =>
-                              Clipboard.setData(ClipboardData(text: _input.text)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const SmallDropdown(
-                  items: ['Pick an example...'],
-                  initialValue: 'Pick an example...',
+            ToolPanel(
+              title: 'Cron expression',
+              expand: false,
+              actions: [
+                IconButton(
+                  tooltip: 'Copy expression',
+                  icon: const Icon(Icons.copy_outlined, size: 17),
+                  onPressed: () =>
+                      Clipboard.setData(ClipboardData(text: _input.text)),
                 ),
               ],
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: InlineTextField(
+                  hintText: '*/5 * * * *',
+                  controller: _input,
+                  onChanged: (_) => _parse(),
+                ),
+              ),
             ),
-            const SizedBox(height: 8),
-            InlineTextField(
-              hintText: '*/5 * * * *',
-              controller: _input,
-              onChanged: (_) => _parse(),
+            const SizedBox(height: 12),
+            ToolPanel(
+              title: 'Schedule',
+              expand: false,
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _summary,
+                      style: _next.isEmpty
+                          ? errorToolTextStyle(context)
+                          : const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 12),
+                    for (final item in [
+                      ('Minutes', _minutes),
+                      ('Hours', _hours),
+                      ('Day of month', _daysOfMonth),
+                      ('Months', _months),
+                      ('Day of week', _daysOfWeek),
+                    ])
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 140,
+                              child: Text(
+                                item.$1,
+                                style: mutedToolTextStyle(context),
+                              ),
+                            ),
+                            Expanded(
+                              child: SelectableText(
+                                item.$2.isEmpty ? '—' : item.$2,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 12),
-            Text(_summary),
-            const SizedBox(height: 12),
-            Text('Minutes: $_minutes'),
-            Text('Hours: $_hours'),
-            Text('Day of Month: $_daysOfMonth'),
-            Text('Months: $_months'),
-            Text('Day of Week: $_daysOfWeek'),
-            const SizedBox(height: 12),
-            const Text('Next executions:'),
-            for (final item in _next) Text(item),
+            ToolPanel(
+              title: 'Next executions · local time',
+              expand: false,
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_next.isEmpty)
+                      Text(
+                        'Enter a valid expression to see upcoming runs',
+                        style: mutedToolTextStyle(context),
+                      ),
+                    for (final item in _next)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: SelectableText(
+                          item,
+                          style: const TextStyle(
+                            fontFamily: 'Menlo',
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),

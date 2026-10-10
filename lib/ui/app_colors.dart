@@ -84,7 +84,39 @@ class AppColors extends ThemeExtension<AppColors> {
     shadow: Color(0x99000000),
   );
 
+  static const sandstone = AppColors(
+    sidebar: Color(0xFFEDEAE5),
+    canvas: Color(0xFFFCFBF9),
+    panel: Color(0xFFFFFFFF),
+    panelHeader: Color(0xFFF6F4F1),
+    panelElevated: Color(0xFFFFFFFF),
+    border: Color(0xFFDDD9D3),
+    editorBackground: Color(0xFFFFFFFF),
+    editorText: Color(0xFF202130),
+    mutedText: Color(0xFF72717A),
+    accent: Color(0xFFB65335),
+    accentSoft: Color(0xFFF1E3DC),
+    success: Color(0xFF35843D),
+    warning: Color(0xFF976218),
+    error: Color(0xFFB83D3D),
+    statusBar: Color(0xFFF3F0EC),
+    hover: Color(0xFFE8E2DA),
+    selected: Color(0xFFE5D8CE),
+    shadow: Color(0x18000000),
+  );
+
   static const colorThemes = <AppColorThemeChoice>[
+    AppColorThemeChoice(
+      name: 'Sandstone',
+      lightAccent: Color(0xFFB65335),
+      lightAccentSoft: Color(0xFFF1E3DC),
+      lightSelected: Color(0xFFE5D8CE),
+      lightHover: Color(0xFFE8E2DA),
+      darkAccent: Color(0xFFDF9878),
+      darkAccentSoft: Color(0xFF49352C),
+      darkSelected: Color(0xFF46372F),
+      darkHover: Color(0xFF362C27),
+    ),
     AppColorThemeChoice(
       name: 'Classic Blue',
       lightAccent: Color(0xFF3E6B7F),
@@ -155,7 +187,7 @@ class AppColors extends ThemeExtension<AppColors> {
 
   static AppColors lightForTheme(String name) {
     final theme = colorThemeFor(name);
-    return light.copyWith(
+    return (name == 'Sandstone' ? sandstone : light).copyWith(
       accent: theme.lightAccent,
       accentSoft: theme.lightAccentSoft,
       selected: theme.lightSelected,

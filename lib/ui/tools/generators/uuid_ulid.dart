@@ -9,6 +9,7 @@ import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _UuidUlidView extends StatefulWidget {
   const _UuidUlidView();
@@ -237,131 +238,112 @@ class _UuidUlidViewState extends State<_UuidUlidView> {
     await Clipboard.setData(ClipboardData(text: _generated.text));
   }
 
-  void _clearGenerated() {
-    setState(() => _generated.clear());
-  }
-
   @override
   Widget build(BuildContext context) {
-    return ResizableSplit(
-      horizontal: true,
-      initialRatio: 0.5,
-      minFirstExtent: 360,
-      minSecondExtent: 380,
-      first: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              EditorPane(
-                label: 'Input',
-                actions: [
-                  ToolButton(
-                    label: 'Clipboard',
-                    onPressed: () async {
-                      final text = await readClipboardText();
-                      setState(() => _input.text = text);
-                      _decode();
-                    },
+    return ToolSampleAction(
+      onPressed: () {
+        _generate();
+        _input.text = _generated.text.split('\n').first;
+        _decode();
+      },
+      child: buildAdaptiveSplit(
+        initialRatio: 0.5,
+        minFirstExtent: 360,
+        minSecondExtent: 380,
+        first: ToolPanel(
+          title: 'Inspect and generate',
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  EditorPane(
+                    label: 'Input',
+                    actions: [],
+                    controller: _input,
+                    onChanged: (_) => _decode(),
+                    placeholder: '00000000-0000-0000-0000-000000000000',
+                    expand: false,
+                    fixedHeight: 104,
                   ),
-                  ToolButton(
-                    label: 'Sample',
-                    onPressed: () {
-                      setState(() => _input.text = _uuidV4());
-                      _decode();
-                    },
-                  ),
-                  ToolButton(
-                    label: 'Clear',
-                    onPressed: () {
-                      setState(() => _input.clear());
-                      _decode();
-                    },
+                  if (_error != null) ...[
+                    const SizedBox(height: 8),
+                    Text(_error!, style: errorToolTextStyle(context)),
+                  ],
+                  const SizedBox(height: 12),
+                  _IdDetailsPanel(
+                    rows: [
+                      _IdDetailRowData('Standard', _standard.text),
+                      _IdDetailRowData('Raw', _raw.text),
+                      _IdDetailRowData('Type', _version.text),
+                      _IdDetailRowData('Variant', _variant.text),
+                      _IdDetailRowData('Time', _time.text),
+                      _IdDetailRowData('Clock ID', _clock.text),
+                      _IdDetailRowData('Node', _node.text),
+                    ],
                   ),
                 ],
-                controller: _input,
-                onChanged: (_) => _decode(),
-                placeholder: '00000000-0000-0000-0000-000000000000',
-                expand: false,
-                fixedHeight: 104,
               ),
-              if (_error != null) ...[
-                const SizedBox(height: 8),
-                Text(_error!, style: errorToolTextStyle(context)),
-              ],
-              const SizedBox(height: 12),
-              _IdDetailsPanel(
-                rows: [
-                  _IdDetailRowData('Standard', _standard.text),
-                  _IdDetailRowData('Raw', _raw.text),
-                  _IdDetailRowData('Type', _version.text),
-                  _IdDetailRowData('Variant', _variant.text),
-                  _IdDetailRowData('Time', _time.text),
-                  _IdDetailRowData('Clock ID', _clock.text),
-                  _IdDetailRowData('Node', _node.text),
-                ],
-              ),
-            ],
+            ),
           ),
         ),
-      ),
-      second: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            decoration: toolSurfaceDecoration(context, radius: 8),
-            padding: const EdgeInsets.all(10),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
+        second: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              decoration: toolSurfaceDecoration(context, radius: 8),
+              padding: const EdgeInsets.all(10),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Text(
+                    'Generate',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  SmallDropdown(
+                    items: const ['UUID v4', 'UUID v1', 'ULID'],
+                    initialValue: _type,
+                    width: 128,
+                    onChanged: (value) => setState(() => _type = value),
+                  ),
+                  InlineTextField(width: 56, hintText: '1', controller: _count),
+                  ToolButton(label: 'Generate', onPressed: _generate),
+                  Checkbox(
+                    value: _lowercase,
+                    onChanged: (value) =>
+                        setState(() => _lowercase = value ?? false),
+                  ),
+                  const Text('lowercase'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
               children: [
                 const Text(
-                  'Generate',
+                  'Generated IDs',
                   style: TextStyle(fontWeight: FontWeight.w600),
                 ),
-                SmallDropdown(
-                  items: const ['UUID v4', 'UUID v1', 'ULID'],
-                  initialValue: _type,
-                  width: 128,
-                  onChanged: (value) => setState(() => _type = value),
-                ),
-                InlineTextField(width: 56, hintText: '1', controller: _count),
-                ToolButton(label: 'Generate', onPressed: _generate),
-                Checkbox(
-                  value: _lowercase,
-                  onChanged: (value) =>
-                      setState(() => _lowercase = value ?? false),
-                ),
-                const Text('lowercase'),
+                const Spacer(),
               ],
             ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Text(
-                'Generated IDs',
-                style: TextStyle(fontWeight: FontWeight.w600),
+            const SizedBox(height: 8),
+            Expanded(
+              child: EditorPane(
+                label: 'Generated IDs',
+                actions: const [],
+                controller: _generated,
+                readOnly: true,
+                placeholder: 'Generated IDs...',
+                copyAction: _copyGenerated,
+                showHeader: true,
               ),
-              const Spacer(),
-              ToolButton(label: 'Reset output', onPressed: _clearGenerated),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: EditorPane(
-              label: '',
-              actions: const [],
-              controller: _generated,
-              readOnly: true,
-              placeholder: 'Generated IDs...',
-              copyAction: _copyGenerated,
-              showHeader: false,
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

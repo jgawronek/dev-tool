@@ -8,9 +8,9 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import '../../../services/file_dialog_service.dart';
 import '../../../ui/app_colors.dart';
-import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _JsToTsConverterView extends StatefulWidget {
   const _JsToTsConverterView();
@@ -165,16 +165,6 @@ module.exports = { greet, UserCard };''';
     _convert();
   }
 
-  void _clear() {
-    setState(() {
-      _sourceFileName = null;
-      _error = null;
-      _lastResult = const _JsToTsConversionResult(code: '', notes: []);
-      _input.clear();
-      _output.clear();
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final summary = _lastResult.notes.isEmpty
@@ -182,82 +172,82 @@ module.exports = { greet, UserCard };''';
               ? 'Paste TypeScript to strip types into plain JavaScript.'
               : 'Paste JavaScript to generate TypeScript migration output.')
         : _lastResult.notes.join('  •  ');
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (_error != null) ...[
-          Text(_error!, style: errorToolTextStyle(context)),
-          const SizedBox(height: 8),
-        ],
-        Expanded(
-          child: buildSplitEditors(
-            horizontal: true,
-            inputPlaceholder: _tsToJs
-                ? 'Choose a .ts/.tsx file or paste TypeScript...'
-                : 'Choose a .js/.jsx file or paste JavaScript...',
-            outputPlaceholder: _tsToJs
-                ? 'JavaScript output...'
-                : 'TypeScript output...',
-            inputController: _input,
-            outputController: _output,
-            onInputChanged: (_) {
-              _sourceFileName = null;
-              _convert();
-            },
-            inputActions: [
-              ToolButton(label: 'Sample', onPressed: _setExample),
-              ToolButton(label: 'Clear', onPressed: _clear),
-            ],
-            outputActions: const [],
-            showInputHeader: false,
-            showOutputHeader: false,
-            inputOverlay: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _JsToTsDirectionToggle(
-                  tsToJs: _tsToJs,
-                  onChanged: _setDirection,
-                ),
-                const SizedBox(width: 6),
-                SourceFileControls(
-                  onPickFile: _pickSourceFile,
-                  fileName: _sourceFileName,
-                  tooltip: _tsToJs
-                      ? 'Choose TypeScript file'
-                      : 'Choose JavaScript file',
-                ),
-              ],
-            ),
-            outputOverlay: _tsToJs
-                ? null
-                : _JsToTsOptionsOverlay(
-                    addClassFields: _addClassFields,
-                    useJsDoc: _useJsDoc,
-                    rewriteCommonJs: _rewriteCommonJs,
-                    addAnyFallbacks: _addAnyFallbacks,
-                    onChanged:
-                        ({
-                          bool? addClassFields,
-                          bool? useJsDoc,
-                          bool? rewriteCommonJs,
-                          bool? addAnyFallbacks,
-                        }) {
-                          setState(() {
-                            _addClassFields = addClassFields ?? _addClassFields;
-                            _useJsDoc = useJsDoc ?? _useJsDoc;
-                            _rewriteCommonJs =
-                                rewriteCommonJs ?? _rewriteCommonJs;
-                            _addAnyFallbacks =
-                                addAnyFallbacks ?? _addAnyFallbacks;
-                          });
-                          _convert();
-                        },
+    return ToolSampleAction(
+      onPressed: _setExample,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_error != null) ...[
+            Text(_error!, style: errorToolTextStyle(context)),
+            const SizedBox(height: 8),
+          ],
+          Expanded(
+            child: buildSplitEditors(
+              inputPlaceholder: _tsToJs
+                  ? 'Choose a .ts/.tsx file or paste TypeScript...'
+                  : 'Choose a .js/.jsx file or paste JavaScript...',
+              outputPlaceholder: _tsToJs
+                  ? 'JavaScript output...'
+                  : 'TypeScript output...',
+              inputController: _input,
+              outputController: _output,
+              onInputChanged: (_) {
+                _sourceFileName = null;
+                _convert();
+              },
+              inputActions: [],
+              outputActions: const [],
+              showInputHeader: true,
+              showOutputHeader: true,
+              inputOverlay: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _JsToTsDirectionToggle(
+                    tsToJs: _tsToJs,
+                    onChanged: _setDirection,
                   ),
+                  const SizedBox(width: 6),
+                  SourceFileControls(
+                    onPickFile: _pickSourceFile,
+                    fileName: _sourceFileName,
+                    tooltip: _tsToJs
+                        ? 'Choose TypeScript file'
+                        : 'Choose JavaScript file',
+                  ),
+                ],
+              ),
+              outputOverlay: _tsToJs
+                  ? null
+                  : _JsToTsOptionsOverlay(
+                      addClassFields: _addClassFields,
+                      useJsDoc: _useJsDoc,
+                      rewriteCommonJs: _rewriteCommonJs,
+                      addAnyFallbacks: _addAnyFallbacks,
+                      onChanged:
+                          ({
+                            bool? addClassFields,
+                            bool? useJsDoc,
+                            bool? rewriteCommonJs,
+                            bool? addAnyFallbacks,
+                          }) {
+                            setState(() {
+                              _addClassFields =
+                                  addClassFields ?? _addClassFields;
+                              _useJsDoc = useJsDoc ?? _useJsDoc;
+                              _rewriteCommonJs =
+                                  rewriteCommonJs ?? _rewriteCommonJs;
+                              _addAnyFallbacks =
+                                  addAnyFallbacks ?? _addAnyFallbacks;
+                            });
+                            _convert();
+                          },
+                    ),
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(summary, style: mutedToolTextStyle(context, fontSize: 12)),
-      ],
+          const SizedBox(height: 8),
+          Text(summary, style: mutedToolTextStyle(context, fontSize: 12)),
+        ],
+      ),
     );
   }
 }

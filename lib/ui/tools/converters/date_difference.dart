@@ -34,20 +34,11 @@ class _DateDifferenceViewState extends State<_DateDifferenceView> {
     setState(() => _error = result.error);
   }
 
-  void _clear() {
-    _start.clear();
-    _end.clear();
-    _output.clear();
-    setState(() => _error = null);
-  }
-
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Wrap(
-        spacing: 10,
-        runSpacing: 6,
+      ToolToolbar(
         children: [
           SizedBox(
             width: 280,
@@ -71,7 +62,6 @@ class _DateDifferenceViewState extends State<_DateDifferenceView> {
               onChanged: (_) => _run(),
             ),
           ),
-          ToolButton(label: 'Clear', onPressed: _clear),
         ],
       ),
       if (_error != null)

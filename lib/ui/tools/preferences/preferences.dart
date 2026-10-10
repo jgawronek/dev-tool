@@ -94,7 +94,7 @@ class _PreferencesViewState extends State<_PreferencesView> {
       _showStatusBar = prefs.getBool('pref_show_status_bar') ?? true;
       _showDock = prefs.getBool('pref_show_dock') ?? true;
       _theme = prefs.getString('pref_theme') ?? 'System';
-      _colorTheme = prefs.getString('colorTheme') ?? 'Classic Blue';
+      _colorTheme = prefs.getString('colorTheme') ?? 'Sandstone';
       _scriptSegment = prefs.getInt('pref_script_segment') ?? 0;
       _phpPath = prefs.getString('pref_php_path') ?? 'No Usable PHP Runtime';
       _whitelist.text =
@@ -216,7 +216,9 @@ class _PreferencesViewState extends State<_PreferencesView> {
           label: 'Mode',
           child: SmallDropdown(
             items: const ['System', 'Light', 'Dark'],
-            initialValue: _theme,
+            initialValue: state == null
+                ? _theme
+                : (state.darkMode.value ? 'Dark' : 'Light'),
             onChanged: (value) {
               setState(() => _theme = value);
               _setPref('pref_theme', _theme);
@@ -274,6 +276,9 @@ class _PreferencesViewState extends State<_PreferencesView> {
             expands: true,
             decoration: InputDecoration(
               border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              disabledBorder: InputBorder.none,
               hintText: 'serialize,var_export,json_encode,json_decode',
               hintStyle: TextStyle(color: context.appColors.mutedText),
             ),
@@ -298,7 +303,7 @@ class _PreferencesViewState extends State<_PreferencesView> {
     };
 
     return Padding(
-      padding: const EdgeInsets.all(18),
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -335,23 +340,15 @@ class _PreferenceSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: toolSurfaceDecoration(context),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: context.appColors.editorText,
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 12),
-          ...children,
-        ],
+    return ToolPanel(
+      title: title,
+      expand: false,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
+        ),
       ),
     );
   }
@@ -823,6 +820,9 @@ class _PreferencesScriptingViewState extends State<_PreferencesScriptingView> {
               expands: true,
               decoration: const InputDecoration(
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
                 hintText:
                     'serialize,var_export,json_encode,json_decode,unserialize',
               ),

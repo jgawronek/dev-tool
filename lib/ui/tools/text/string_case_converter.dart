@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../ui/widgets.dart';
 import '../common/editors.dart';
-import '../common/shared.dart';
+import '../../tool_sample_action.dart';
 
 class _StringCaseConverterView extends StatefulWidget {
   const _StringCaseConverterView();
@@ -98,48 +98,32 @@ class _StringCaseConverterViewState extends State<_StringCaseConverterView> {
 
   @override
   Widget build(BuildContext context) {
-    return buildSplitEditors(
-      inputActions: [
-        ToolButton(
-          label: 'Clipboard',
-          onPressed: () async {
-            final text = await readClipboardText();
-            setState(() => _input.text = text);
-            _run();
-          },
-        ),
-        ToolButton(
-          label: 'Sample',
-          onPressed: () {
-            setState(() => _input.text = 'request URL decoder ID');
-            _run();
-          },
-        ),
-        ToolButton(
-          label: 'Clear',
-          onPressed: () {
-            setState(() => _input.clear());
-            _output.clear();
-          },
-        ),
-      ],
-      outputActions: [
-        SmallDropdown(
-          items: _caseModes,
-          initialValue: _mode,
-          onChanged: (value) {
-            setState(() => _mode = value);
-            _run();
-          },
-        ),
-        ToolButton(
-          label: 'Copy',
-          onPressed: () => Clipboard.setData(ClipboardData(text: _output.text)),
-        ),
-      ],
-      inputController: _input,
-      outputController: _output,
-      onInputChanged: (_) => _run(),
+    return ToolSampleAction(
+      onPressed: () {
+        setState(() => _input.text = 'request URL decoder ID');
+        _run();
+      },
+      child: buildSplitEditors(
+        inputActions: [],
+        outputActions: [
+          SmallDropdown(
+            items: _caseModes,
+            initialValue: _mode,
+            onChanged: (value) {
+              setState(() => _mode = value);
+              _run();
+            },
+          ),
+          ToolButton(
+            label: 'Copy',
+            onPressed: () =>
+                Clipboard.setData(ClipboardData(text: _output.text)),
+          ),
+        ],
+        inputController: _input,
+        outputController: _output,
+        onInputChanged: (_) => _run(),
+      ),
     );
   }
 }

@@ -114,171 +114,157 @@ class _LocalServerViewState extends State<_LocalServerView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          decoration: toolSurfaceDecoration(context),
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.folder_outlined,
-                    size: 16,
-                    color: appColors.mutedText,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      _folder ?? 'No folder selected',
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: 'Menlo',
-                        fontSize: 12,
-                        color: _folder == null
-                            ? appColors.mutedText
-                            : appColors.editorText,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ToolButton(
-                    label: 'Choose Folder',
-                    icon: Icons.folder_open,
-                    onPressed: _running ? null : _pickFolder,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Text('Port', style: TextStyle(color: appColors.mutedText)),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 96,
-                    child: TextField(
-                      controller: _port,
-                      enabled: !_running,
-                      keyboardType: TextInputType.number,
-                      style: const TextStyle(fontFamily: 'Menlo', fontSize: 13),
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 10,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  CompactCheck(
-                    label: 'Local only',
-                    value: _localOnly,
-                    onChanged: _running
-                        ? (_) {}
-                        : (value) => setState(() => _localOnly = value),
-                  ),
-                  const Spacer(),
-                  ToolButton(
-                    label: _running ? 'Stop' : 'Start',
-                    icon: _running ? Icons.stop : Icons.play_arrow,
-                    onPressed: _toggle,
-                  ),
-                ],
-              ),
-              if (_running) ...[
-                const SizedBox(height: 10),
+        ToolPanel(
+          title: 'Server options',
+          expand: false,
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Row(
                   children: [
-                    Icon(Icons.circle, size: 9, color: appColors.success),
+                    Icon(
+                      Icons.folder_outlined,
+                      size: 16,
+                      color: appColors.mutedText,
+                    ),
                     const SizedBox(width: 6),
-                    Flexible(
+                    Expanded(
                       child: Text(
-                        'Serving at $_url',
+                        _folder ?? 'No folder selected',
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontFamily: 'Menlo',
                           fontSize: 12,
-                          color: appColors.editorText,
+                          color: _folder == null
+                              ? appColors.mutedText
+                              : appColors.editorText,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    ToolIconButton(
-                      icon: Icons.copy,
-                      tooltip: 'Copy URL',
-                      onPressed: () =>
-                          Clipboard.setData(ClipboardData(text: _url)),
-                    ),
-                    Text(
-                      _localOnly ? 'local only' : 'network accessible',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: _localOnly
-                            ? appColors.mutedText
-                            : appColors.warning,
-                      ),
+                    const SizedBox(width: 8),
+                    ToolButton(
+                      label: 'Choose Folder',
+                      icon: Icons.folder_open,
+                      onPressed: _running ? null : _pickFolder,
                     ),
                   ],
                 ),
-              ],
-              if (_error != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  _error!,
-                  style: errorToolTextStyle(context, fontSize: 12),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Text('Port', style: TextStyle(color: appColors.mutedText)),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 96,
+                      child: TextField(
+                        controller: _port,
+                        enabled: !_running,
+                        keyboardType: TextInputType.number,
+                        style: const TextStyle(
+                          fontFamily: 'Menlo',
+                          fontSize: 13,
+                        ),
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 10,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    CompactCheck(
+                      label: 'Local only',
+                      value: _localOnly,
+                      onChanged: _running
+                          ? (_) {}
+                          : (value) => setState(() => _localOnly = value),
+                    ),
+                    const Spacer(),
+                    ToolButton(
+                      label: _running ? 'Stop' : 'Start',
+                      icon: _running ? Icons.stop : Icons.play_arrow,
+                      onPressed: _toggle,
+                    ),
+                  ],
                 ),
+                if (_running) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Icon(Icons.circle, size: 9, color: appColors.success),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          'Serving at $_url',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: 'Menlo',
+                            fontSize: 12,
+                            color: appColors.editorText,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      ToolIconButton(
+                        icon: Icons.copy,
+                        tooltip: 'Copy URL',
+                        onPressed: () =>
+                            Clipboard.setData(ClipboardData(text: _url)),
+                      ),
+                      Text(
+                        _localOnly ? 'local only' : 'network accessible',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: _localOnly
+                              ? appColors.mutedText
+                              : appColors.warning,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (_error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _error!,
+                    style: errorToolTextStyle(context, fontSize: 12),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            Text(
-              'Access log',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: appColors.editorText,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              '(${_logs.length})',
-              style: TextStyle(color: appColors.mutedText, fontSize: 12),
-            ),
-            const Spacer(),
-            if (_logs.isNotEmpty)
-              ToolButton(
-                label: 'Clear log',
-                onPressed: () => setState(_logs.clear),
-              ),
-          ],
-        ),
-        const SizedBox(height: 6),
         Expanded(
-          child: Container(
-            decoration: toolSurfaceDecoration(context),
-            child: _logs.isEmpty
-                ? Center(
-                    child: Text(
-                      _running
-                          ? 'Waiting for requests…'
-                          : 'Start the server to see access logs here.',
-                      style: mutedToolTextStyle(context),
+          child: ToolPanel(
+            title: 'Access log (${_logs.length})',
+            actions: [],
+            child: Container(
+              child: _logs.isEmpty
+                  ? Center(
+                      child: Text(
+                        _running
+                            ? 'Waiting for requests…'
+                            : 'Start the server to see access logs here.',
+                        style: mutedToolTextStyle(context),
+                      ),
+                    )
+                  : ListView.builder(
+                      controller: _logScroll,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      itemCount: _logs.length,
+                      itemBuilder: (context, index) =>
+                          _ServerLogRow(entry: _logs[index]),
                     ),
-                  )
-                : ListView.builder(
-                    controller: _logScroll,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    itemCount: _logs.length,
-                    itemBuilder: (context, index) =>
-                        _ServerLogRow(entry: _logs[index]),
-                  ),
+            ),
           ),
         ),
       ],

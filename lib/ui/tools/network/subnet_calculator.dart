@@ -9,6 +9,7 @@ import '../../../ui/app_colors.dart';
 import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 import '../common/editors.dart';
+import '../../tool_sample_action.dart';
 
 class _SubnetCalculatorView extends StatefulWidget {
   const _SubnetCalculatorView();
@@ -44,24 +45,9 @@ class _SubnetCalculatorViewState extends State<_SubnetCalculatorView> {
     });
   }
 
-  Future<void> _pasteClipboard() async {
-    final text = await readClipboardText();
-    setState(() => _address.text = text.trim());
-    _calculate();
-  }
-
   void _setSample() {
     setState(() => _address.text = '192.168.1.10/24');
     _calculate();
-  }
-
-  void _clear() {
-    setState(() {
-      _address.clear();
-      _details.clear();
-      _info = null;
-      _error = null;
-    });
   }
 
   Future<void> _copyDetails() async {
@@ -70,38 +56,37 @@ class _SubnetCalculatorViewState extends State<_SubnetCalculatorView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: buildVerticalEditors(
-            inputActions: [
-              ToolButton(label: 'Go', onPressed: _calculate),
-              ToolButton(label: 'Clipboard', onPressed: _pasteClipboard),
-              ToolButton(label: 'Sample', onPressed: _setSample),
-              ToolButton(label: 'Clear', onPressed: _clear),
-            ],
-            outputActions: [
-              ToolButton(label: 'Copy', onPressed: _copyDetails),
-            ],
-            inputController: _address,
-            outputController: _details,
-            onInputChanged: (_) => _calculate(),
-            inputPlaceholder: '192.168.1.10/24, 2001:db8::1/64, 10.0.0.0/8...',
-            outputPlaceholder: 'Subnet details...',
-            showInputHeader: false,
-            showOutputHeader: false,
-            inputOverlay: _buildSummary(context),
-          ),
-        ),
-        if (_error != null)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(_error!, style: errorToolTextStyle(context)),
+    return ToolSampleAction(
+      onPressed: _setSample,
+      child: Column(
+        children: [
+          Expanded(
+            child: buildVerticalEditors(
+              inputActions: [ToolButton(label: 'Go', onPressed: _calculate)],
+              outputActions: [
+                ToolButton(label: 'Copy', onPressed: _copyDetails),
+              ],
+              inputController: _address,
+              outputController: _details,
+              onInputChanged: (_) => _calculate(),
+              inputPlaceholder:
+                  '192.168.1.10/24, 2001:db8::1/64, 10.0.0.0/8...',
+              outputPlaceholder: 'Subnet details...',
+              showInputHeader: true,
+              showOutputHeader: true,
+              inputOverlay: _buildSummary(context),
             ),
           ),
-      ],
+          if (_error != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(_error!, style: errorToolTextStyle(context)),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -162,9 +147,7 @@ class _Chip extends StatelessWidget {
             ? appColors.accent.withAlpha(38)
             : appColors.panelElevated.withAlpha(150),
         borderRadius: BorderRadius.circular(5),
-        border: Border.all(
-          color: accent ? appColors.accent : appColors.border,
-        ),
+        border: Border.all(color: accent ? appColors.accent : appColors.border),
       ),
       child: Text(
         label,
