@@ -1,0 +1,68 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable)
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Security
+				8 button (settable) JS/TS Obfuscator
+JS/TS Obfuscator
+			9 container (settable) JS/TS Obfuscator
+Offline tool
+Obfuscate JavaScript and TypeScript for shipping
+Input
+Output
+Name style
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) off
+					28 button (settable)
+				29 button (settable) Load sample
+				30 text field (settable)
+				31 text (settable)
+				32 button (settable)
+				33 text field (settable)
+				34 container (settable) Rename identifiers
+					35 checkbox (settable, integer) 1
+				36 container (settable) Hoist strings
+					37 checkbox (settable, integer) 1
+				38 container (settable) Inject dead code
+					39 checkbox (settable, integer) 1
+				40 container (settable) Self-defending
+					41 checkbox (settable, integer) 0
+				42 container (settable) Debug protection
+					43 checkbox (settable, integer) 0
+				44 container (settable) Disable console
+					45 checkbox (settable, integer) 0
+				46 button (settable) Short
+				47 button (settable) Hex
+				48 button (settable) Similar
+	49 close button
+	50 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	51 minimize button
+	52 text DevUtils
+53 menu bar
+	54 DevUtils
+	55 Edit
+	56 View
+	57 Window
+	58 Help
+
+The focused UI element is 3 text field (settable)

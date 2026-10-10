@@ -1,0 +1,62 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable)
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Generators
+				8 button (settable) UUID/ULID Generate/Decode
+UUID/ULID Generate/Decode
+			9 container (settable) UUID/ULID Generate/Decode
+Offline tool
+Generate and decode UUIDs and ULIDs
+Inspect and generate
+Generate
+lowercase
+Generated IDs
+Generated IDs
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) off
+					28 button (settable)
+				29 button (settable) Load sample
+				30 container (settable)
+					31 text (settable) Input
+					32 text field (settable)
+					33 text (settable) Paste a UUID or ULID to decode it.
+				34 text (settable)
+				35 checkbox (settable, integer) 0
+				36 text field (settable)
+				37 button (settable) UUID v4
+				38 button (settable) Generate
+				39 button (settable)
+				40 text field (settable)
+	41 close button
+	42 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	43 minimize button
+	44 text DevUtils
+45 menu bar
+	46 DevUtils
+	47 Edit
+	48 View
+	49 Window
+	50 Help
+
+The focused UI element is 3 text field (settable)

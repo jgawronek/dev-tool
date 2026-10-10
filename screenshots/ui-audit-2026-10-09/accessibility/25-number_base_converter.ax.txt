@@ -1,0 +1,152 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable) Number Base Converter
+			4 container (settable)
+				5 text (settable) Favorites
+				6 button (settable) JWT Debugger
+JWT Debugger
+				7 button (settable) PlantUML Class Diagram
+PlantUML Class Diagram
+				8 text (settable) Converters
+				9 button (settable) Unix Time Converter
+Unix Time Converter
+				10 button (settable) YAML ↔ JSON
+YAML ↔ JSON
+				11 button (settable) Number Base Converter
+Number Base Converter
+				12 button (settable) JSON ↔ CSV
+JSON ↔ CSV
+				13 button (settable) HTML to JSX
+HTML to JSX
+				14 button (settable) JS to TS Converter
+JS to TS Converter
+				15 button (settable) Color Converter
+Color Converter
+				16 button (settable) PHP to JS
+PHP to JS
+				17 button (settable) SVG to CSS
+SVG to CSS
+				18 button (settable) cURL to Code
+cURL to Code
+				19 button (settable) Hex ↔ ASCII
+Hex ↔ ASCII
+				20 button (settable) Date/Time Difference
+Date/Time Difference
+				21 text (settable) Formatters
+				22 button (settable) JSON Format/Validate
+JSON Format/Validate
+				23 button (settable) HTML Beautify/Minify
+HTML Beautify/Minify
+				24 button (settable) CSS Beautify/Minify
+CSS Beautify/Minify
+				25 button (settable) JS/TS Beautify/Minify
+JS/TS Beautify/Minify
+				26 button (settable) RB Beautify/Minify
+RB Beautify/Minify
+				27 button (settable) XML Beautify/Minify
+XML Beautify/Minify
+				28 button (settable) SQL Formatter
+SQL Formatter
+				29 text (settable) Encoders
+				30 button (settable) Base64 String Encode/Decode
+Base64 String Encode/Decode
+				31 button (settable) Base64 Image Encode/Decode
+Base64 Image Encode/Decode
+				32 button (settable) Base32/58/62/85/Bech32
+Base32/58/62/85/Bech32
+				33 button (settable) URL Encode/Decode
+URL Encode/Decode
+				34 button (settable) HTML Entity Encode/Decode
+HTML Entity Encode/Decode
+				35 text (settable) Compression
+				36 button (settable) Compress / Decompress
+Compress / Decompress
+			37 text (settable)
+			38 container (settable) Number Base Converter
+Offline tool
+Convert integers between binary, decimal, hex, and custom bases
+Number
+Input
+Detected
+Base 16
+Digits
+10
+Bits
+32
+Bytes
+4
+Converted bases
+Number details
+				39 container (settable)
+					40 container (settable) Firewall Fingerprint
+						41 button (settable)
+					42 container (settable) JWT Debugger
+						43 button (settable)
+					44 container (settable) JS/TS Beautify/Minify
+						45 button (settable)
+					46 container (settable) Compress / Decompress
+						47 button (settable)
+					48 container (settable) Date/Time Difference
+						49 button (settable)
+					50 container (settable) Hex ↔ ASCII
+						51 button (settable)
+					52 container (settable) cURL to Code
+						53 button (settable)
+					54 text (settable) Color Converter
+				55 button (settable)
+				56 switch (settable, boolean) off
+					57 button (settable)
+				58 button (settable) Auto
+				59 button (settable) 32
+				60 button (settable) Unsigned
+				61 text field (settable)
+				62 container (settable)
+					63 container (settable) Binary
+base 2
+						64 text (settable) 0b11011110101011011011111011101111
+						65 text (settable) 1101 1110 1010 1101 1011 1110 1110 1111
+					66 container (settable) Octal
+base 8
+						67 text (settable) 0o33653337357
+						68 text (settable) 33 653 337 357
+					69 container (settable) Decimal
+base 10
+						70 text (settable) 3735928559
+						71 text (settable) 3 735 928 559
+					72 container (settable) Hex
+base 16
+						73 text (settable) 0xDEADBEEF
+						74 text (settable) DE AD BE EF
+					75 container (settable) Base 32
+base 32
+						76 text (settable) 3FARFNF
+						77 text (settable) 3FA RFNF
+					78 container (settable) Base 36
+base 36
+						79 text (settable) 1PS9WXB
+						80 text (settable) 1PS 9WXB
+				81 container (settable)
+					82 text (settable) Mode
+					83 text (settable) Width
+					84 text (settable) Bit length
+					85 text (settable) Byte length
+					86 text (settable) Unsigned
+					87 text (settable) Signed
+					88 text (settable) Two's complement
+					89 text (settable) Big endian bytes
+					90 text (settable) Little endian bytes
+					91 text (settable) ASCII
+	92 close button
+	93 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	94 minimize button
+	95 text DevUtils
+96 menu bar
+	97 DevUtils
+	98 Edit
+	99 View
+	100 Window
+	101 Help
+
+The focused UI element is 1 container DevUtils

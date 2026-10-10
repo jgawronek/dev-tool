@@ -1,0 +1,57 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable)
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Generators
+				8 button (settable) QR Code Reader/Generator
+QR Code Reader/Generator
+			9 container (settable) QR Code Reader/Generator
+Offline tool
+Generate QR codes and read them from images
+Content
+QR code
+Enter content to generate a QR code
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) off
+					28 button (settable)
+				29 button (settable) Load sample
+				30 button (settable) Plain text
+				31 text field (settable)
+				32 text (settable)
+				33 button (settable) Square modules
+				34 button (settable) High (30%)
+				35 button (settable) Square eyes
+				36 button (settable) Save PNG
+				37 button (settable) Add Logo
+	38 close button
+	39 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	40 minimize button
+	41 text DevUtils
+42 menu bar
+	43 DevUtils
+	44 Edit
+	45 View
+	46 Window
+	47 Help
+
+The focused UI element is 3 text field (settable)

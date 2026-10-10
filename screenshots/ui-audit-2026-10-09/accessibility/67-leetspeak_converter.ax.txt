@@ -1,0 +1,58 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable) Leetspeak Converter
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Text
+				8 button (settable) Leetspeak Converter
+Leetspeak Converter
+			9 container (settable) Leetspeak Converter
+Offline tool
+Convert text to and from leetspeak
+Output
+Input
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) off
+					28 button (settable)
+				29 button (settable) Load sample
+				30 button (settable)
+				31 text field (settable)
+				32 text (settable)
+				33 container (settable)
+					34 button (settable) Leet → Text
+					35 button (settable) Text → Leet
+					36 button (settable) Basic
+					37 button (settable) Common
+					38 button (settable) Aggressive
+				39 text field (settable)
+	40 close button
+	41 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	42 minimize button
+	43 text DevUtils
+44 menu bar
+	45 DevUtils
+	46 Edit
+	47 View
+	48 Window
+	49 Help
+
+The focused UI element is 1 container DevUtils

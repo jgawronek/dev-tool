@@ -1,0 +1,97 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable) Color Converter
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Converters
+				8 button (settable) Color Converter
+Color Converter
+			9 text (settable)
+			10 container (settable) Color Converter
+Offline tool
+Convert between hex, RGB, HSL, and named colors
+Color values
+Input
+Palette
+				11 container (settable)
+					12 container (settable) Firewall Fingerprint
+						13 button (settable)
+					14 container (settable) JWT Debugger
+						15 button (settable)
+					16 container (settable) JS/TS Beautify/Minify
+						17 button (settable)
+					18 container (settable) Compress / Decompress
+						19 button (settable)
+					20 container (settable) Date/Time Difference
+						21 button (settable)
+					22 container (settable) Hex ↔ ASCII
+						23 button (settable)
+					24 container (settable) cURL to Code
+						25 button (settable)
+					26 text (settable) Color Converter
+				27 button (settable)
+				28 switch (settable, boolean) off
+					29 button (settable)
+				30 text field (settable)
+				31 container (settable)
+					32 container (settable) Hex
+						33 text (settable) #5cc07f
+					34 container (settable) Hex alpha
+						35 text (settable) #5cc07fff
+					36 container (settable) RGB
+						37 text (settable) rgb(92, 192, 127)
+					38 container (settable) RGBA
+						39 text (settable) rgba(92, 192, 127, 1.00)
+					40 container (settable) HSL
+						41 text (settable) hsl(141deg, 44%, 56%)
+					42 container (settable) HSLA
+						43 text (settable) hsla(141deg, 44%, 56%, 1.00)
+					44 container (settable) HSB (HSV)
+						45 text (settable) hsb(141deg, 52%, 75%)
+					46 container (settable) HWB
+						47 text (settable) hwb(141deg, 52%, 48%)
+					48 container (settable) CMYK
+						49 text (settable) cmyk(52%, 0%, 34%, 25%)
+				50 container (settable)
+					51 text (settable) #5CC07F
+rgb(92, 192, 127)
+					52 text (settable) Hue
+					53 text (settable) 141deg
+					54 slider (settable) 39%
+					55 text (settable) Saturation
+					56 text (settable) 52%
+					57 slider (settable) 52%
+					58 text (settable) Value
+					59 text (settable) 75%
+					60 slider (settable) 75%
+					61 text (settable) Alpha
+					62 text (settable) 255
+					63 slider (settable) 100%
+					64 text (settable) Presets
+					65 button (settable) Pick #E11D48
+					66 button (settable) Pick #F97316
+					67 button (settable) Pick #EAB308
+					68 button (settable) Pick #22C55E
+					69 button (settable) Pick #14B8A6
+					70 button (settable) Pick #06B6D4
+					71 button (settable) Pick #3B82F6
+					72 button (settable) Pick #8B5CF6
+					73 button (settable) Pick #EC4899
+					74 button (settable) Pick #111827
+					75 button (settable) Pick #6B7280
+					76 button (settable) Pick #F8FAFC
+	77 close button
+	78 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	79 minimize button
+	80 text DevUtils
+81 menu bar
+	82 DevUtils
+	83 Edit
+	84 View
+	85 Window
+	86 Help
+
+The focused UI element is 1 container DevUtils

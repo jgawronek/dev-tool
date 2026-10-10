@@ -1,0 +1,68 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable) Auth TOTP
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Security
+				8 button (settable) Auth TOTP
+Auth TOTP
+			9 container (settable) Auth TOTP
+Offline tool
+Generate and manage two-factor authentication codes
+Authenticator accounts
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) off
+					28 button (settable)
+				29 container (settable)
+					30 text (settable) Current
+					31 text (settable) Next
+					32 text (settable) 17s
+					33 text (settable) Current
+					34 text (settable) Next
+					35 text (settable) 17s
+					36 text (settable) Current
+					37 text (settable) Next
+					38 text (settable) 17s
+					39 text (settable) 946117
+					40 text (settable) 612084
+					41 button (settable)
+					42 text (settable) 942311
+					43 text (settable) 655936
+					44 button (settable)
+					45 text (settable) 999148
+					46 text (settable) 777694
+					47 button (settable)
+					48 text (settable) twitter
+					49 text (settable) reddit
+					50 text (settable) MasonHarriib
+	51 close button
+	52 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	53 minimize button
+	54 text DevUtils
+55 menu bar
+	56 DevUtils
+	57 Edit
+	58 View
+	59 Window
+	60 Help
+
+The focused UI element is 1 container DevUtils

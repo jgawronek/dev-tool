@@ -1,0 +1,75 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable) Semver Calculator
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Text
+				8 button (settable) Semver Calculator
+Semver Calculator
+			9 container (settable) Semver Calculator
+Offline tool
+Compare semantic versions and preview version bumps
+Versions and range
+Range supports ^ ~ >= > < <= =, x wildcards, "1.2.3 - 1.2.9", and "||" alternatives.
+Comparison
+A is older  ·  major (1)  ·  range -> 1.9.9
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) off
+					28 button (settable)
+				29 text field (settable)
+				30 text field (settable)
+				31 button (settable) Swap
+				32 text field (settable)
+				33 button (settable) Copy
+				34 text (settable) 1.2.3 vs 2.0.0
+
+Result     left is older
+Major      1 vs 2  (differs)
+Minor      2 vs 0  (differs)
+Patch      3 vs 0  (differs)
+Pre-release none vs none
+
+Diff       major (1)
+
+Next major   2.0.0
+Next minor   1.3.0
+Next patch   1.2.4
+
+Range "^1.2.0"
+  1.2.0
+  1.2.3
+  1.2.4
+  1.5.0
+  1.9.9
+  highest satisfying: 1.9.9
+	35 close button
+	36 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	37 minimize button
+	38 text DevUtils
+39 menu bar
+	40 DevUtils
+	41 Edit
+	42 View
+	43 Window
+	44 Help
+
+The focused UI element is 1 container DevUtils

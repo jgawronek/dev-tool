@@ -1,0 +1,110 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable)
+			4 container (settable)
+				5 text (settable) Favorites
+				6 button (settable) JWT Debugger
+JWT Debugger
+				7 button (settable) PlantUML Class Diagram
+PlantUML Class Diagram
+				8 text (settable) Converters
+				9 button (settable) Unix Time Converter
+Unix Time Converter
+				10 button (settable) YAML ↔ JSON
+YAML ↔ JSON
+				11 button (settable) Number Base Converter
+Number Base Converter
+				12 button (settable) JSON ↔ CSV
+JSON ↔ CSV
+				13 button (settable) HTML to JSX
+HTML to JSX
+				14 button (settable) JS to TS Converter
+JS to TS Converter
+				15 button (settable) Color Converter
+Color Converter
+				16 button (settable) PHP to JS
+PHP to JS
+				17 button (settable) SVG to CSS
+SVG to CSS
+				18 button (settable) cURL to Code
+cURL to Code
+				19 button (settable) Hex ↔ ASCII
+Hex ↔ ASCII
+				20 button (settable) Date/Time Difference
+Date/Time Difference
+				21 text (settable) Formatters
+				22 button (settable) JSON Format/Validate
+JSON Format/Validate
+				23 button (settable) HTML Beautify/Minify
+HTML Beautify/Minify
+				24 button (settable) CSS Beautify/Minify
+CSS Beautify/Minify
+				25 button (settable) JS/TS Beautify/Minify
+JS/TS Beautify/Minify
+				26 button (settable) RB Beautify/Minify
+RB Beautify/Minify
+				27 button (settable) XML Beautify/Minify
+XML Beautify/Minify
+				28 button (settable) SQL Formatter
+SQL Formatter
+				29 text (settable) Encoders
+				30 button (settable) Base64 String Encode/Decode
+Base64 String Encode/Decode
+				31 button (settable) Base64 Image Encode/Decode
+Base64 Image Encode/Decode
+				32 button (settable) Base32/58/62/85/Bech32
+Base32/58/62/85/Bech32
+				33 button (settable) URL Encode/Decode
+URL Encode/Decode
+				34 button (settable) HTML Entity Encode/Decode
+HTML Entity Encode/Decode
+				35 text (settable) Compression
+				36 button (settable) Compress / Decompress
+Compress / Decompress
+			37 container (settable) JS/TS Beautify/Minify
+Offline tool
+Beautify or minify JavaScript and TypeScript
+Input
+Output
+				38 container (settable)
+					39 container (settable) Firewall Fingerprint
+						40 button (settable)
+					41 container (settable) JWT Debugger
+						42 button (settable)
+					43 container (settable) JS/TS Beautify/Minify
+						44 button (settable)
+					45 container (settable) Compress / Decompress
+						46 button (settable)
+					47 container (settable) Date/Time Difference
+						48 button (settable)
+					49 container (settable) Hex ↔ ASCII
+						50 button (settable)
+					51 container (settable) cURL to Code
+						52 button (settable)
+					53 text (settable) Color Converter
+				54 button (settable)
+				55 switch (settable, boolean) off
+					56 button (settable)
+				57 button (settable) Load sample
+				58 text field (settable)
+				59 text (settable)
+				60 container (settable)
+					61 text (settable) Format...
+					62 button (settable) Beautify
+					63 button (settable) 2 spaces
+					64 button (settable)
+				65 text field (settable)
+	66 close button
+	67 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	68 minimize button
+	69 text DevUtils
+70 menu bar
+	71 DevUtils
+	72 Edit
+	73 View
+	74 Window
+	75 Help
+
+The focused UI element is 3 text field (settable)

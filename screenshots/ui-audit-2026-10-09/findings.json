@@ -1,0 +1,626 @@
+[
+  {
+    "id": "app_overview",
+    "name": "App overview",
+    "file": "00-app-overview.png",
+    "priority": "P2",
+    "observation": "The wide sidebar occupies about one fifth of the window. The tab strip shows a fixed set of earlier tabs while the active Date/Time tool is not visibly identified in it. The right edge cuts off a tab title.",
+    "recommendation": "Ensure the active tab scrolls into view; make overflow discoverable and keep sidebar sizing deliberate."
+  },
+  {
+    "id": "unix_time_converter",
+    "name": "Unix Time Converter",
+    "file": "01-unix_time_converter.png",
+    "priority": "P2",
+    "observation": "The input label, Now button, format selector, and actual input occupy separate rows; the label is distant from its field. The two output cards stop well above the page bottom.",
+    "recommendation": "Group timestamp input and format in one labeled panel; use the same output sizing rule as other tools."
+  },
+  {
+    "id": "json_format_validate",
+    "name": "JSON Format/Validate",
+    "file": "02-json_format_validate.png",
+    "priority": "P2",
+    "observation": "A separate instruction banner and an unframed Operation row add two layers above otherwise aligned editors. Other formatter pages put these controls in a panel header.",
+    "recommendation": "Use one consistent formatter toolbar and keep guidance in the input empty state."
+  },
+  {
+    "id": "base64_string_encode_decode",
+    "name": "Base64 String Encode/Decode",
+    "file": "03-base64_string_encode_decode.png",
+    "priority": "OK",
+    "observation": "Aligned input and output panels; mode controls and output reuse/copy actions follow the shared pattern.",
+    "recommendation": "Keep this layout as a reference for simple text converters."
+  },
+  {
+    "id": "base64_image_encode_decode",
+    "name": "Base64 Image Encode/Decode",
+    "file": "04-base64_image_encode_decode.png",
+    "priority": "P2",
+    "observation": "The empty string editor has no visible hint; the image panel says only Image preview (base64 only). The next action for an image file is unclear.",
+    "recommendation": "Add concise input guidance and a labeled Choose image action if file input is supported."
+  },
+  {
+    "id": "compression_codecs",
+    "name": "Compress / Decompress",
+    "file": "05-compression_codecs.png",
+    "priority": "P3",
+    "observation": "Panels and controls align. The subtitle uses the vague phrase gzip and friends; compression mode is in a separate toolbar unlike neighboring encoders.",
+    "recommendation": "Name supported formats clearly and standardize mode-control placement across converters."
+  },
+  {
+    "id": "base_encodings",
+    "name": "Base32/58/62/85/Bech32",
+    "file": "06-base_encodings.png",
+    "priority": "P2",
+    "observation": "The encoding format selector is in the output header while Encode/Decode is in the input header. The title includes Base85 but the subtitle omits it.",
+    "recommendation": "Keep conversion settings together and make the subtitle match the supported formats."
+  },
+  {
+    "id": "jwt_debugger",
+    "name": "JWT Debugger",
+    "file": "07-jwt_debugger.png",
+    "priority": "OK",
+    "observation": "Token, Header, Payload, and Token details use aligned framed headers. The empty verification state explains the secret requirement.",
+    "recommendation": "Use this as the panel styling reference. Empty-token status could say No token loaded before saying Not verified."
+  },
+  {
+    "id": "auth_totp",
+    "name": "Auth TOTP",
+    "file": "08-auth_totp.png",
+    "priority": "P2",
+    "observation": "Accounts use raised cards inside a large panel, unlike the flatter tool surfaces. The add-account tile contains only a plus. Current, Next, and countdown text are very small.",
+    "recommendation": "Label Add account and use clear code/countdown hierarchy with the shared surface treatment."
+  },
+  {
+    "id": "regexp_tester",
+    "name": "RegExp Tester",
+    "file": "09-regexp_tester.png",
+    "priority": "P3",
+    "observation": "Expression and output format controls align. The matches panel has a centered empty state, while formatted output uses editor placeholder text. The output format has no visible syntax help.",
+    "recommendation": "Add a short example for $0, capture groups, and newline formatting; make the two output empty states explain the same next step."
+  },
+  {
+    "id": "url_encode_decode",
+    "name": "URL Encode/Decode",
+    "file": "10-url_encode_decode.png",
+    "priority": "OK",
+    "observation": "Aligned editors, mode toggle, output reuse, and copy follow the shared converter pattern.",
+    "recommendation": "Keep the layout; consider showing which kind of URL content is encoded in the mode help."
+  },
+  {
+    "id": "url_parser",
+    "name": "URL Parser",
+    "file": "11-url_parser.png",
+    "priority": "OK",
+    "observation": "Compact URL panel and aligned details/parameters and request/response rows make good use of space. The response empty state points to Send.",
+    "recommendation": "Keep this layout as a reference for request tools."
+  },
+  {
+    "id": "subdomain_finder",
+    "name": "Subdomain Finder",
+    "file": "12-subdomain_finder.png",
+    "priority": "P2",
+    "observation": "Target appears in the settings row while the domain entry sits below it. Find known is vague for a primary action.",
+    "recommendation": "Attach Domain or Organization directly to the input and use Find subdomains as the action label."
+  },
+  {
+    "id": "subdomain_takeover",
+    "name": "Subdomain Takeover Check",
+    "file": "13-subdomain_takeover.png",
+    "priority": "P2",
+    "observation": "Details contains another Takeover details panel plus a separate Result details label; repeated frames and headings reduce useful space.",
+    "recommendation": "Use one Details header with view tabs and one content surface."
+  },
+  {
+    "id": "subnet_calculator",
+    "name": "Subnet Calculator",
+    "file": "14-subnet_calculator.png",
+    "priority": "P3",
+    "observation": "Aligned editor pair. IPv4 and IPv6 appears as a disabled-looking header chip while the subtitle describes only IPv4.",
+    "recommendation": "Present supported input types as help text and update the subtitle to include IPv6."
+  },
+  {
+    "id": "port_scanner",
+    "name": "Port Scanner",
+    "file": "15-port_scanner.png",
+    "priority": "P2",
+    "observation": "Stop wraps onto a row alone. Summary badges push the left result area below Port details; the two result content starts do not line up. Score 100 / A is already shown with zero scanned ports.",
+    "recommendation": "Keep Scan/Recon/Stop together, put summary above both results, and show an unmeasured score before a scan."
+  },
+  {
+    "id": "network_scanner",
+    "name": "Network Scanner",
+    "file": "16-network_scanner.png",
+    "priority": "P2",
+    "observation": "Network target, port list, scan actions, timeout, concurrency, and scan types span multiple rows without clear grouping. The port field has no visible label.",
+    "recommendation": "Group Target, Ports, and Scan options with persistent labels and stable action placement."
+  },
+  {
+    "id": "local_server",
+    "name": "Local Server",
+    "file": "17-local_server.png",
+    "priority": "P2",
+    "observation": "Choose Folder and Start sit far right, separated from the folder status and port on the left. Start appears available while No folder selected is shown.",
+    "recommendation": "Keep folder selection beside its status and make the required first step clear before Start."
+  },
+  {
+    "id": "firewall_fingerprint",
+    "name": "Firewall Fingerprint",
+    "file": "18-firewall_fingerprint.png",
+    "priority": "P3",
+    "observation": "Result and detail panels align. The settings row mixes bold Target with smaller Timeout labels and small action buttons.",
+    "recommendation": "Reuse a consistent settings-label weight and field height."
+  },
+  {
+    "id": "html_entity_encode_decode",
+    "name": "HTML Entity Encode/Decode",
+    "file": "19-html_entity_encode_decode.png",
+    "priority": "OK",
+    "observation": "Aligned editors, shared mode toggle, and output reuse/copy pattern.",
+    "recommendation": "Keep as a simple converter reference."
+  },
+  {
+    "id": "backslash_escape_unescape",
+    "name": "Backslash Escape/Unescape",
+    "file": "20-backslash_escape_unescape.png",
+    "priority": "OK",
+    "observation": "Aligned editor pair and a clear Escape/Unescape toggle.",
+    "recommendation": "Keep the shared converter pattern."
+  },
+  {
+    "id": "uuid_ulid_generate_decode",
+    "name": "UUID/ULID Generate/Decode",
+    "file": "21-uuid_ulid_generate_decode.png",
+    "priority": "P2",
+    "observation": "Input is nested inside Inspect and generate, producing two headers on the left. Generated IDs is repeated above and inside the output panel. Output begins lower than the left panel. Count is unlabeled.",
+    "recommendation": "Use separate aligned Inspect and Generate sections, remove duplicate headings, and label Count."
+  },
+  {
+    "id": "html_preview",
+    "name": "HTML Preview",
+    "file": "22-html_preview.png",
+    "priority": "OK",
+    "observation": "Input and Preview headers align and the empty preview says what to do next.",
+    "recommendation": "Keep the shared preview structure."
+  },
+  {
+    "id": "text_diff_checker",
+    "name": "Text Diff Checker",
+    "file": "23-text_diff_checker.png",
+    "priority": "P2",
+    "observation": "Diff controls form a centered strip between panels with a bare zero between arrows. Empty inputs lack visible prompts.",
+    "recommendation": "Label change navigation and add guidance to both empty inputs; put diff settings in a clearly named toolbar."
+  },
+  {
+    "id": "yaml_json_converter",
+    "name": "YAML \u2194 JSON",
+    "file": "24-yaml_json_converter.png",
+    "priority": "P3",
+    "observation": "Editors align. The example-like input hint and [] output can look like a conversion has already happened.",
+    "recommendation": "Use instructional input guidance and an explicit waiting-for-input output state."
+  },
+  {
+    "id": "number_base_converter",
+    "name": "Number Base Converter",
+    "file": "25-number_base_converter.png",
+    "priority": "P2",
+    "observation": "Input controls show Auto, 32, and Unsigned without labels for the bit width and signedness. Results use many individually bordered rows. No Load sample action is shown.",
+    "recommendation": "Label Base, Bit width, and Signedness; use a compact result table and a consistent example action."
+  },
+  {
+    "id": "html_beautify_minify",
+    "name": "HTML Beautify/Minify",
+    "file": "26-html_beautify_minify.png",
+    "priority": "P3",
+    "observation": "Aligned panels. Format controls occupy the output header while JSON uses a page-level Operation row.",
+    "recommendation": "Unify the formatter control location and naming across languages."
+  },
+  {
+    "id": "css_beautify_minify",
+    "name": "CSS Beautify/Minify",
+    "file": "27-css_beautify_minify.png",
+    "priority": "P3",
+    "observation": "Aligned panels and a compact source-file icon. A Format label is shown here but omitted in RB/XML formatting pages.",
+    "recommendation": "Use the same formatter labels and control placement across languages."
+  },
+  {
+    "id": "js_beautify_minify",
+    "name": "JS/TS Beautify/Minify",
+    "file": "28-js_beautify_minify.png",
+    "priority": "P2",
+    "observation": "The output header truncates its Format label despite a large overall window. Formatting options compete with the panel title.",
+    "recommendation": "Move options to a shared toolbar or preserve enough header width for full labels and Copy."
+  },
+  {
+    "id": "rb_beautify_minify",
+    "name": "RB Beautify/Minify",
+    "file": "29-rb_beautify_minify.png",
+    "priority": "P3",
+    "observation": "Aligned panels. The input hint says RB although the subtitle says Ruby; output formatting controls have no Format label.",
+    "recommendation": "Use Ruby in user-facing copy and unify formatter labels."
+  },
+  {
+    "id": "xml_beautify_minify",
+    "name": "XML Beautify/Minify",
+    "file": "30-xml_beautify_minify.png",
+    "priority": "P3",
+    "observation": "Aligned panels; output formatting controls use values alone, unlike the HTML/CSS pages.",
+    "recommendation": "Use the same formatter settings layout and labels across languages."
+  },
+  {
+    "id": "lorem_ipsum_generator",
+    "name": "Lorem Ipsum Generator",
+    "file": "31-lorem_ipsum_generator.png",
+    "priority": "P3",
+    "observation": "Panel headers are now aligned. Count and Mode labels are lighter/smaller than the group headings; the generator has no page-level sample action.",
+    "recommendation": "Keep aligned panels and clarify that category buttons generate content; use a consistent Count label style."
+  },
+  {
+    "id": "password_generator",
+    "name": "Password Generator",
+    "file": "32-password_generator.png",
+    "priority": "P2",
+    "observation": "The options use floating Count and Length labels beside an inline Style label. Result Copy is a text button while other tool outputs use an icon. Large blank area follows the short form.",
+    "recommendation": "Use the shared field labeling and output-copy pattern; retain content-sized panels rather than stretching them."
+  },
+  {
+    "id": "qr_code_reader_generator",
+    "name": "QR Code Reader/Generator",
+    "file": "33-qr_code_reader_generator.png",
+    "priority": "P1",
+    "observation": "The title and subtitle promise a QR reader, but only content generation is visible. Visual options sit below the preview without a section title and High (30%) has no explanatory label.",
+    "recommendation": "Rename the tool to QR Code Generator unless a reader is provided; label Error correction and group QR appearance settings. The missing reader is also documented in the current guide."
+  },
+  {
+    "id": "semver_calculator",
+    "name": "Semver Calculator",
+    "file": "34-semver_calculator.png",
+    "priority": "P2",
+    "observation": "A, B, and Range are tiny floating labels. The comparison is a long monospaced report with a second summary line below it; Copy sits with inputs.",
+    "recommendation": "Use Version A/Version B and a structured comparison summary; put Copy in the result header."
+  },
+  {
+    "id": "string_inspector",
+    "name": "String Inspector",
+    "file": "35-string_inspector.png",
+    "priority": "P3",
+    "observation": "Headers align. Several boxed statistics and a bordered Word distribution area are nested inside Text analysis, making the result side heavier than the input.",
+    "recommendation": "Reduce redundant borders while retaining the useful summary metrics."
+  },
+  {
+    "id": "string_case_converter",
+    "name": "String Case Converter",
+    "file": "36-string_case_converter.png",
+    "priority": "OK",
+    "observation": "Aligned editors with a compact case selector and output copy.",
+    "recommendation": "Keep the shared converter layout."
+  },
+  {
+    "id": "json_csv_converter",
+    "name": "JSON \u2194 CSV",
+    "file": "37-json_csv_converter.png",
+    "priority": "P2",
+    "observation": "Input/output remain stacked at the same wide window where most converter tools are side by side. Input hint id,name,note plus [] output looks more like loaded data than an empty state.",
+    "recommendation": "Adopt the shared wide-window split rule and make the empty state explicit."
+  },
+  {
+    "id": "file_checksum",
+    "name": "File Checksum",
+    "file": "38-file_checksum.png",
+    "priority": "P2",
+    "observation": "Expected digest is separated from its label by a large gap. File metadata occupies an entire tall editor-like panel even before selecting a file. Copy manifest and Copy are adjacent actions with unclear distinction.",
+    "recommendation": "Use a compact file summary, group digest verification controls, and clarify manifest versus digest copying."
+  },
+  {
+    "id": "hash_generator",
+    "name": "Hash Generator",
+    "file": "39-hash_generator.png",
+    "priority": "P2",
+    "observation": "Generate/Lookup and the lowercase checkbox are inside the Hashes body rather than a shared settings toolbar. Empty digests resemble editable fields and every row repeats Copy/Lookup controls.",
+    "recommendation": "Use a read-only digest table, central settings, and consistent row actions with an empty-state explanation."
+  },
+  {
+    "id": "text_encryption",
+    "name": "Text Encryption/Decryption",
+    "file": "40-text_encryption.png",
+    "priority": "P2",
+    "observation": "A mode toolbar is followed by an unframed Password/Key row. Its input height differs from several other form controls. The key requirement is separated from algorithm settings.",
+    "recommendation": "Group algorithm, mode, and key into one consistent settings panel."
+  },
+  {
+    "id": "password_hashing",
+    "name": "Password Hashing",
+    "file": "41-password_hashing.png",
+    "priority": "P2",
+    "observation": "Password uses a framed editor while Algorithm/Salt/Cost use an untitled options surface, so Hash begins lower than Password. There is no double input border in this capture.",
+    "recommendation": "Add an Options header and use a compact password form to align the main hash result with the other panels."
+  },
+  {
+    "id": "payload_embedder",
+    "name": "Payload Embed/Extract",
+    "file": "42-payload_embedder.png",
+    "priority": "P2",
+    "observation": "File chooser actions are bare file/folder icons, and the output row has two adjacent icons without text. Format support is another framed box within Options.",
+    "recommendation": "Label file-selection actions, distinguish output-file and output-folder choices, and simplify the support note."
+  },
+  {
+    "id": "user_agent_tool",
+    "name": "User Agent Generator/Validator",
+    "file": "43-user_agent_tool.png",
+    "priority": "P2",
+    "observation": "Generate and two dropdowns crowd the input header. Chrome and Any do not have persistent labels indicating browser and platform.",
+    "recommendation": "Move generation settings to a labeled toolbar: Browser, Platform, and Generate."
+  },
+  {
+    "id": "antibot_detection",
+    "name": "AntiBot Detection",
+    "file": "44-antibot_detection.png",
+    "priority": "P1",
+    "observation": "The page shows an Offline tool badge while asking for a URL and offering Run. The URL row lacks the framed options treatment used by Firewall Fingerprint.",
+    "recommendation": "Use the Network badge and shared request toolbar. Source confirms Run calls _fetchPage through HttpClient; this is a confirmed metadata mismatch."
+  },
+  {
+    "id": "offline_llm",
+    "name": "Offline LLM",
+    "file": "45-offline_llm.png",
+    "priority": "P2",
+    "observation": "Offline tool is displayed alongside Download actions, with no visible distinction between local inference and online model setup. The green send arrow looks available while Start a model first is shown. Temp is abbreviated.",
+    "recommendation": "Explain Offline inference / downloads require internet, use Temperature, and make the disabled composer state visually clear."
+  },
+  {
+    "id": "html_to_jsx",
+    "name": "HTML to JSX",
+    "file": "46-html_to_jsx.png",
+    "priority": "OK",
+    "observation": "Aligned input/output panels and shared sample/copy placement.",
+    "recommendation": "Keep the common converter layout."
+  },
+  {
+    "id": "js_to_ts_converter",
+    "name": "JS to TS Converter",
+    "file": "47-js_to_ts_converter.png",
+    "priority": "P1",
+    "observation": "The four-checkbox options group consumes the output header and the rightmost Copy icon is visibly clipped. The options group has a separate white border inside the header.",
+    "recommendation": "Put migration options in a shared settings panel and reserve the header end for a fully visible Copy action."
+  },
+  {
+    "id": "markdown_preview",
+    "name": "Markdown Preview",
+    "file": "48-markdown_preview.png",
+    "priority": "OK",
+    "observation": "Aligned input/preview panels and clear empty-state guidance; the source-file action uses the compact icon.",
+    "recommendation": "Keep the common preview layout."
+  },
+  {
+    "id": "sql_formatter",
+    "name": "SQL Formatter",
+    "file": "49-sql_formatter.png",
+    "priority": "P2",
+    "observation": "Dialect selection is in Input and three format settings are in Output. There is no visible Copy action at the output header end in this capture.",
+    "recommendation": "Group SQL options into a toolbar and keep Copy visible in the output header."
+  },
+  {
+    "id": "cron_job_parser",
+    "name": "Cron Job Parser",
+    "file": "50-cron_job_parser.png",
+    "priority": "P3",
+    "observation": "Expression, Schedule, and Next executions follow the framed panel style. Wide schedule rows leave labels and values far apart.",
+    "recommendation": "Use a compact key/value grid and keep the local-time indication visible."
+  },
+  {
+    "id": "color_converter",
+    "name": "Color Converter",
+    "file": "51-color_converter.png",
+    "priority": "P2",
+    "observation": "Each converted color has a bordered row without a visible copy affordance; palette swatches are unlabeled. The input and rows fill one panel while sliders form a separate dense column.",
+    "recommendation": "Use a compact conversion table with consistent copy actions and identifiable color preset labels/tooltips."
+  },
+  {
+    "id": "php_to_js",
+    "name": "PHP to JS",
+    "file": "52-php_to_js.png",
+    "priority": "P3",
+    "observation": "Aligned editors; a long footer includes token state machine and a library attribution, which is implementation detail in the main workflow.",
+    "recommendation": "Shorten the footer to a plain-language limitation and move technical detail into documentation."
+  },
+  {
+    "id": "php_serializer",
+    "name": "PHP Serializer",
+    "file": "53-php_serializer.png",
+    "priority": "OK",
+    "observation": "Aligned editors and clear input/output guidance with shared sample and copy placement.",
+    "recommendation": "Keep the shared converter layout."
+  },
+  {
+    "id": "php_unserializer",
+    "name": "PHP Unserializer",
+    "file": "54-php_unserializer.png",
+    "priority": "OK",
+    "observation": "Matches PHP Serializer in editor sizing, headers, sample, and copy placement.",
+    "recommendation": "Keep the paired-tool consistency."
+  },
+  {
+    "id": "random_string_generator",
+    "name": "Random String Generator",
+    "file": "55-random_string_generator.png",
+    "priority": "P1",
+    "observation": "Output begins below Options because Colors and count occupy an unframed row above it. Generated strings is truncated despite spare header space. Colors is permanently checked and disabled. Load sample is the only prominent generation action.",
+    "recommendation": "Align the panels, show the full title, move Count into labeled options, and use a clear Generate action. Source confirms Colors has onChanged:null and several visible settings are not wired to generation."
+  },
+  {
+    "id": "svg_to_css",
+    "name": "SVG to CSS",
+    "file": "56-svg_to_css.png",
+    "priority": "OK",
+    "observation": "Source and Preview align; CSS is logically below Source. Empty preview explains the next step.",
+    "recommendation": "Keep the layout; consider making the output encoding selector label explicit."
+  },
+  {
+    "id": "curl_to_code",
+    "name": "cURL to Code",
+    "file": "57-curl_to_code.png",
+    "priority": "P3",
+    "observation": "Aligned panels; GET, Options, and NodeJS / Fetch expose different classes of settings through different affordances. Input hint Enter text does not mention a cURL command.",
+    "recommendation": "Use an explicit cURL input hint and label request method versus target language/library."
+  },
+  {
+    "id": "json_to_code",
+    "name": "JSON to Code",
+    "file": "58-json_to_code.png",
+    "priority": "P1",
+    "observation": "The output empty state tells the user Right click -> Save to file instead of explaining generated code. Options form a large lower panel with sparse checkboxes.",
+    "recommendation": "Replace the output hint with Generated code will appear here and provide an explicit export action only when implemented; keep language options compact."
+  },
+  {
+    "id": "cipher_decoder",
+    "name": "Cipher Decoder",
+    "file": "59-cipher_decoder.png",
+    "priority": "P2",
+    "observation": "A full-width strip contains only Tries every single-step cipher while mode choices live in the input header. The next action is not obvious from the empty input.",
+    "recommendation": "Place mode-specific guidance beside the mode selector and explain whether typing runs identification automatically."
+  },
+  {
+    "id": "certificate_decoder_x509",
+    "name": "Certificate Decoder (X.509)",
+    "file": "60-certificate_decoder_x509.png",
+    "priority": "P3",
+    "observation": "Aligned editor pair. The input hint mentions PEM while the subtitle promises PEM or DER and no file chooser is visible.",
+    "recommendation": "Make accepted input formats and how to provide DER clear in the input guidance."
+  },
+  {
+    "id": "hex_ascii_converter",
+    "name": "Hex \u2194 ASCII",
+    "file": "61-hex_ascii_converter.png",
+    "priority": "OK",
+    "observation": "Aligned editor pair with clear conversion direction and shared sample/copy placement.",
+    "recommendation": "Keep the converter pattern."
+  },
+  {
+    "id": "line_sort_dedupe",
+    "name": "Line Sort/Dedupe",
+    "file": "62-line_sort_dedupe.png",
+    "priority": "P3",
+    "observation": "Editors and controls align. The two output dropdowns have values but no persistent Sort and Duplicates labels.",
+    "recommendation": "Add clear setting labels; this screenshot alone does not establish sample or sorting behavior."
+  },
+  {
+    "id": "uml_class_diagram",
+    "name": "PlantUML Class Diagram",
+    "file": "63-uml_class_diagram.png",
+    "priority": "P1",
+    "observation": "The diagram toolbar clips the Fit control at its right edge and Export is not visible, even at this large window size. Source and diagram headers otherwise align.",
+    "recommendation": "Keep Fit and Export always visible; move secondary controls into a wrapped settings row. The code-first versus preview-first ordering should remain an explicit tool choice."
+  },
+  {
+    "id": "chmod_calculator",
+    "name": "Chmod Calculator",
+    "file": "64-chmod_calculator.png",
+    "priority": "P2",
+    "observation": "Permissions combine large outlined checkbox rows, colored output chips, tiny None/All actions, and standard checkboxes below. The same result is repeated in Permissions and Details.",
+    "recommendation": "Use a uniform permission grid and a single primary result summary; keep All/None controls comparable in size."
+  },
+  {
+    "id": "mime_types",
+    "name": "MIME Types",
+    "file": "65-mime_types.png",
+    "priority": "P2",
+    "observation": "Search uses a tall field and the table uses tall, strongly separated rows, giving this reference tool a different density. Search placeholder truncates the accepted search types.",
+    "recommendation": "Match the compact control height and table density; give persistent guidance for name, extension, and MIME searches."
+  },
+  {
+    "id": "preferences",
+    "name": "Preferences",
+    "file": "66-preferences.png",
+    "priority": "P2",
+    "observation": "General options are widely spaced checkboxes with no descriptions; the entire options panel is stretched across the page. The same Preferences label is treated as an offline utility.",
+    "recommendation": "Use a restrained settings-form width, group related options, and explain analytics/debug options and availability in place."
+  },
+  {
+    "id": "leetspeak_converter",
+    "name": "Leetspeak Converter",
+    "file": "67-leetspeak_converter.png",
+    "priority": "P2",
+    "observation": "Output is on the left and Input on the right, unlike nearly every converter. Input mode/strength controls are crowded across its header.",
+    "recommendation": "Preserve the user-requested reversed order unless changed deliberately; make input/output direction explicit and move options into a labeled toolbar."
+  },
+  {
+    "id": "timestamp_extractor",
+    "name": "Timestamp Extractor",
+    "file": "68-timestamp_extractor.png",
+    "priority": "P2",
+    "observation": "Six timestamp-type segments occupy most of the input header. No timestamps detected appears below the panels even when the input is empty.",
+    "recommendation": "Move type selection to settings and distinguish Waiting for input from No timestamps found."
+  },
+  {
+    "id": "access_log_parser",
+    "name": "Access Log Parser",
+    "file": "69-access_log_parser.png",
+    "priority": "P3",
+    "observation": "Panels align; Entries/Summary is an output presentation choice placed in the input header.",
+    "recommendation": "Use the output header or shared settings row for result presentation controls."
+  },
+  {
+    "id": "session_cookie_decoder",
+    "name": "Session Cookie Decoder",
+    "file": "70-session_cookie_decoder.png",
+    "priority": "P3",
+    "observation": "Aligned editors; both the output placeholder and the footer Nothing to decode yet communicate the same empty state.",
+    "recommendation": "Use one concise, consistent result empty state."
+  },
+  {
+    "id": "asn1_tlv_decoder",
+    "name": "ASN.1 / TLV Decoder",
+    "file": "71-asn1_tlv_decoder.png",
+    "priority": "P2",
+    "observation": "The input header combines a parser mode toggle with an Input: PEM/Base64/hex chip, crowding the panel title. Input guidance lists a slightly different set of formats.",
+    "recommendation": "Separate parser mode from accepted format guidance and make supported formats consistent."
+  },
+  {
+    "id": "js_obfuscator",
+    "name": "JS/TS Obfuscator",
+    "file": "72-js_obfuscator.png",
+    "priority": "P2",
+    "observation": "Options occupy two unframed rows below the editors, unlike tools with top settings panels. Name style uses a separate segmented group.",
+    "recommendation": "Use a labeled options toolbar before the editors and group naming options with it."
+  },
+  {
+    "id": "hash_verifier",
+    "name": "Hash/HMAC Verifier",
+    "file": "73-hash_verifier.png",
+    "priority": "P3",
+    "observation": "Dropdown and expected digest are now the same height. Expected hex digest is only a placeholder and will disappear when a value is entered; there is no sample action.",
+    "recommendation": "Keep the corrected sizing and add a persistent Expected digest label plus a working example action if useful."
+  },
+  {
+    "id": "query_editor",
+    "name": "URL Query Editor",
+    "file": "74-query_editor.png",
+    "priority": "P3",
+    "observation": "Aligned editors with Load sample in the shared location. A large settings strip contains only the Action dropdown in Inspect mode.",
+    "recommendation": "Use a compact settings row, expanding it only when an action needs key/value fields."
+  },
+  {
+    "id": "csv_inspector",
+    "name": "CSV Inspector",
+    "file": "75-csv_inspector.png",
+    "priority": "P2",
+    "observation": "The filter field is visibly taller than the compact controls used on other tools. Filter contains is only a placeholder, and 0 of 0 rows is the only empty-data indication.",
+    "recommendation": "Use the shared compact field and a persistent Filter label; explain that CSV with a header is needed."
+  },
+  {
+    "id": "date_difference",
+    "name": "Date/Time Difference",
+    "file": "76-date_difference.png",
+    "priority": "P2",
+    "observation": "Start and End are placeholder-only labels in wide inputs. The large Difference panel has only generic guidance and no date/time example or timezone cue beyond ISO 8601 + zone.",
+    "recommendation": "Add persistent Start/End labels, a concrete example, and a page-level Load sample action."
+  },
+  {
+    "id": "documentation",
+    "name": "Documentation",
+    "file": "77-documentation.png",
+    "priority": "P3",
+    "observation": "Search, navigation, and reading content are clearly separated. The text column is very wide and dense paragraphs run across most of the dialog. The next section is cut at the bottom without a visible scrollbar.",
+    "recommendation": "Limit reading line length and make vertical scrolling more discoverable; keep the search and guide navigation."
+  }
+]

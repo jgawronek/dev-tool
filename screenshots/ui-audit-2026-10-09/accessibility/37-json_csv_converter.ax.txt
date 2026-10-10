@@ -1,0 +1,67 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable)
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Formatters
+				8 button (settable) JSON Format/Validate
+JSON Format/Validate
+				9 text (settable) Converters
+				10 button (settable) YAML ↔ JSON
+YAML ↔ JSON
+				11 button (settable) JSON ↔ CSV
+JSON ↔ CSV
+				12 text (settable) Generators
+				13 button (settable) JSON to Code
+JSON to Code
+			14 container (settable) JSON ↔ CSV
+Offline tool
+Convert between JSON and CSV tables
+Input
+Output
+				15 container (settable)
+					16 container (settable) Firewall Fingerprint
+						17 button (settable)
+					18 container (settable) JWT Debugger
+						19 button (settable)
+					20 container (settable) JS/TS Beautify/Minify
+						21 button (settable)
+					22 container (settable) Compress / Decompress
+						23 button (settable)
+					24 container (settable) Date/Time Difference
+						25 button (settable)
+					26 container (settable) Hex ↔ ASCII
+						27 button (settable)
+					28 container (settable) cURL to Code
+						29 button (settable)
+					30 text (settable) Color Converter
+				31 button (settable)
+				32 switch (settable, boolean) off
+					33 button (settable)
+				34 button (settable) Load sample
+				35 container (settable)
+					36 button (settable) CSV → JSON
+					37 button (settable) JSON → CSV
+				38 text field (settable)
+				39 text (settable)
+				40 container (settable)
+					41 button (settable) Wrap
+					42 button (settable) 2 spaces
+					43 button (settable) Export JSON
+					44 button (settable)
+				45 text field (settable)
+	46 close button
+	47 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	48 minimize button
+	49 text DevUtils
+50 menu bar
+	51 DevUtils
+	52 Edit
+	53 View
+	54 Window
+	55 Help
+
+The focused UI element is 3 text field (settable)

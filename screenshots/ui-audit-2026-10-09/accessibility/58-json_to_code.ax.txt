@@ -1,0 +1,64 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable)
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Generators
+				8 button (settable) JSON to Code
+JSON to Code
+			9 container (settable) JSON to Code
+Offline tool
+Generate typed models from JSON samples
+Input
+Output
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) off
+					28 button (settable)
+				29 button (settable) Load sample
+				30 container (settable)
+					31 button (settable)
+					32 button (settable) JSON
+				33 text field (settable)
+				34 text (settable)
+				35 container (settable)
+					36 button (settable) Swift
+					37 button (settable)
+				38 text field (settable)
+				39 text (settable)
+				40 container (settable)
+					41 text (settable) Options
+					42 checkbox (settable, integer) Plain types only (no Codable), Value: 0
+					43 checkbox (settable, integer) Generate memberwise initializers, Value: 1
+					44 checkbox (settable, integer) Explicit CodingKeys, Value: 1
+					45 button (settable) Reset to Defaults
+	46 close button
+	47 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	48 minimize button
+	49 text DevUtils
+50 menu bar
+	51 DevUtils
+	52 Edit
+	53 View
+	54 Window
+	55 Help
+
+The focused UI element is 3 text field (settable)

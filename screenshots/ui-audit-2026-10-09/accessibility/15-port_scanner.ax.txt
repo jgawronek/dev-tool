@@ -1,0 +1,84 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable) Port Scanner
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Network
+				8 button (settable) Port Scanner
+Port Scanner
+			9 text (settable)
+			10 container (settable) Port Scanner
+Network
+Probe TCP ports with profiles and banner grabs
+Scan options
+Target
+Timeout
+s
+Concurrency
+Banners
+TLS details
+HTTP HEAD
+Ports 1-100
+Ready.
+Open
+0
+Scanned
+0
+High risk
+0
+Score
+100 / A
+Open ports will appear here
+Port details
+Scan details will appear here
+				11 container (settable)
+					12 container (settable) Firewall Fingerprint
+						13 button (settable)
+					14 container (settable) JWT Debugger
+						15 button (settable)
+					16 container (settable) JS/TS Beautify/Minify
+						17 button (settable)
+					18 container (settable) Compress / Decompress
+						19 button (settable)
+					20 container (settable) Date/Time Difference
+						21 button (settable)
+					22 container (settable) Hex ↔ ASCII
+						23 button (settable)
+					24 container (settable) cURL to Code
+						25 button (settable)
+					26 text (settable) Color Converter
+				27 button (settable)
+				28 switch (settable, boolean) off
+					29 button (settable)
+				30 button (settable) Load sample
+				31 text field (settable)
+				32 button (settable) Quick Scan
+				33 text (settable) 1-100
+				34 button (settable) Scan
+				35 button (settable) Recon
+				36 button (settable) Stop
+				37 text field (settable)
+				38 text field (settable)
+				39 checkbox (settable, integer) 1
+				40 checkbox (settable, integer) 1
+				41 checkbox (settable, integer) 1
+				42 container (settable)
+					43 button (settable) Details
+					44 button (settable) Recon
+					45 button (settable) Report
+					46 button (settable) History
+	47 close button
+	48 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	49 minimize button
+	50 text DevUtils
+51 menu bar
+	52 DevUtils
+	53 Edit
+	54 View
+	55 Window
+	56 Help
+
+The focused UI element is 1 container DevUtils

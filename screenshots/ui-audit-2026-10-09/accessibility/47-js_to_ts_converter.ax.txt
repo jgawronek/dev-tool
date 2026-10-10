@@ -1,0 +1,68 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable)
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Converters
+				8 button (settable) JS to TS Converter
+JS to TS Converter
+			9 container (settable) JS to TS Converter
+Offline tool
+Annotate JavaScript with inferred TypeScript types
+Input
+Output
+Paste JavaScript to generate TypeScript migration output.
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) off
+					28 button (settable)
+				29 button (settable) Load sample
+				30 container (settable)
+					31 button (settable) JS → TS
+JS → TS
+					32 button (settable) TS → JS
+TS → JS
+					33 button (settable)
+				34 text field (settable)
+				35 text (settable)
+				36 container (settable)
+					37 container (settable) class fields
+						38 checkbox (settable, integer) 1
+					39 container (settable) JSDoc
+						40 checkbox (settable, integer) 1
+					41 container (settable) CommonJS
+						42 checkbox (settable, integer) 1
+					43 container (settable) : any
+						44 checkbox (settable, integer) 1
+					45 button (settable)
+				46 text field (settable)
+	47 close button
+	48 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	49 minimize button
+	50 text DevUtils
+51 menu bar
+	52 DevUtils
+	53 Edit
+	54 View
+	55 Window
+	56 Help
+
+The focused UI element is 3 text field (settable)

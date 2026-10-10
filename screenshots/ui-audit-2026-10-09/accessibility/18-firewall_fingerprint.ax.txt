@@ -1,0 +1,66 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable) Firewall Fingerprint
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Security
+				8 button (settable) Firewall Fingerprint
+Firewall Fingerprint
+			9 text (settable)
+			10 container (settable) Firewall Fingerprint
+Network
+Detect firewalls and WAFs from response fingerprints
+Probe options
+Target
+Timeout
+s
+Find all
+Redirects
+Ready.
+Results
+Firewall matches will appear here
+Details
+Probe results will appear here
+				11 container (settable)
+					12 container (settable) Firewall Fingerprint
+						13 button (settable)
+					14 container (settable) JWT Debugger
+						15 button (settable)
+					16 container (settable) JS/TS Beautify/Minify
+						17 button (settable)
+					18 container (settable) Compress / Decompress
+						19 button (settable)
+					20 container (settable) Date/Time Difference
+						21 button (settable)
+					22 container (settable) Hex ↔ ASCII
+						23 button (settable)
+					24 container (settable) cURL to Code
+						25 button (settable)
+					26 text (settable) Color Converter
+				27 button (settable)
+				28 switch (settable, boolean) off
+					29 button (settable)
+				30 button (settable) Load sample
+				31 text field (settable)
+				32 text field (settable)
+				33 checkbox (settable, integer) 1
+				34 checkbox (settable, integer) 1
+				35 button (settable) Fingerprint
+				36 container (settable)
+					37 button (settable) Probes
+					38 button (settable) Report
+	39 close button
+	40 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	41 minimize button
+	42 text DevUtils
+43 menu bar
+	44 DevUtils
+	45 Edit
+	46 View
+	47 Window
+	48 Help
+
+The focused UI element is 1 container DevUtils

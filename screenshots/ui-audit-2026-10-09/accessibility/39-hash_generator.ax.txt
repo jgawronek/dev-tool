@@ -1,0 +1,79 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable)
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Security
+				8 button (settable) Hash Generator
+Hash Generator
+			9 container (settable) Hash Generator
+Offline tool
+Hash text with dozens of algorithms
+Input
+Hashes
+0 bytes (string)
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) off
+					28 button (settable)
+				29 button (settable) Load sample
+				30 text field (settable)
+				31 text (settable)
+				32 button (settable) Generate
+				33 button (settable) Lookup
+				34 container (settable)
+					35 checkbox (settable, integer) 0
+					36 text (settable) lowercased
+					37 text (settable) MD2:
+					38 button (settable) Copy
+					39 text (settable) MD4:
+					40 button (settable) Copy
+					41 text (settable) MD5:
+					42 button (settable) Lookup
+					43 button (settable) Copy
+					44 text (settable) SHA1:
+					45 button (settable) Lookup
+					46 button (settable) Copy
+					47 text (settable) SHA224:
+					48 button (settable) Copy
+					49 text (settable) SHA256:
+					50 button (settable) Lookup
+					51 button (settable) Copy
+					52 text (settable) SHA384:
+					53 button (settable) Lookup
+					54 button (settable) Copy
+					55 text (settable) SHA512:
+					56 button (settable) Lookup
+					57 button (settable) Copy
+					58 text (settable) Keccak-256:
+					59 button (settable) Copy
+	60 close button
+	61 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	62 minimize button
+	63 text DevUtils
+64 menu bar
+	65 DevUtils
+	66 Edit
+	67 View
+	68 Window
+	69 Help
+
+The focused UI element is 3 text field (settable)

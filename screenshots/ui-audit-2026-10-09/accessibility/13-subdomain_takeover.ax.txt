@@ -1,0 +1,66 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable) Subdomain Takeover Check
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Security
+				8 button (settable) Subdomain Takeover Check
+Subdomain Takeover Check
+			9 container (settable) Subdomain Takeover Check
+Network
+Check subdomains for takeover-vulnerable records
+Scan options
+Targets
+Timeout
+s
+Concurrency
+Enter subdomains to check for dangling provider mappings.
+Results
+Potential takeover matches will appear here
+Details
+Result details
+Takeover details
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) off
+					28 button (settable)
+				29 text field (settable)
+				30 text field (settable)
+				31 button (settable) Scan
+				32 text field (settable)
+				33 text (settable)
+				34 button (settable) Details
+				35 button (settable) JSON
+				36 button (settable) CSV
+				37 text field (settable)
+				38 button (settable)
+	39 close button
+	40 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	41 minimize button
+	42 text DevUtils
+43 menu bar
+	44 DevUtils
+	45 Edit
+	46 View
+	47 Window
+	48 Help
+
+The focused UI element is 1 container DevUtils

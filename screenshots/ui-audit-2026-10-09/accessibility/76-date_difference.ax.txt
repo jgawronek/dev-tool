@@ -1,0 +1,50 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable) Date/Time Difference
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Converters
+				8 button (settable) Date/Time Difference
+Date/Time Difference
+			9 container (settable) Date/Time Difference
+Offline tool
+Calculate elapsed time between dates across time zones
+Difference
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) off
+					28 button (settable)
+				29 text field (settable)
+				30 text field (settable)
+				31 button (settable)
+				32 text field (settable)
+	33 close button
+	34 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	35 minimize button
+	36 text DevUtils
+37 menu bar
+	38 DevUtils
+	39 Edit
+	40 View
+	41 Window
+	42 Help
+
+The focused UI element is 1 container DevUtils

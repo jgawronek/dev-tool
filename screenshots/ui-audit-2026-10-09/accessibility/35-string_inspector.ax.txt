@@ -1,0 +1,68 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable)
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Text
+				8 button (settable) String Inspector
+String Inspector
+			9 container (settable) String Inspector
+Offline tool
+Inspect length, bytes, characters, and line stats
+Input
+Text analysis
+Characters
+0
+Bytes
+0
+Words
+0
+Lines
+0
+Unique
+0
+Cursor
+1:1
+Selected
+0
+Word distribution
+Case sensitive
+No words yet
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) off
+					28 button (settable)
+				29 button (settable) Load sample
+				30 text field (settable)
+				31 text (settable)
+				32 checkbox (settable, integer) 1
+	33 close button
+	34 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	35 minimize button
+	36 text DevUtils
+37 menu bar
+	38 DevUtils
+	39 Edit
+	40 View
+	41 Window
+	42 Help
+
+The focused UI element is 3 text field (settable)

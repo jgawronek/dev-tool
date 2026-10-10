@@ -1,0 +1,43 @@
+{"protocolVersion":"0.1.1","runnerVersion":null,"pid":8225,"type":"start","time":0}
+{"suite":{"id":0,"platform":"vm","path":"/Users/jaygawronek/Documents/Projects/dev-tool/test/local_http_audit_test.dart"},"type":"suite","time":0}
+{"test":{"id":1,"name":"loading /Users/jaygawronek/Documents/Projects/dev-tool/test/local_http_audit_test.dart","suiteID":0,"groupIDs":[],"metadata":{"skip":false,"skipReason":null},"line":null,"column":null,"url":null},"type":"testStart","time":0}
+{"suite":{"id":2,"platform":"vm","path":"/Users/jaygawronek/Documents/Projects/dev-tool/test/ui/generation_regression_audit_test.dart"},"type":"suite","time":2}
+{"test":{"id":3,"name":"loading /Users/jaygawronek/Documents/Projects/dev-tool/test/ui/generation_regression_audit_test.dart","suiteID":2,"groupIDs":[],"metadata":{"skip":false,"skipReason":null},"line":null,"column":null,"url":null},"type":"testStart","time":2}
+{"count":2,"time":2,"type":"allSuites"}
+{"testID":1,"result":"success","skipped":false,"hidden":true,"type":"testDone","time":1280}
+{"group":{"id":4,"suiteID":0,"parentID":null,"name":"","metadata":{"skip":false,"skipReason":null},"testCount":10,"line":null,"column":null,"url":null},"type":"group","time":1281}
+{"test":{"id":5,"name":"URL request sends GET, headers and body to loopback","suiteID":0,"groupIDs":[4],"metadata":{"skip":false,"skipReason":null},"line":19,"column":5,"url":"file:///Users/jaygawronek/Documents/Projects/dev-tool/test/local_http_audit_test.dart"},"type":"testStart","time":1281}
+{"testID":3,"result":"success","skipped":false,"hidden":true,"type":"testDone","time":1290}
+{"group":{"id":6,"suiteID":2,"parentID":null,"name":"","metadata":{"skip":false,"skipReason":null},"testCount":6,"line":null,"column":null,"url":null},"type":"group","time":1291}
+{"test":{"id":7,"name":"password 500 batch and copy: Random characters","suiteID":2,"groupIDs":[6],"metadata":{"skip":false,"skipReason":null},"line":174,"column":5,"url":"package:flutter_test/src/widget_tester.dart","root_line":31,"root_column":5,"root_url":"file:///Users/jaygawronek/Documents/Projects/dev-tool/test/ui/generation_regression_audit_test.dart"},"type":"testStart","time":1291}
+{"testID":5,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":1314}
+{"test":{"id":8,"name":"URL request sends POST, headers and body to loopback","suiteID":0,"groupIDs":[4],"metadata":{"skip":false,"skipReason":null},"line":19,"column":5,"url":"file:///Users/jaygawronek/Documents/Projects/dev-tool/test/local_http_audit_test.dart"},"type":"testStart","time":1314}
+{"testID":8,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":1318}
+{"test":{"id":9,"name":"URL request sends PUT, headers and body to loopback","suiteID":0,"groupIDs":[4],"metadata":{"skip":false,"skipReason":null},"line":19,"column":5,"url":"file:///Users/jaygawronek/Documents/Projects/dev-tool/test/local_http_audit_test.dart"},"type":"testStart","time":1318}
+{"testID":9,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":1321}
+{"test":{"id":10,"name":"URL request sends PATCH, headers and body to loopback","suiteID":0,"groupIDs":[4],"metadata":{"skip":false,"skipReason":null},"line":19,"column":5,"url":"file:///Users/jaygawronek/Documents/Projects/dev-tool/test/local_http_audit_test.dart"},"type":"testStart","time":1321}
+{"testID":10,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":1324}
+{"test":{"id":11,"name":"URL request sends DELETE, headers and body to loopback","suiteID":0,"groupIDs":[4],"metadata":{"skip":false,"skipReason":null},"line":19,"column":5,"url":"file:///Users/jaygawronek/Documents/Projects/dev-tool/test/local_http_audit_test.dart"},"type":"testStart","time":1324}
+{"testID":11,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":1327}
+{"test":{"id":12,"name":"URL request sends HEAD, headers and body to loopback","suiteID":0,"groupIDs":[4],"metadata":{"skip":false,"skipReason":null},"line":19,"column":5,"url":"file:///Users/jaygawronek/Documents/Projects/dev-tool/test/local_http_audit_test.dart"},"type":"testStart","time":1327}
+{"testID":12,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":1330}
+{"test":{"id":13,"name":"URL request sends OPTIONS, headers and body to loopback","suiteID":0,"groupIDs":[4],"metadata":{"skip":false,"skipReason":null},"line":19,"column":5,"url":"file:///Users/jaygawronek/Documents/Projects/dev-tool/test/local_http_audit_test.dart"},"type":"testStart","time":1331}
+{"testID":13,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":1333}
+{"test":{"id":14,"name":"URL request preserves non-JSON error response and does not follow redirect","suiteID":0,"groupIDs":[4],"metadata":{"skip":false,"skipReason":null},"line":55,"column":3,"url":"file:///Users/jaygawronek/Documents/Projects/dev-tool/test/local_http_audit_test.dart"},"type":"testStart","time":1333}
+{"testID":14,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":1339}
+{"test":{"id":15,"name":"URL request rejects response larger than display limit","suiteID":0,"groupIDs":[4],"metadata":{"skip":false,"skipReason":null},"line":84,"column":3,"url":"file:///Users/jaygawronek/Documents/Projects/dev-tool/test/local_http_audit_test.dart"},"type":"testStart","time":1339}
+{"testID":15,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":1369}
+{"test":{"id":16,"name":"Local server start, GET, HEAD, missing file, unsupported method and stop","suiteID":0,"groupIDs":[4],"metadata":{"skip":false,"skipReason":null},"line":102,"column":3,"url":"file:///Users/jaygawronek/Documents/Projects/dev-tool/test/local_http_audit_test.dart"},"type":"testStart","time":1369}
+{"testID":16,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":1386}
+{"testID":7,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":3153}
+{"test":{"id":17,"name":"password 500 batch and copy: Wordlist passphrase","suiteID":2,"groupIDs":[6],"metadata":{"skip":false,"skipReason":null},"line":174,"column":5,"url":"package:flutter_test/src/widget_tester.dart","root_line":31,"root_column":5,"root_url":"file:///Users/jaygawronek/Documents/Projects/dev-tool/test/ui/generation_regression_audit_test.dart"},"type":"testStart","time":3153}
+{"testID":17,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":4389}
+{"test":{"id":18,"name":"password 500 batch and copy: Numeric PIN","suiteID":2,"groupIDs":[6],"metadata":{"skip":false,"skipReason":null},"line":174,"column":5,"url":"package:flutter_test/src/widget_tester.dart","root_line":31,"root_column":5,"root_url":"file:///Users/jaygawronek/Documents/Projects/dev-tool/test/ui/generation_regression_audit_test.dart"},"type":"testStart","time":4390}
+{"testID":18,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":5687}
+{"test":{"id":19,"name":"password 500 batch and copy: UUID / token","suiteID":2,"groupIDs":[6],"metadata":{"skip":false,"skipReason":null},"line":174,"column":5,"url":"package:flutter_test/src/widget_tester.dart","root_line":31,"root_column":5,"root_url":"file:///Users/jaygawronek/Documents/Projects/dev-tool/test/ui/generation_regression_audit_test.dart"},"type":"testStart","time":5687}
+{"testID":19,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":6817}
+{"test":{"id":20,"name":"UUID sample generates and each generation type produces the requested count","suiteID":2,"groupIDs":[6],"metadata":{"skip":false,"skipReason":null},"line":174,"column":5,"url":"package:flutter_test/src/widget_tester.dart","root_line":94,"root_column":3,"root_url":"file:///Users/jaygawronek/Documents/Projects/dev-tool/test/ui/generation_regression_audit_test.dart"},"type":"testStart","time":6817}
+{"testID":20,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":7836}
+{"test":{"id":21,"name":"line sort sample immediately calculates numeric output","suiteID":2,"groupIDs":[6],"metadata":{"skip":false,"skipReason":null},"line":174,"column":5,"url":"package:flutter_test/src/widget_tester.dart","root_line":127,"root_column":3,"root_url":"file:///Users/jaygawronek/Documents/Projects/dev-tool/test/ui/generation_regression_audit_test.dart"},"type":"testStart","time":7836}
+{"testID":21,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":8092}
+{"success":true,"type":"done","time":8101}

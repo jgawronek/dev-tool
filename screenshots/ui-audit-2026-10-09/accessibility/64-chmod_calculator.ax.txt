@@ -1,0 +1,119 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable) Chmod Calculator
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Reference
+				8 button (settable) Chmod Calculator
+Chmod Calculator
+			9 container (settable) Chmod Calculator
+Offline tool
+Translate Unix permission bits to and from octal
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) off
+					28 button (settable)
+				29 text field (settable)
+				30 button (settable) Copy chmod
+				31 button (settable) Copy report
+				32 container (settable)
+					33 text (settable) Permissions
+					34 text (settable) 755
+					35 text (settable) rwxr-xr-x
+					36 text (settable) User (u)
+					37 text (settable) 7
+					38 container (settable)
+						39 text (settable) r
+						40 text (settable) read
+					41 container (settable)
+						42 text (settable) w
+						43 text (settable) write
+					44 container (settable)
+						45 text (settable) x
+						46 text (settable) execute
+					47 button (settable) None
+					48 button (settable) All
+					49 text (settable) Group (g)
+					50 text (settable) 5
+					51 container (settable)
+						52 text (settable) r
+						53 text (settable) g read
+					54 container (settable)
+						55 text (settable) w
+						56 text (settable) write
+					57 container (settable)
+						58 text (settable) x
+						59 text (settable) execute
+					60 button (settable) None
+					61 button (settable) All
+					62 text (settable) Other (o)
+					63 text (settable) 5
+					64 container (settable)
+						65 text (settable) r
+						66 text (settable) o read
+					67 container (settable)
+						68 text (settable) w
+						69 text (settable) write
+					70 container (settable)
+						71 text (settable) x
+						72 text (settable) execute
+					73 button (settable) None
+					74 button (settable) All
+					75 checkbox (settable, integer) 0
+					76 text (settable) setuid
+					77 text (settable) u+s
+					78 checkbox (settable, integer) 0
+					79 text (settable) setgid
+					80 text (settable) g+s
+					81 checkbox (settable, integer) 0
+					82 text (settable) sticky
+					83 text (settable) +t
+					84 text (settable) Common modes
+					85 button (settable) 755
+					86 button (settable) 644
+					87 button (settable) 600
+					88 button (settable) 700
+					89 button (settable) 777
+					90 button (settable) 775
+					91 button (settable) 666
+					92 button (settable) 400
+					93 button (settable) 1777
+					94 button (settable) 4755
+					95 button (settable) 2755
+					96 text (settable) rwxr-xr-x  typical script or directory
+					97 text (settable) Details
+					98 text (settable) Octal      755
+Symbolic   rwxr-xr-x
+User       7  rwx
+Group      5  r-x
+Other      5  r-x
+	99 close button
+	100 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	101 minimize button
+	102 text DevUtils
+103 menu bar
+	104 DevUtils
+	105 Edit
+	106 View
+	107 Window
+	108 Help
+
+The focused UI element is 1 container DevUtils

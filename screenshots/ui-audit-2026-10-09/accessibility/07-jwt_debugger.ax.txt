@@ -1,0 +1,71 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable)
+			4 container (settable)
+				5 text (settable) Favorites
+				6 button (settable) JWT Debugger
+JWT Debugger
+				7 text (settable) Security
+				8 button (settable) JWT Debugger
+JWT Debugger
+			9 container (settable) JWT Debugger
+Offline tool
+Decode, verify, and inspect JSON Web Tokens
+Token
+Header
+Payload
+Token details
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) on
+					28 button (settable)
+				29 button (settable) Load sample
+				30 button (settable)
+				31 text field (settable)
+				32 button (settable)
+				33 button (settable)
+				34 text field (settable)
+				35 text field (settable)
+				36 container (settable)
+					37 text (settable) Algorithm
+					38 button (settable) Signature algorithm
+HS256
+					39 text (settable) Type
+					40 text (settable) —
+					41 text (settable) Segments
+					42 text (settable) —
+					43 text (settable) Signature status
+					44 text (settable) Signature Not Verified
+					45 text (settable) Enter the secret to check the token signature.
+					46 text (settable) Secret
+					47 text field (settable)
+					48 button (settable) Verify signature
+	49 close button
+	50 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	51 minimize button
+	52 text DevUtils
+53 menu bar
+	54 DevUtils
+	55 Edit
+	56 View
+	57 Window
+	58 Help
+
+The focused UI element is 3 text field (settable)

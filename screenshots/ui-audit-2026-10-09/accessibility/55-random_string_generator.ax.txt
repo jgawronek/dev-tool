@@ -1,0 +1,74 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable) Random String Generator
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Generators
+				8 button (settable) Random String Generator
+Random String Generator
+			9 checkbox (settable, integer) Value: 1, Random String Generator
+Offline tool
+Generate random strings with custom alphabets
+Options
+Colors
+Generated strings
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) off
+					28 button (settable)
+				29 button (settable) Load sample
+				30 container (settable)
+					31 text (settable) Presets:
+					32 button (settable) Password
+					33 text (settable) Seed
+					34 text field (settable)
+					35 text (settable) Uppercased Characters
+					36 text field (settable)
+					37 text (settable) Lowercased Characters
+					38 text field (settable)
+					39 text (settable) Symbols
+					40 text field (settable)
+					41 text (settable) Digits
+					42 text field (settable)
+					43 text (settable) Words
+					44 text field (settable)
+					45 text (settable) Separator
+					46 text field (settable)
+					47 text (settable) Separating Group Size
+					48 text field (settable)
+					49 text (settable) Custom Character Set
+					50 text field (settable)
+				51 text (settable)
+				52 button (settable) x10
+				53 button (settable)
+				54 text field (settable)
+	55 close button
+	56 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	57 minimize button
+	58 text DevUtils
+59 menu bar
+	60 DevUtils
+	61 Edit
+	62 View
+	63 Window
+	64 Help
+
+The focused UI element is 1 container DevUtils

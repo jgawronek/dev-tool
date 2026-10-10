@@ -1,0 +1,167 @@
+{
+  "commit": "225ea38",
+  "date": "2026-10-09",
+  "tools": 76,
+  "baseline": {
+    "success": 564,
+    "error": 126
+  },
+  "fresh": {
+    "success": 295,
+    "error": 24
+  },
+  "freshCases": 319,
+  "baselineCases": 690,
+  "sampleAvailable": 58,
+  "sampleUnavailable": [
+    "unix_time_converter",
+    "auth_totp",
+    "subdomain_takeover",
+    "network_scanner",
+    "local_server",
+    "number_base_converter",
+    "lorem_ipsum_generator",
+    "password_generator",
+    "semver_calculator",
+    "file_checksum",
+    "payload_embedder",
+    "offline_llm",
+    "color_converter",
+    "chmod_calculator",
+    "mime_types",
+    "preferences",
+    "hash_verifier",
+    "date_difference"
+  ],
+  "controlStatuses": {
+    "button tapped": 213,
+    "option callbacks exercised": 56,
+    "input robustness checked": 57,
+    "editor input robustness checked": 57,
+    "segment callbacks exercised": 31,
+    "disabled in this state": 7,
+    "button callback exercised (not hit-testable)": 10,
+    "deferred: native/network/model dependency": 13,
+    "read-only/disabled": 3,
+    "toggle callback exercised": 33,
+    "disabled": 4
+  },
+  "dropdownOptionsExercised": 289,
+  "findings": [
+    {
+      "priority": "P2",
+      "tool": "base64_string_encode_decode",
+      "issue": "Load sample fills input but leaves output empty",
+      "reproduce": "Open a fresh tool, click Load sample, wait; output controller remains empty. Repeated sample clicks do not calculate the result.",
+      "expected": "The loaded sample should immediately produce the matching conversion result.",
+      "evidence": "samples-final.jsonl",
+      "nativeEvidence": "native-base64-sample.png"
+    },
+    {
+      "priority": "P2",
+      "tool": "url_encode_decode",
+      "issue": "Load sample fills input but leaves output empty",
+      "reproduce": "Open a fresh tool, click Load sample, wait; output controller remains empty. Repeated sample clicks do not calculate the result.",
+      "expected": "The loaded sample should immediately produce the matching conversion result.",
+      "evidence": "samples-final.jsonl",
+      "nativeEvidence": null
+    },
+    {
+      "priority": "P2",
+      "tool": "html_entity_encode_decode",
+      "issue": "Load sample fills input but leaves output empty",
+      "reproduce": "Open a fresh tool, click Load sample, wait; output controller remains empty. Repeated sample clicks do not calculate the result.",
+      "expected": "The loaded sample should immediately produce the matching conversion result.",
+      "evidence": "samples-final.jsonl",
+      "nativeEvidence": null
+    },
+    {
+      "priority": "P2",
+      "tool": "backslash_escape_unescape",
+      "issue": "Load sample fills input but leaves output empty",
+      "reproduce": "Open a fresh tool, click Load sample, wait; output controller remains empty. Repeated sample clicks do not calculate the result.",
+      "expected": "The loaded sample should immediately produce the matching conversion result.",
+      "evidence": "samples-final.jsonl",
+      "nativeEvidence": null
+    },
+    {
+      "priority": "P2",
+      "tool": "yaml_json_converter",
+      "issue": "Load sample fills input but leaves output empty",
+      "reproduce": "Open a fresh tool, click Load sample, wait; output controller remains empty. Repeated sample clicks do not calculate the result.",
+      "expected": "The loaded sample should immediately produce the matching conversion result.",
+      "evidence": "samples-final.jsonl",
+      "nativeEvidence": null
+    },
+    {
+      "priority": "P1",
+      "tool": "text_encryption",
+      "issue": "AES CFB/OFB fail on short plaintext",
+      "reproduce": "Modern \u2192 AES-128/192/256-CFB or OFB; key KEY; Encrypt; plaintext HELLO WORLD. Both Base64 and Hex fail.",
+      "expected": "Valid 11-byte text should encrypt and decrypt successfully.",
+      "observed": "Error: Invalid argument(s): Input buffer too short; empty ciphertext.",
+      "evidence": "encryption-matrix.jsonl",
+      "nativeEvidence": "native-aes-cfb-failure.png"
+    },
+    {
+      "priority": "P1",
+      "tool": "text_encryption",
+      "issue": "ChaCha20 fails with IV length error",
+      "reproduce": "Modern \u2192 ChaCha20; key KEY; Encrypt; plaintext HELLO WORLD; either output format.",
+      "expected": "Encryption should produce ciphertext that decrypts back to the input.",
+      "observed": "Error: Invalid argument(s): ChaCha20 requires exactly 8 bytes of IV.",
+      "evidence": "encryption-errors.jsonl"
+    },
+    {
+      "priority": "P2",
+      "tool": "random_string_generator",
+      "issue": "Words field is ignored",
+      "reproduce": "Set upper/lower/symbol/digit counts to 0, Words to 3, then click Load sample (the generation action).",
+      "expected": "Generate nonempty strings containing the requested words.",
+      "observed": "Only blank lines are generated. Source also leaves Seed, Separator, Separating Group Size and Custom Character Set disconnected from generation.",
+      "evidence": "journeys-final.jsonl"
+    },
+    {
+      "priority": "P2",
+      "tool": "jwt_debugger",
+      "issue": "Algorithm row overflows by 46 pixels",
+      "reproduce": "Open JWT Debugger at the 2560\u00d71640 test viewport.",
+      "expected": "The dropdown and label should fit within Token details.",
+      "observed": "RenderFlex overflowed by 46 pixels on the right. HS256/384/512 signature correctness checks passed.",
+      "evidence": "controls-final.jsonl"
+    },
+    {
+      "priority": "P2",
+      "tool": "documentation",
+      "issue": "Documentation ListTiles trigger Flutter assertions",
+      "reproduce": "Open Documentation and search CSV Inspector.",
+      "expected": "Menu selection and ink effects should render without assertions.",
+      "observed": "ListTile background color or ink splashes may be invisible: ColoredBox hides the Material painting. Search and closing work, but the debug assertion causes the test to fail.",
+      "evidence": "journeys-final.jsonl"
+    }
+  ],
+  "coverageLimits": [
+    "Fresh sweeps cover controls discovered in the visited states; they are not proof of every possible combination, dynamic branch, or output value.",
+    "Some dropdowns/toggles, editor inputs and offscreen controls were exercised through callbacks. 213 visible buttons were hit-tested and tapped; 10 button checks used callbacks.",
+    "Subdomain Find known; takeover Scan; port Scan/Recon; network Detect LAN/Scan; firewall Fingerprint were not invoked through the widget UI. Existing service tests use controlled fixtures for these services.",
+    "Local server Start is verified at service level with loopback HTTP; the native folder picker/Start combination is not end-to-end verified.",
+    "Offline LLM refresh/download/installed-model generation remain unverified. A local model path was requested; no model was supplied during this run.",
+    "Native file picker save/open, print dialog, actual Finder interactions, and OS-specific delivery paths are not exhaustively verified. Automated file/dialog tests use mocked or cancelled channels.",
+    "Samples are checked twice in their default states, with output snapshots. Most sample outputs have not been independently checked against a full known-answer oracle.",
+    "The 126 baseline failures include obsolete Clear/Paste/Sample menu expectations, copy-icon names and old field selectors; do not interpret them as 126 confirmed app defects."
+  ],
+  "passedChecks": [
+    "All 76 registered tool pages opened in the current shell; all 58 available Load sample actions were clicked twice.",
+    "Password batches: all 4 styles, 500 entries, Copy all exact clipboard content, invalid counts 0/501/-1/abc/1.5/empty and recovery to 1.",
+    "UUID sample populates generated IDs; every listed generation type produces 10 unique IDs.",
+    "Line sorting produces output immediately from its sample; ascending/descending and duplicate-removal results match expected values.",
+    "All 6 compression formats roundtrip through the UI; malformed input, clearing through text editing, and recovery were checked.",
+    "JWT HS256/HS384/HS512: decoded header/payload, valid signature, wrong-key mismatch and correction.",
+    "44 of 58 encryption algorithm/format roundtrip checks passed; 14 failed across the 6 AES CFB/OFB options and ChaCha20.",
+    "HTTP GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS tested through URL Parser Send against loopback; service tests also check body/header forwarding, non-JSON/error responses, redirects and the 2 MB limit.",
+    "AntiBot Run identifies a synthetic Cloudflare response served locally.",
+    "Local server serves index/static files, handles HEAD/404/405, logs requests and stops cleanly.",
+    "TOTP add/edit, generated code display and mocked preference persistence; favorites toggle, tool search/navigation and documentation guide presence.",
+    "Static analysis of all 9 new audit test files: no issues."
+  ]
+}

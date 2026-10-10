@@ -1,0 +1,48 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable) MIME Types
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Reference
+				8 button (settable) MIME Types
+MIME Types
+			9 container (settable) MIME Types
+Offline tool
+Look up MIME types by name, type, or extension
+689 entries
+MIME types
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) off
+					28 button (settable)
+				29 text field (settable)
+	30 close button
+	31 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	32 minimize button
+	33 text DevUtils
+34 menu bar
+	35 DevUtils
+	36 Edit
+	37 View
+	38 Window
+	39 Help
+
+The focused UI element is 1 container DevUtils

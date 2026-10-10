@@ -1,0 +1,83 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable) @startuml
+			4 container (settable)
+				5 text (settable) Favorites
+				6 button (settable) PlantUML Class Diagram
+PlantUML Class Diagram
+				7 text (settable) Diagrams
+				8 button (settable) PlantUML Class Diagram
+PlantUML Class Diagram
+			9 container (settable) PlantUML Class Diagram
+Offline tool
+Draft PlantUML class diagrams and export them as PNG
+Diagram
+PlantUML
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) on
+					28 button (settable)
+				29 button (settable) Load sample
+				30 container (settable)
+					31 button (settable) App
+					32 button (settable) Auto
+					33 button (settable) Tidy
+					34 button (settable) Snap
+					35 button (settable)
+					36 button (settable)
+					37 button (settable) Fit
+					38 button (settable) Export
+				39 container (settable) 73%
+					40 text (settable)
+					41 text (settable) User
++id: int
++name: String
+-password: String
++login(pw: String): bool
+					42 text (settable) «interface»
+Repository
++save(item)
++findById(id): Item
+					43 text (settable) «abstract»
+Entity
++id: int
+					44 text (settable) «enumeration»
+Role
+ADMIN
+MEMBER
+GUEST
+					45 text (settable) Order
++total: double
+					46 text (settable) LineItem
+				47 text (settable)
+				48 button (settable)
+				49 text field (settable)
+	50 close button
+	51 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	52 minimize button
+	53 text DevUtils
+54 menu bar
+	55 DevUtils
+	56 Edit
+	57 View
+	58 Window
+	59 Help
+
+The focused UI element is 3 text field (settable) @startuml

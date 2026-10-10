@@ -1,0 +1,58 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable) Preferences
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Preferences
+				8 button (settable) Preferences
+Preferences
+			9 container (settable) Preferences
+Offline tool
+Theme, appearance, and app settings
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) off
+					28 button (settable)
+				29 button (settable) General
+				30 button (settable) Appearance
+				31 button (settable) Scripting
+				32 container (settable)
+					33 text (settable) General
+					34 checkbox (settable, integer) 0
+					35 text (settable) Hide the main window at launch
+					36 checkbox (settable, integer) 0
+					37 text (settable) Confirm before quitting with Cmd+Q
+					38 checkbox (settable, integer) 0
+					39 text (settable) Share anonymous crash reports and analytics
+					40 checkbox (settable, integer) 0
+					41 text (settable) Write debug logs
+	42 close button
+	43 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	44 minimize button
+	45 text DevUtils
+46 menu bar
+	47 DevUtils
+	48 Edit
+	49 View
+	50 Window
+	51 Help
+
+The focused UI element is 1 container DevUtils

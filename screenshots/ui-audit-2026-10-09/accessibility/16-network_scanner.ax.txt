@@ -1,0 +1,72 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable) Network Scanner
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Network
+				8 button (settable) Network Scanner
+Network Scanner
+			9 text (settable)
+			10 container (settable) Network Scanner
+Network
+Sweep LAN ranges for live hosts and open ports
+Scan options
+Network
+Timeout
+s
+Concurrency
+Ping
+TCP ports
+Ping plus common web, SSH, SMB, and RDP ports
+Ready. Enter a CIDR range or detect the current LAN.
+Devices
+Responsive devices will appear here
+Device details
+Select a device to inspect discovery evidence
+				11 container (settable)
+					12 container (settable) Firewall Fingerprint
+						13 button (settable)
+					14 container (settable) JWT Debugger
+						15 button (settable)
+					16 container (settable) JS/TS Beautify/Minify
+						17 button (settable)
+					18 container (settable) Compress / Decompress
+						19 button (settable)
+					20 container (settable) Date/Time Difference
+						21 button (settable)
+					22 container (settable) Hex ↔ ASCII
+						23 button (settable)
+					24 container (settable) cURL to Code
+						25 button (settable)
+					26 text (settable) Color Converter
+				27 button (settable)
+				28 switch (settable, boolean) off
+					29 button (settable)
+				30 text field (settable) 10.0.10.0/24
+				31 button (settable) Detect LAN
+				32 button (settable) Quick LAN
+				33 text (settable) 22,80,443,445,3389,8080
+				34 button (settable) Scan
+				35 button (settable) Stop
+				36 text field (settable)
+				37 text field (settable)
+				38 checkbox (settable, integer) 1
+				39 checkbox (settable, integer) 1
+				40 container (settable)
+					41 button (settable) Evidence
+					42 button (settable) Report
+	43 close button
+	44 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	45 minimize button
+	46 text DevUtils
+47 menu bar
+	48 DevUtils
+	49 Edit
+	50 View
+	51 Window
+	52 Help
+
+The focused UI element is 30 text field (settable) 10.0.10.0/24

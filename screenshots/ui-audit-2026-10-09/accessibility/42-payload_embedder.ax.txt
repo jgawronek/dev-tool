@@ -1,0 +1,78 @@
+Window: "DevUtils", App: DevUtils.
+0 standard window DevUtils, Secondary Actions: Raise
+	1 container DevUtils
+		2 container (settable) DevUtils
+			3 text field (settable) Payload Embed/Extract
+			4 container (settable)
+				5 text (settable) Favorites
+				6 text (settable) No favorites yet.
+				7 text (settable) Security
+				8 button (settable) Payload Embed/Extract
+Payload Embed/Extract
+			9 container (settable) Payload Embed/Extract
+Offline tool
+Embed and extract payloads around template markers
+Options
+Result
+				10 container (settable)
+					11 container (settable) Firewall Fingerprint
+						12 button (settable)
+					13 container (settable) JWT Debugger
+						14 button (settable)
+					15 container (settable) JS/TS Beautify/Minify
+						16 button (settable)
+					17 container (settable) Compress / Decompress
+						18 button (settable)
+					19 container (settable) Date/Time Difference
+						20 button (settable)
+					21 container (settable) Hex ↔ ASCII
+						22 button (settable)
+					23 container (settable) cURL to Code
+						24 button (settable)
+					25 text (settable) Color Converter
+				26 button (settable)
+				27 switch (settable, boolean) off
+					28 button (settable)
+				29 container (settable)
+					30 button (settable) Embed
+					31 button (settable) Check
+					32 button (settable) Decode
+					33 button (settable) Example paths
+					34 text (settable) Carrier file
+					35 text field (settable)
+					36 button (settable)
+					37 text (settable) Payload file
+					38 text field (settable)
+					39 button (settable)
+					40 text (settable) Output file
+					41 text field (settable)
+					42 button (settable)
+					43 button (settable)
+					44 text (settable) Passphrase
+					45 text field (settable)
+					46 button (settable) Embed encrypted
+					47 button (settable) Check embedded data
+					48 text (settable) Format support
+					49 text (settable) PNG
+					50 text (settable) private ancillary chunk
+					51 text (settable) JPG
+					52 text (settable) APP15 metadata segments
+					53 text (settable) PDF
+					54 text (settable) comment payload block
+					55 text (settable) Crypto
+					56 text (settable) AES-256-CBC + HMAC-SHA256
+				57 text (settable)
+				58 button (settable)
+				59 text field (settable)
+	60 close button
+	61 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	62 minimize button
+	63 text DevUtils
+64 menu bar
+	65 DevUtils
+	66 Edit
+	67 View
+	68 Window
+	69 Help
+
+The focused UI element is 1 container DevUtils
