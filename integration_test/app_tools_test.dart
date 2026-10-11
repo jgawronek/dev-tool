@@ -17,7 +17,7 @@ Future<void> openTool(WidgetTester tester, ToolState state, String name) async {
   FocusManager.instance.primaryFocus?.unfocus();
   state.searchQuery.value = '';
   await settle(tester);
-  final search = find.widgetWithText(TextField, 'Search tools');
+  final search = find.widgetWithText(TextField, 'Find a tool');
   await tester.tap(search);
   await tester.enterText(search, name);
   await settle(tester);

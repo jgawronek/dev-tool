@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:dev_tool/app.dart';
+import 'package:dev_tool/services/javascript_code_service.dart';
+
+import 'formatter_engine.dart';
 import 'package:dev_tool/state/tool_state.dart';
 import 'package:dev_tool/ui/widgets.dart';
 
@@ -11,17 +15,32 @@ import 'package:dev_tool/ui/widgets.dart';
 /// All waits are bounded pumps: several editors animate a blinking cursor
 /// forever, so `pumpAndSettle` would time out.
 class ToolHarness {
-  ToolHarness(this.tester);
+  ToolHarness(this.tester, {this.nativeFormatters = false});
 
   final WidgetTester tester;
+  final bool nativeFormatters;
   late ToolState state;
 
   Future<void> open(String toolId, {Size? surface}) async {
-    if (surface != null) {
+    if (nativeFormatters) {
+      await const MethodChannel('devutils/testing').invokeMethod<void>('activate');
+    }
+    surface ??= const Size(1400, 1000);
+    {
       tester.view.physicalSize = surface;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
+    }
+    if ({
+      'html_beautify_minify',
+      'css_beautify_minify',
+      'js_beautify_minify',
+    }.contains(toolId)) {
+      if (!nativeFormatters) installFormatterChannel();
+      await tester.runAsync(
+        () => JavascriptCodeService.process('const warm = 1;', 'Verify'),
+      );
     }
     state = ToolState.inMemory();
     state.workspace.openTool(toolId);
@@ -52,9 +71,7 @@ class ToolHarness {
         )
         .toList();
     if (panes.isEmpty) {
-      throw StateError(
-        'No EditorPane with placeholder="$hint" label="$label"',
-      );
+      throw StateError('No EditorPane with placeholder="$hint" label="$label"');
     }
     return panes[index];
   }

@@ -44,7 +44,7 @@ class _CompressionViewState extends State<_CompressionView> {
   Future<void> _run() async {
     final token = ++_token;
     final text = _input.text;
-    if (text.trim().isEmpty) {
+    if (text.isEmpty) {
       setState(() {
         _output.text = '';
         _summary = '';

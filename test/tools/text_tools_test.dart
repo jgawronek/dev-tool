@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:dev_tool/ui/tools/common/shared.dart';
+import 'package:dev_tool/ui/widgets.dart';
 import 'package:dev_tool/ui/tool_views.dart' show markdownToHtmlForPreview;
 
 import '../helpers/tool_harness.dart';
@@ -22,21 +23,9 @@ void toolTest(
 /// Types into the free-form text field (the only [TextField] that is not
 /// rendered inside an [InlineTextField]).
 Future<void> enterPlainTextField(WidgetTester tester, String text) async {
-  final plainFields = find.byWidgetPredicate((w) {
-    if (w is! TextField) return false;
-    if (w.decoration?.hintText != null) return false;
-    var ancestor = tester.element(find.byWidget(w));
-    var insideInline = false;
-    ancestor.visitAncestorElements((element) {
-      if (element.widget is InlineTextField) {
-        insideInline = true;
-        return false;
-      }
-      return true;
-    });
-    return !insideInline;
-  });
-  await tester.enterText(plainFields.first, text);
+  final input = tester.widgetList<EditorPane>(find.byType(EditorPane)).firstWhere((p) => !p.readOnly);
+  input.controller!.text = text;
+  input.onChanged?.call(text);
   await tester.pump(const Duration(milliseconds: 300));
 }
 
@@ -56,7 +45,7 @@ void main() {
       field.controller!.text = regex;
       field.onChanged?.call(regex);
       await h.settle();
-      return h.text('');
+      return h.text('Formatted matches will appear here');
     }
 
     final surface = const Size(1500, 1000);
@@ -110,8 +99,8 @@ void main() {
     toolTest('marks removed and added lines', tool, (h) async {
       await h.tap('Characters');
       await h.tap('Lines');
-      await h.enter('', label: 'Input 1', text: 'a\nb\nc');
-      await h.enter('', label: 'Input 2', text: 'a\nx\nc');
+      await h.enter(null, label: 'Input 1', text: 'a\nb\nc');
+      await h.enter(null, label: 'Input 2', text: 'a\nx\nc');
       final out = h.text('Diff output...');
       expect(out, contains('- b'));
       expect(out, contains('+ x'));
@@ -119,8 +108,8 @@ void main() {
     });
 
     toolTest('identical inputs produce no markers', tool, (h) async {
-      await h.enter('', label: 'Input 1', text: 'same\nlines');
-      await h.enter('', label: 'Input 2', text: 'same\nlines');
+      await h.enter(null, label: 'Input 1', text: 'same\nlines');
+      await h.enter(null, label: 'Input 2', text: 'same\nlines');
       final out = h.text('Diff output...');
       expect(out, isNot(contains('+ ')));
       expect(out, isNot(contains('- ')));
@@ -129,8 +118,8 @@ void main() {
     toolTest('word mode diff', tool, (h) async {
       await h.tap('Lines');
       await h.tap('Words');
-      await h.enter('', label: 'Input 1', text: 'one two three');
-      await h.enter('', label: 'Input 2', text: 'one TWO three');
+      await h.enter(null, label: 'Input 1', text: 'one two three');
+      await h.enter(null, label: 'Input 2', text: 'one TWO three');
       final out = h.text('Diff output...');
       expect(out, contains('TWO'));
     });
@@ -138,8 +127,8 @@ void main() {
     toolTest('empty right side reports removals', tool, (h) async {
       await h.tap('Characters');
       await h.tap('Lines');
-      await h.enter('', label: 'Input 1', text: 'only-left');
-      await h.enter('', label: 'Input 2', text: '');
+      await h.enter(null, label: 'Input 1', text: 'only-left');
+      await h.enter(null, label: 'Input 2', text: '');
       expect(h.text('Diff output...'), contains('- only-left'));
     });
   });
@@ -226,8 +215,14 @@ void main() {
     const tool = 'markdown_preview';
 
     toolTest('renders the preview pane for markdown input', tool, (h) async {
-      await h.enter('Drop a .md file here or type Markdown...', text: '# Title\n\n**bold**');
-      expect(find.byKey(const ValueKey('html-rendered-preview')), findsOneWidget);
+      await h.enter(
+        'Drop a .md file here or type Markdown...',
+        text: '# Title\n\n**bold**',
+      );
+      expect(
+        find.byKey(const ValueKey('html-rendered-preview')),
+        findsOneWidget,
+      );
       expect(find.text('Rendered Markdown'), findsOneWidget);
     });
 
@@ -287,7 +282,9 @@ void main() {
 
     Future<void> typeCron(ToolHarness h, String expr) async {
       final field = h.tester.widget<InlineTextField>(
-        find.byWidgetPredicate((w) => w is InlineTextField && w.hintText == '*/5 * * * *'),
+        find.byWidgetPredicate(
+          (w) => w is InlineTextField && w.hintText == '*/5 * * * *',
+        ),
       );
       field.controller!.text = expr;
       field.onChanged?.call(expr);
@@ -296,25 +293,28 @@ void main() {
 
     toolTest('parses step expressions', tool, (h) async {
       await typeCron(h, '*/5 * * * *');
-      expect(find.textContaining('Minutes:'), findsOneWidget);
+      expect(find.text('Minutes'), findsOneWidget);
       expect(find.textContaining('0, 5'), findsOneWidget);
     });
 
     toolTest('parses ranges and lists', tool, (h) async {
       await typeCron(h, '0 9-11 * * 1,3');
-      expect(find.textContaining('Hours: 9, 10, 11'), findsOneWidget);
-      expect(find.textContaining('Day of Week: 1, 3'), findsOneWidget);
+      expect(find.text('9, 10, 11'), findsOneWidget);
+      expect(find.text('1, 3'), findsOneWidget);
     });
 
     toolTest('shows next executions', tool, (h) async {
       await typeCron(h, '0 12 * * *');
-      expect(find.text('Next executions:'), findsOneWidget);
+      expect(find.text('Next executions · local time'), findsOneWidget);
       expect(find.textContaining(RegExp(r'\d{4}-\d{2}-\d{2}')), findsWidgets);
     });
 
     toolTest('invalid expression surfaces an error', tool, (h) async {
       await typeCron(h, 'not a cron');
-      expect(find.textContaining(RegExp('Invalid|error', caseSensitive: false)), findsOneWidget);
+      expect(
+        find.textContaining(RegExp('Invalid|error', caseSensitive: false)),
+        findsOneWidget,
+      );
     });
   });
 
@@ -322,33 +322,41 @@ void main() {
     const tool = 'url_parser';
 
     toolTest('parses protocol, host, path and query', tool, (h) async {
-      await h.enter(null, label: 'Input', text: 'https://api.dev:8443/v1/items?limit=10&q=x#frag');
-      expect(find.text('Protocol: https'), findsOneWidget);
-      expect(find.textContaining('Host: api.dev'), findsOneWidget);
-      expect(find.textContaining('Path: /v1/items'), findsOneWidget);
-      final queryJson = h.text('{ }');
+      await h.enter(
+        null,
+        label: 'URL',
+        text: 'https://api.dev:8443/v1/items?limit=10&q=x#frag',
+      );
+      expect(find.text('https'), findsOneWidget);
+      expect(find.text('api.dev'), findsOneWidget);
+      expect(find.text('/v1/items'), findsOneWidget);
+      final queryJson = h.text('Query parameters will appear here');
       expect(queryJson, contains('"limit"'));
       expect(queryJson, contains('"10"'));
     });
 
     toolTest('query params decode into JSON', tool, (h) async {
-      await h.enter(null, label: 'Input', text: 'https://x.dev/search?a=1&b=hello%20world');
-      final queryJson = h.text('{ }');
+      await h.enter(
+        null,
+        label: 'URL',
+        text: 'https://x.dev/search?a=1&b=hello%20world',
+      );
+      final queryJson = h.text('Query parameters will appear here');
       expect(queryJson, contains('"b": "hello world"'));
     });
 
     toolTest('unparseable URL surfaces an error', tool, (h) async {
-      await h.enter(null, label: 'Input', text: 'http://x.dev/%zz');
+      await h.enter(null, label: 'URL', text: 'http://x.dev/%zz');
       expect(find.textContaining(RegExp('Invalid|Format')), findsWidgets);
     });
 
     toolTest('relative reference parses with empty scheme and host', tool, (
       h,
     ) async {
-      await h.enter(null, label: 'Input', text: 'docs/setup.md?ref=main');
-      expect(find.text('Protocol: '), findsOneWidget);
-      expect(find.text('Host: '), findsOneWidget);
-      expect(find.textContaining('Path: docs/setup.md'), findsOneWidget);
+      await h.enter(null, label: 'URL', text: 'docs/setup.md?ref=main');
+      expect(find.text('Scheme'), findsOneWidget);
+      expect(find.text('Host'), findsOneWidget);
+      expect(find.text('docs/setup.md'), findsOneWidget);
     });
   });
 }

@@ -436,53 +436,80 @@ class _FirewallFingerprintViewState extends State<_FirewallFingerprintView> {
         final probe = probes[index];
         return Container(
           decoration: toolSurfaceDecoration(context, radius: 6),
-          padding: const EdgeInsets.all(10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          child: ExpansionTile(
+            key: PageStorageKey('firewall-$_requestId-$index-${probe.url}'),
+            shape: const Border(),
+            collapsedShape: const Border(),
+            tilePadding: const EdgeInsets.symmetric(horizontal: 10),
+            childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+            title: Text(
+              probe.name,
+              style: TextStyle(
+                color: context.appColors.editorText,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            subtitle: Text(
+              'HTTP ${probe.statusCode} ${probe.reasonPhrase}',
+              style: mutedToolTextStyle(context, fontSize: 11),
+            ),
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      probe.name,
-                      style: TextStyle(
-                        color: context.appColors.editorText,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    'HTTP ${probe.statusCode}',
-                    style: TextStyle(
-                      color: context.appColors.editorText,
-                      fontFamily: 'Menlo',
-                    ),
-                  ),
-                ],
+              _probeDetail(context, 'Request URL', probe.url.toString()),
+              const SizedBox(height: 10),
+              _probeDetail(
+                context,
+                'Response headers',
+                probe.headers.entries
+                    .map((entry) => '${entry.key}: ${entry.value}')
+                    .join('\n'),
+                maxHeight: 180,
               ),
-              const SizedBox(height: 4),
-              Text(
-                probe.url.toString(),
-                overflow: TextOverflow.ellipsis,
-                style: mutedToolTextStyle(context, fontSize: 11),
+              const SizedBox(height: 10),
+              _probeDetail(
+                context,
+                'Response body snippet',
+                probe.bodySnippet,
+                maxHeight: 220,
               ),
-              if (probe.bodySnippet.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  probe.bodySnippet.replaceAll(RegExp(r'\s+'), ' '),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: context.appColors.mutedText,
-                    fontFamily: 'Menlo',
-                    fontSize: 11,
-                  ),
-                ),
-              ],
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _probeDetail(
+    BuildContext context,
+    String label,
+    String value, {
+    double maxHeight = 110,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: context.appColors.editorText,
+            fontWeight: FontWeight.w600,
+            fontSize: 12,
+          ),
+        ),
+        const SizedBox(height: 4),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxHeight),
+          child: SingleChildScrollView(
+            child: SelectableText(
+              value.isEmpty ? 'None returned.' : value,
+              style: TextStyle(
+                color: context.appColors.mutedText,
+                fontFamily: 'Menlo',
+                fontSize: 11,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

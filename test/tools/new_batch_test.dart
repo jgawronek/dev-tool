@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' show Size;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -7,7 +6,6 @@ import 'package:dev_tool/services/leetspeak_service.dart';
 import 'package:dev_tool/services/log_parser_service.dart';
 import 'package:dev_tool/services/session_cookie_service.dart';
 import 'package:dev_tool/services/timestamp_service.dart';
-import 'package:dev_tool/ui/widgets.dart';
 
 import '../helpers/tool_harness.dart';
 
@@ -25,12 +23,7 @@ void toolTest(
 
 /// EditorPane moves Sample into a right-click menu as 'Example'.
 Future<void> loadSample(ToolHarness h) async {
-  await h.tester.tapAt(
-    h.tester.getCenter(find.byType(EditorPane).first),
-    buttons: kSecondaryMouseButton,
-  );
-  await h.settle();
-  await h.tap('Example');
+  await h.tap('Load sample');
   await h.settle();
 }
 
@@ -46,7 +39,8 @@ Asn1Outcome _timeValue(int tag, String text) {
   return decodeAsn1([tag, bytes.length, ...bytes]);
 }
 
-const _bcryptHash = r'$2a$10$9XyZq0kQvT1nB5wLp3Rt7uKjH2sF8dG4mN6pQ1rS5tV7xY3zA0bC';
+const _bcryptHash =
+    r'$2a$10$9XyZq0kQvT1nB5wLp3Rt7uKjH2sF8dG4mN6pQ1rS5tV7xY3zA0bC';
 
 void main() {
   group('leetspeak service', () {
@@ -109,11 +103,13 @@ void main() {
     });
 
     test('finds every format in mixed text', () {
-      final hits = extractTimestamps(const [
-        '2026-03-08T09:12:01Z',
-        '08/Mar/2024:09:12:05 +0000',
-        '1700000000',
-      ].join(' ')).hits;
+      final hits = extractTimestamps(
+        const [
+          '2026-03-08T09:12:01Z',
+          '08/Mar/2024:09:12:05 +0000',
+          '1700000000',
+        ].join(' '),
+      ).hits;
       expect(hits.length, greaterThanOrEqualTo(3));
     });
 
@@ -157,7 +153,8 @@ void main() {
     });
 
     test('recognises a JWE by its five segments', () {
-      const jwe = 'eyJhbGciOiJSU0EtT0FFUCJ9'
+      const jwe =
+          'eyJhbGciOiJSU0EtT0FFUCJ9'
           '.eyJzdWIiOiIxMjM0NTY3ODkwIn0'
           '.eyJhbGciOiJSU0EtT0FFUCJ9'
           '.c2ln'
@@ -171,7 +168,10 @@ void main() {
     });
 
     test('reports unknown for undecodable input', () {
-      expect(decodeSession('!!! not a cookie !!!').format, SessionFormat.unknown);
+      expect(
+        decodeSession('!!! not a cookie !!!').format,
+        SessionFormat.unknown,
+      );
     });
 
     test('renders parts and caveats into a report', () {
@@ -184,9 +184,16 @@ void main() {
 
   group('asn1 service', () {
     test('decodes a nested SEQUENCE', () {
-      final outcome = decodeAsn1(
-        const [0x30, 0x06, 0x02, 0x01, 0x05, 0x02, 0x01, 0x2A],
-      );
+      final outcome = decodeAsn1(const [
+        0x30,
+        0x06,
+        0x02,
+        0x01,
+        0x05,
+        0x02,
+        0x01,
+        0x2A,
+      ]);
       expect(outcome.error, isNull);
       // The SEQUENCE and its two INTEGER children.
       expect(outcome.nodeCount, 3);
@@ -204,9 +211,19 @@ void main() {
 
     test('decodes OBJECT IDENTIFIER to dotted form', () {
       // 1.2.840.113549.1.1.11 = sha256WithRSAEncryption
-      final outcome = decodeAsn1(
-        const [0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x0B],
-      );
+      final outcome = decodeAsn1(const [
+        0x06,
+        0x09,
+        0x2A,
+        0x86,
+        0x48,
+        0x86,
+        0xF7,
+        0x0D,
+        0x01,
+        0x01,
+        0x0B,
+      ]);
       expect(outcome.roots.single.value, '1.2.840.113549.1.1.11');
     });
 
@@ -226,34 +243,22 @@ void main() {
     test('reads UTCTime against the X.690 century rule', () {
       // 261008175317Z is 2026, and 481231235959Z is 2048.
       expect(
-        _timeValue(0x17, '261008175317Z')
-            .roots
-            .single
-            .value,
+        _timeValue(0x17, '261008175317Z').roots.single.value,
         contains('2026-10-08T17:53:17'),
       );
       expect(
-        _timeValue(0x17, '481231235959Z')
-            .roots
-            .single
-            .value,
+        _timeValue(0x17, '481231235959Z').roots.single.value,
         contains('2048-12-31T23:59:59'),
       );
       expect(
-        _timeValue(0x17, '500101000000Z')
-            .roots
-            .single
-            .value,
+        _timeValue(0x17, '500101000000Z').roots.single.value,
         contains('1950-01-01T00:00:00'),
       );
     });
 
     test('reads GeneralizedTime with fractional seconds', () {
       expect(
-        _timeValue(0x18, '20240308091201.500Z')
-            .roots
-            .single
-            .value,
+        _timeValue(0x18, '20240308091201.500Z').roots.single.value,
         contains('2024-03-08T09:12:01.500'),
       );
     });
@@ -268,10 +273,16 @@ void main() {
       // 0x6F is an EMV template, so its six content bytes are parsed as
       // nested TLV: 0x5F claims four bytes, then 0x41 claims 0x42, which
       // runs past the end.
-      final outcome = decodeAsn1(
-        const [0x6F, 0x06, 0x5F, 0x04, 0x41, 0x42, 0x43, 0x44],
-        mode: Asn1DecodeMode.berTlv,
-      );
+      final outcome = decodeAsn1(const [
+        0x6F,
+        0x06,
+        0x5F,
+        0x04,
+        0x41,
+        0x42,
+        0x43,
+        0x44,
+      ], mode: Asn1DecodeMode.berTlv);
       expect(outcome.error, isNull);
       final template = outcome.roots.single.children.single;
       expect(template.tagNumber, 0x5F);
@@ -280,11 +291,21 @@ void main() {
     });
 
     test('treats EMV tags as literal bytes, not ASN.1 tag numbers', () {
-      final outcome = decodeAsn1(
-        const [0x6F, 0x0B, 0x84, 0x01, 0x01, 0x02, 0x01, 0x1E, 0x5F, 0x03,
-          0xA0, 0x01, 0x41],
-        mode: Asn1DecodeMode.berTlv,
-      );
+      final outcome = decodeAsn1(const [
+        0x6F,
+        0x0B,
+        0x84,
+        0x01,
+        0x01,
+        0x02,
+        0x01,
+        0x1E,
+        0x5F,
+        0x03,
+        0xA0,
+        0x01,
+        0x41,
+      ], mode: Asn1DecodeMode.berTlv);
       expect(outcome.error, isNull);
       final report = renderAsn1Report(outcome);
       expect(report, contains('Tag 0x6f'));
@@ -365,11 +386,13 @@ void main() {
     });
 
     test('aggregates status classes and errors', () {
-      final outcome = parseAccessLog(const [
-        'a - - [08/Mar/2024:09:12:01 +0000] "GET /a HTTP/1.1" 200 10',
-        'b - - [08/Mar/2024:09:12:02 +0000] "GET /b HTTP/1.1" 404 0',
-        'c - - [08/Mar/2024:09:12:03 +0000] "GET /c HTTP/1.1" 500 0',
-      ].join('\n'));
+      final outcome = parseAccessLog(
+        const [
+          'a - - [08/Mar/2024:09:12:01 +0000] "GET /a HTTP/1.1" 200 10',
+          'b - - [08/Mar/2024:09:12:02 +0000] "GET /b HTTP/1.1" 404 0',
+          'c - - [08/Mar/2024:09:12:03 +0000] "GET /c HTTP/1.1" 500 0',
+        ].join('\n'),
+      );
       expect(outcome.summary.parsed, 3);
       expect(outcome.summary.errors['4xx'], 1);
       expect(outcome.summary.errors['5xx'], 1);
@@ -377,8 +400,10 @@ void main() {
     });
 
     test('counts blank lines without treating them as entries', () {
-      final outcome = parseAccessLog('\n\na - - [08/Mar/2024:09:12:01 +0000] '
-          '"GET /a HTTP/1.1" 200 10\n');
+      final outcome = parseAccessLog(
+        '\n\na - - [08/Mar/2024:09:12:01 +0000] '
+        '"GET /a HTTP/1.1" 200 10\n',
+      );
       // Two leading blank lines then one entry.
       expect(outcome.blankLines, 2);
       expect(outcome.summary.total, 3);
@@ -386,10 +411,12 @@ void main() {
     });
 
     test('lists the slowest requests first', () {
-      final outcome = parseAccessLog(const [
-        'a - - [08/Mar/2024:09:12:01 +0000] "GET /a HTTP/1.1" 200 10 "-" "c" 0.100',
-        'b - - [08/Mar/2024:09:12:02 +0000] "GET /b HTTP/1.1" 200 10 "-" "c" 3.500',
-      ].join('\n'));
+      final outcome = parseAccessLog(
+        const [
+          'a - - [08/Mar/2024:09:12:01 +0000] "GET /a HTTP/1.1" 200 10 "-" "c" 0.100',
+          'b - - [08/Mar/2024:09:12:02 +0000] "GET /b HTTP/1.1" 200 10 "-" "c" 3.500',
+        ].join('\n'),
+      );
       expect(outcome.summary.slowest.first.path, '/b');
     });
 
@@ -408,36 +435,48 @@ void main() {
       expect(h.text('Hello World'), 'Hello World iee7 speak');
     });
 
-    toolTest('a wider profile decodes the same sample further',
-        'leetspeak_converter', (h) async {
-      await loadSample(h);
-      await h.tap('Common');
-      // 1 -> i, 3 -> e, 7 -> t.
-      expect(h.text('Hello World'), 'Hello World ieet speak');
-    });
+    toolTest(
+      'a wider profile decodes the same sample further',
+      'leetspeak_converter',
+      (h) async {
+        await loadSample(h);
+        await h.tap('Common');
+        // 1 -> i, 3 -> e, 7 -> t.
+        expect(h.text('Hello World'), 'Hello World ieet speak');
+      },
+    );
 
-    toolTest('converts plain text to leet in encode mode',
-        'leetspeak_converter', (h) async {
-      await h.enter('H3ll0 W0rld', text: 'Hello World');
-      expect(h.text('Hello World'), contains('H'));
-    });
+    toolTest(
+      'converts plain text to leet in encode mode',
+      'leetspeak_converter',
+      (h) async {
+        await h.enter('H3ll0 W0rld', text: 'Hello World');
+        expect(h.text('Hello World'), contains('H'));
+      },
+    );
   });
 
   group('timestamp view', () {
-    toolTest('reports detections from the sample', 'timestamp_extractor', (h) async {
+    toolTest('reports detections from the sample', 'timestamp_extractor', (
+      h,
+    ) async {
       await loadSample(h);
       expect(h.text('Detected timestamps'), contains('1700000000'));
     });
 
     toolTest('reports when nothing is found', 'timestamp_extractor', (h) async {
-      await h.enter('Paste text containing timestamps',
-          text: 'nothing here at all');
+      await h.enter(
+        'Paste text containing timestamps',
+        text: 'nothing here at all',
+      );
       expect(h.text('Detected timestamps'), 'No timestamps found.');
     });
   });
 
   group('session cookie view', () {
-    toolTest('decodes the sample Flask cookie', 'session_cookie_decoder', (h) async {
+    toolTest('decodes the sample Flask cookie', 'session_cookie_decoder', (
+      h,
+    ) async {
       await loadSample(h);
       expect(h.text('Decoded contents'), contains('Flask session cookie'));
     });
@@ -457,13 +496,20 @@ void main() {
       expect(h.text('Tag tree'), contains('Tag 0x5f'));
     });
 
-    toolTest('surfaces a helpful error for malformed input',
-        'asn1_tlv_decoder', (h) async {
-      await h.enter('Paste a PEM certificate or DER/hex bytes',
-          text: 'not hex ~~ here');
-      expect(find.text('Input is neither PEM, Base64, nor hex.'),
-          findsOneWidget);
-    });
+    toolTest(
+      'surfaces a helpful error for malformed input',
+      'asn1_tlv_decoder',
+      (h) async {
+        await h.enter(
+          'Paste a PEM certificate or DER/hex bytes',
+          text: 'not hex ~~ here',
+        );
+        expect(
+          find.text('Input is neither PEM, Base64, nor hex.'),
+          findsOneWidget,
+        );
+      },
+    );
   });
 
   group('access log view', () {

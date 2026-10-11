@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/tool_harness.dart';
+import '../helpers/formatter_engine.dart';
+import 'package:dev_tool/services/javascript_code_service.dart';
 
 void toolTest(
   String description,
@@ -8,13 +10,35 @@ void toolTest(
   Future<void> Function(ToolHarness h) body,
 ) {
   testWidgets(description, (tester) async {
-    final h = ToolHarness(tester);
+    final h = _FormatterHarness(tester);
+    await tester.runAsync(
+      () => JavascriptCodeService.process('const n = 1;', 'Verify'),
+    );
     await h.open(toolId);
     await body(h);
   });
 }
 
+class _FormatterHarness extends ToolHarness {
+  _FormatterHarness(super.tester);
+
+  @override
+  Future<void> enter(
+    String? hint, {
+    String? label,
+    required String text,
+    int index = 0,
+  }) async {
+    await super.enter(hint, label: label, text: text, index: index);
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+    });
+    await settle();
+  }
+}
+
 void main() {
+  setUp(installFormatterChannel);
   group('JSON Format/Validate', () {
     const tool = 'json_format_validate';
 
@@ -50,7 +74,7 @@ void main() {
       await h.enter('Paste HTML here...', text: '<div><p>Hi</p></div>');
       final out = h.text('Output...');
       expect(out, contains('<p>'));
-      expect(out, contains('\n    Hi\n'));
+      expect(out, contains('<p>Hi</p>'));
     });
 
     toolTest('minify collapses whitespace', tool, (h) async {
@@ -75,7 +99,10 @@ void main() {
     const tool = 'css_beautify_minify';
 
     toolTest('beautifies rules with spaced properties', tool, (h) async {
-      await h.enter('Drop a .css file here or paste CSS...', text: 'body{color:red;margin:0}');
+      await h.enter(
+        'Drop a .css file here or paste CSS...',
+        text: 'body{color:red;margin:0}',
+      );
       final out = h.text('Output...');
       expect(out, contains('color: red'));
       expect(out, contains('margin: 0'));

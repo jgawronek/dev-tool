@@ -169,6 +169,7 @@ class _SubdomainTakeoverViewState extends State<_SubdomainTakeoverView> {
           const SizedBox(height: 10),
           Expanded(
             child: buildAdaptiveSplit(
+              breakpoint: 600,
               initialRatio: 0.5,
               minFirstExtent: 360,
               minSecondExtent: 360,

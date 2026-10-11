@@ -1,0 +1,22 @@
+[
+  {
+    "url": "https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/resolve/main/smollm2-360m-instruct-q8_0.gguf",
+    "status": 200,
+    "bytes": "386404992"
+  },
+  {
+    "url": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
+    "status": 200,
+    "bytes": "491400032"
+  },
+  {
+    "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+    "status": 200,
+    "bytes": "1117320736"
+  },
+  {
+    "url": "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf",
+    "status": 200,
+    "bytes": "2393231072"
+  }
+]

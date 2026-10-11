@@ -69,7 +69,10 @@ void main() {
         final h = ToolHarness(tester);
         await h.open(toolId, surface: const Size(1600, 1200));
         expect(
-          find.byIcon(Icons.copy),
+          find.byWidgetPredicate(
+            (w) =>
+                w is Icon && {Icons.copy, Icons.copy_outlined}.contains(w.icon),
+          ),
           findsWidgets,
           reason: '$toolId requests a Copy action but renders none',
         );
@@ -77,15 +80,15 @@ void main() {
     }
   });
 
-  group('tools that request paste render it', () {
+  group('tools have no paste icons', () {
     for (final toolId in _expectPaste) {
       testWidgets(toolId, (tester) async {
         final h = ToolHarness(tester);
         await h.open(toolId, surface: const Size(1600, 1200));
         expect(
           find.byIcon(Icons.content_paste),
-          findsWidgets,
-          reason: '$toolId requests a Clipboard action but renders none',
+          findsNothing,
+          reason: '$toolId must not show removed paste icons',
         );
       });
     }
@@ -94,11 +97,7 @@ void main() {
   group('registry stays consistent', () {
     test('every listed tool id exists', () {
       for (final id in {..._expectCopy, ..._expectPaste}) {
-        expect(
-          ToolRegistry.byId(id),
-          isNotNull,
-          reason: 'no such tool: $id',
-        );
+        expect(ToolRegistry.byId(id), isNotNull, reason: 'no such tool: $id');
       }
     });
 

@@ -1,8 +1,6 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:dev_tool/services/subnet_service.dart';
-import 'package:dev_tool/ui/widgets.dart';
 
 import '../helpers/tool_harness.dart';
 
@@ -22,21 +20,20 @@ void main() {
   group('tool view', () {
     /// Clear lives in the editor's right-click menu, not the toolbar.
     Future<void> editorMenu(ToolHarness h, String item) async {
-      await h.tester.tapAt(
-        h.tester.getCenter(find.byType(EditorPane).first),
-        buttons: kSecondaryMouseButton,
-      );
-      await h.settle();
-      await h.tap(item);
-      await h.settle();
+      if (item == 'Example') {
+        await h.tap('Load sample');
+      } else {
+        await h.enter(null, text: '');
+      }
     }
 
     /// Drives the single address editor the tool exposes.
     Future<void> enterAddress(ToolHarness h, String value) =>
         h.enter('192.168.1.10/24, 2001:db8::1/64, 10.0.0.0/8...', text: value);
 
-    toolTest('computes an IPv4 subnet as you type', 'subnet_calculator',
-        (h) async {
+    toolTest('computes an IPv4 subnet as you type', 'subnet_calculator', (
+      h,
+    ) async {
       await enterAddress(h, '192.168.1.10/24');
       final output = h.text('Subnet details...');
       expect(output, contains('192.168.1.0/24'));
@@ -49,8 +46,9 @@ void main() {
       expect(h.text('Subnet details...'), contains('2001:db8::'));
     });
 
-    toolTest('shows a readable error for a bad address', 'subnet_calculator',
-        (h) async {
+    toolTest('shows a readable error for a bad address', 'subnet_calculator', (
+      h,
+    ) async {
       await enterAddress(h, '999.1.1.1');
       expect(find.textContaining('outside 0-255'), findsOneWidget);
     });
@@ -148,7 +146,10 @@ void main() {
       expect(calculateSubnet('999.1.1.1/24').error, contains('outside 0-255'));
       expect(calculateSubnet('192.168.1/24').error, contains('four octets'));
       expect(calculateSubnet('192.168.1.1/33').error, contains('0-32'));
-      expect(calculateSubnet('192.168.1.1/abc').error, contains('must be a number'));
+      expect(
+        calculateSubnet('192.168.1.1/abc').error,
+        contains('must be a number'),
+      );
       expect(calculateSubnet('a.b.c.d').error, contains('must be numbers'));
       expect(calculateSubnet('').error, contains('Enter an IP address'));
     });
@@ -202,14 +203,25 @@ void main() {
     test('malformed IPv6 is rejected', () {
       expect(calculateSubnet('2001:db8::/129').error, contains('0-128'));
       expect(calculateSubnet('gggg::1/64').error, contains('Not a valid IPv6'));
-      expect(calculateSubnet('1:2:3:4:5:6:7:8:9/64').error, contains('Not a valid'));
+      expect(
+        calculateSubnet('1:2:3:4:5:6:7:8:9/64').error,
+        contains('Not a valid'),
+      );
       expect(calculateSubnet('1::2::3/64').error, contains('Not a valid'));
     });
 
     test('RFC 5952 compression rules', () {
-      expect(calculateSubnet('2001:0db8:0000:0000:0000:0000:0000:0001/128').info!.networkAddress, '2001:db8::1');
+      expect(
+        calculateSubnet(
+          '2001:0db8:0000:0000:0000:0000:0000:0001/128',
+        ).info!.networkAddress,
+        '2001:db8::1',
+      );
       // A single zero group is written out rather than compressed.
-      expect(calculateSubnet('1:0:2:3:4:5:6:7/128').info!.networkAddress, '1:0:2:3:4:5:6:7');
+      expect(
+        calculateSubnet('1:0:2:3:4:5:6:7/128').info!.networkAddress,
+        '1:0:2:3:4:5:6:7',
+      );
     });
   });
 

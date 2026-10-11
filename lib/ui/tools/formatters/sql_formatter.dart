@@ -31,9 +31,24 @@ class _SqlFormatterViewState extends State<_SqlFormatterView> {
   }
 
   void _run() {
+    if (_input.text.trim().isEmpty) {
+      setState(() => _output.clear());
+      return;
+    }
     if (_mode == 'SQL to English') {
-      final explanation = _SqlExplainer().explain(_input.text);
-      _output.text = _formatSqlExplanation(explanation);
+      final protected = _protectSqlLiterals(_input.text);
+      var masked = protected.masked;
+      for (final entry in protected.literals.entries) {
+        if (entry.value.startsWith('--') || entry.value.startsWith('/*')) {
+          masked = masked.replaceAll(entry.key, ' ');
+        }
+      }
+      final explanation = _SqlExplainer().explain(masked);
+      var output = _formatSqlExplanation(explanation);
+      for (final entry in protected.literals.entries) {
+        output = output.replaceAll(entry.key, entry.value);
+      }
+      _output.text = output;
       setState(() {});
       return;
     }
@@ -52,10 +67,7 @@ class _SqlFormatterViewState extends State<_SqlFormatterView> {
         inputActions: [
           ToolButton(label: 'Go', onPressed: _run),
 
-          const SmallDropdown(
-            items: ['General SQL'],
-            initialValue: 'General SQL',
-          ),
+          const Text('General SQL', style: TextStyle(fontSize: 12)),
         ],
         outputActions: [
           SmallDropdown(
@@ -98,12 +110,13 @@ class _SqlFormatterViewState extends State<_SqlFormatterView> {
 }
 
 String _formatSql(String source, String keywordCase, String indentString) {
-  final compact = _compactSqlWhitespace(source);
+  final protected = _protectSqlLiterals(source);
+  final compact = _compactSqlWhitespace(protected.masked);
   if (compact.isEmpty) return '';
 
   final cased = _caseSqlKeywords(compact, keywordCase);
   final clausePattern = RegExp(
-    r'\s+((?:left|right|inner|outer|full|cross)\s+join|join|from|where|having|group\s+by|order\s+by|limit|offset|union(?:\s+all)?|values|set)\b',
+    r'\b((?:left|right|inner|outer|full|cross)\s+join|join|from|where|having|group\s+by|order\s+by|limit|offset|union(?:\s+all)?|values|set)\b',
     caseSensitive: false,
   );
   var text = cased.replaceAllMapped(clausePattern, (match) {
@@ -129,7 +142,86 @@ String _formatSql(String source, String keywordCase, String indentString) {
       formatted.add(line);
     }
   }
-  return formatted.join('\n');
+  var output = formatted.join('\n');
+  for (final entry in protected.literals.entries) {
+    output = output.replaceAll(entry.key, entry.value);
+  }
+  return output;
+}
+
+/// Keep values, quoted identifiers, and comments out of keyword/layout rules.
+({String masked, Map<String, String> literals}) _protectSqlLiterals(
+  String source,
+) {
+  final literals = <String, String>{};
+  final buffer = StringBuffer();
+  var prefix = '__devutils_literal_';
+  while (source.contains(prefix)) {
+    prefix += '_';
+  }
+  for (var i = 0; i < source.length;) {
+    final start = i;
+    final char = source[i];
+    if (source.startsWith('--', i)) {
+      final end = source.indexOf('\n', i);
+      i = end < 0 ? source.length : end;
+      final key = '$prefix${literals.length}__';
+      literals[key] = '${source.substring(start, i)}\n';
+      buffer.write(' $key ');
+      continue;
+    }
+    if (source.startsWith('/*', i)) {
+      var depth = 1;
+      i += 2;
+      while (i < source.length && depth > 0) {
+        if (source.startsWith('/*', i)) {
+          depth++;
+          i += 2;
+        } else if (source.startsWith('*/', i)) {
+          depth--;
+          i += 2;
+        } else {
+          i++;
+        }
+      }
+    } else if (char == "'" || char == '"' || char == '`' || char == '[') {
+      final close = char == '[' ? ']' : char;
+      i++;
+      while (i < source.length) {
+        if (source[i] == '\\') {
+          i = min(source.length, i + 2);
+          continue;
+        }
+        if (source[i++] == close) {
+          if (i < source.length && source[i] == close) {
+            i++;
+          } else {
+            break;
+          }
+        }
+      }
+    } else if (char == r'$') {
+      final delimiter = RegExp(
+        r'^\$(?:[A-Za-z_]\w*)?\$',
+      ).firstMatch(source.substring(i));
+      if (delimiter == null) {
+        buffer.write(char);
+        i++;
+        continue;
+      }
+      final tag = delimiter.group(0)!;
+      final end = source.indexOf(tag, i + tag.length);
+      i = end < 0 ? source.length : end + tag.length;
+    } else {
+      buffer.write(char);
+      i++;
+      continue;
+    }
+    final key = '$prefix${literals.length}__';
+    literals[key] = source.substring(start, i);
+    buffer.write(key);
+  }
+  return (masked: buffer.toString(), literals: literals);
 }
 
 String _compactSqlWhitespace(String source) {
@@ -358,10 +450,9 @@ class _SqlExplainer {
         );
       } else {
         columns.addAll(
-          colString
-              .split(',')
-              .map((item) => item.trim())
-              .where((item) => item.isNotEmpty),
+          _splitColumnDefinitions(
+            colString,
+          ).map((item) => item.trim()).where((item) => item.isNotEmpty),
         );
         final colDesc = columns.length > 3
             ? '${columns.length} columns'
@@ -380,9 +471,28 @@ class _SqlExplainer {
       }
     }
 
+    if (!RegExp(r'\bFROM\b', caseSensitive: false).hasMatch(sql)) {
+      final expression = sql
+          .replaceFirst(RegExp(r'^SELECT\s+', caseSensitive: false), '')
+          .replaceFirst(RegExp(r';$'), '');
+      return _SqlExplanation(
+        summary: 'Selects the values: $expression',
+        breakdown: [
+          _SqlComponent(
+            clause: 'SELECT',
+            explanation: 'Reads expressions without a table',
+          ),
+        ],
+        tables: const [],
+        columns: [expression],
+        conditions: const [],
+        queryType: _SqlQueryType.select,
+      );
+    }
+
     final fromMatch = _firstMatch(
       sql,
-      r'FROM\s+([\w\s,\.`"]+?)(?:\s+(?:WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|CROSS|GROUP|ORDER|LIMIT|HAVING|UNION|$))',
+      r'FROM\s+([\w\s,\.`"]+?)(?:\s+(?:WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|CROSS|GROUP|ORDER|LIMIT|HAVING|UNION)|$)',
     );
     if (fromMatch != null) {
       final tablesPart = fromMatch
@@ -394,8 +504,7 @@ class _SqlExplainer {
             '',
           )
           .trim();
-      final parsedTables = tablesPart
-          .split(',')
+      final parsedTables = _splitColumnDefinitions(tablesPart)
           .map((item) => item.trim())
           .map((item) => item.split(' ').first)
           .where((item) => item.isNotEmpty)
@@ -413,7 +522,7 @@ class _SqlExplainer {
     }
 
     const joinPattern =
-        r'(LEFT\s+OUTER\s+|RIGHT\s+OUTER\s+|LEFT\s+|RIGHT\s+|INNER\s+|OUTER\s+|CROSS\s+)?JOIN\s+([\w\.`"]+)(?:\s+(?:AS\s+)?(\w+))?(?:\s+ON\s+(.+?))?(?=\s+(?:LEFT|RIGHT|INNER|OUTER|CROSS|JOIN|WHERE|GROUP|ORDER|LIMIT|HAVING|$))';
+        r'(LEFT\s+OUTER\s+|RIGHT\s+OUTER\s+|LEFT\s+|RIGHT\s+|INNER\s+|OUTER\s+|CROSS\s+)?JOIN\s+([\w\.`"]+)(?:\s+(?:AS\s+)?(\w+))?(?:\s+ON\s+(.+?))?(?=\s+(?:LEFT|RIGHT|INNER|OUTER|CROSS|JOIN|WHERE|GROUP|ORDER|LIMIT|HAVING)|$)';
     for (final match in _allMatches(sql, joinPattern)) {
       final joinType = (match.group(1) ?? '').trim().toUpperCase();
       final joinTable = match.group(2) ?? '';
@@ -431,7 +540,7 @@ class _SqlExplainer {
 
     final whereMatch = _firstMatch(
       sql,
-      r'WHERE\s+(.+?)(?:\s+(?:GROUP|ORDER|LIMIT|HAVING|UNION|$))',
+      r'WHERE\s+(.+?)(?:\s+(?:GROUP|ORDER|LIMIT|HAVING|UNION)|$)',
     );
     if (whereMatch != null) {
       final whereClause = whereMatch
@@ -454,18 +563,16 @@ class _SqlExplainer {
 
     final groupMatch = _firstMatch(
       sql,
-      r'GROUP\s+BY\s+(.+?)(?:\s+(?:HAVING|ORDER|LIMIT|UNION|$))',
+      r'GROUP\s+BY\s+(.+?)(?:\s+(?:HAVING|ORDER|LIMIT|UNION)|$)',
     );
     if (groupMatch != null) {
       final groupClause = groupMatch
           .group(1)!
           .replaceAll(RegExp(r'\s+(HAVING|ORDER|LIMIT|UNION).*'), '')
           .trim();
-      final groupCols = groupClause
-          .split(',')
-          .map((item) => item.trim())
-          .where((item) => item.isNotEmpty)
-          .toList();
+      final groupCols = _splitColumnDefinitions(
+        groupClause,
+      ).map((item) => item.trim()).where((item) => item.isNotEmpty).toList();
       if (groupCols.isNotEmpty) {
         components.add(
           _SqlComponent(
@@ -479,7 +586,7 @@ class _SqlExplainer {
 
     final havingMatch = _firstMatch(
       sql,
-      r'HAVING\s+(.+?)(?:\s+(?:ORDER|LIMIT|UNION|$))',
+      r'HAVING\s+(.+?)(?:\s+(?:ORDER|LIMIT|UNION)|$)',
     );
     if (havingMatch != null) {
       final havingClause = havingMatch
@@ -498,7 +605,7 @@ class _SqlExplainer {
 
     final orderMatch = _firstMatch(
       sql,
-      r'ORDER\s+BY\s+(.+?)(?:\s+(?:LIMIT|OFFSET|UNION|$))',
+      r'ORDER\s+BY\s+(.+?)(?:\s+(?:LIMIT|OFFSET|UNION)|$)',
     );
     if (orderMatch != null) {
       final orderClause = orderMatch
@@ -578,10 +685,9 @@ class _SqlExplainer {
     if (colMatch != null) {
       final colPart = colMatch.group(1)!;
       columns.addAll(
-        colPart
-            .split(',')
-            .map((item) => item.trim())
-            .where((item) => item.isNotEmpty),
+        _splitColumnDefinitions(
+          colPart,
+        ).map((item) => item.trim()).where((item) => item.isNotEmpty),
       );
       components.add(
         _SqlComponent(
@@ -592,14 +698,20 @@ class _SqlExplainer {
     }
 
     final valuesCount = RegExp(r'\)\s*,\s*\(').allMatches(sql).length + 1;
-    components.add(
-      _SqlComponent(
-        clause: 'VALUES',
-        explanation: 'Inserting $valuesCount row${valuesCount == 1 ? '' : 's'}',
-      ),
-    );
-
-    if (sql.toUpperCase().contains('SELECT')) {
+    final fromSelect = RegExp(
+      r'\bSELECT\b',
+      caseSensitive: false,
+    ).hasMatch(sql);
+    if (!fromSelect) {
+      components.add(
+        _SqlComponent(
+          clause: 'VALUES',
+          explanation:
+              'Inserting $valuesCount row${valuesCount == 1 ? '' : 's'}',
+        ),
+      );
+    }
+    if (fromSelect) {
       components.add(
         _SqlComponent(
           clause: 'SELECT',
@@ -608,8 +720,9 @@ class _SqlExplainer {
       );
     }
 
-    final summary =
-        "Inserts $valuesCount row${valuesCount == 1 ? '' : 's'} into '${tables.firstOrNull ?? 'table'}' with ${columns.length} column${columns.length == 1 ? '' : 's'}";
+    final summary = fromSelect
+        ? "Inserts rows from a subquery into '${tables.firstOrNull ?? 'table'}'"
+        : "Inserts $valuesCount row${valuesCount == 1 ? '' : 's'} into '${tables.firstOrNull ?? 'table'}' with ${columns.length} column${columns.length == 1 ? '' : 's'}";
 
     return _SqlExplanation(
       summary: summary,
@@ -653,11 +766,9 @@ class _SqlExplainer {
           .group(1)!
           .replaceAll(RegExp(r'\s+WHERE.*', caseSensitive: false), '')
           .trim();
-      final assignments = setPart
-          .split(',')
-          .map((item) => item.trim())
-          .where((item) => item.isNotEmpty)
-          .toList();
+      final assignments = _splitColumnDefinitions(
+        setPart,
+      ).map((item) => item.trim()).where((item) => item.isNotEmpty).toList();
       columns.addAll(
         assignments
             .map((assignment) => assignment.split('=').first.trim())
@@ -941,12 +1052,37 @@ class _SqlExplainer {
   }
 
   List<_SqlCondition> _explainConditions(String whereClause) {
-    final parts = whereClause
-        .replaceAll(RegExp(r'\s+AND\s+', caseSensitive: false), '§AND§')
-        .replaceAll(RegExp(r'\s+OR\s+', caseSensitive: false), '§OR§')
-        .split('§')
-        .where((item) => item.isNotEmpty)
-        .toList();
+    final parts = <String>[];
+    var start = 0;
+    var between = false;
+    var depth = 0;
+    final boundaries = RegExp(
+      r'\b(BETWEEN|AND|OR)\b|[()]',
+      caseSensitive: false,
+    );
+    for (final match in boundaries.allMatches(whereClause)) {
+      final token = match.group(0)!.toUpperCase();
+      if (token == '(') {
+        depth++;
+        continue;
+      }
+      if (token == ')') {
+        depth--;
+        continue;
+      }
+      if (depth != 0) continue;
+      if (token == 'BETWEEN') {
+        between = true;
+        continue;
+      }
+      if (token == 'AND' && between) {
+        between = false;
+        continue;
+      }
+      parts.add(whereClause.substring(start, match.start));
+      start = match.end;
+    }
+    parts.add(whereClause.substring(start));
     final explained = <_SqlCondition>[];
     for (final part in parts) {
       if (part == 'AND' || part == 'OR') {
@@ -1052,11 +1188,9 @@ class _SqlExplainer {
   }
 
   String _explainOrderBy(String clause) {
-    final parts = clause
-        .split(',')
-        .map((item) => item.trim())
-        .where((item) => item.isNotEmpty)
-        .toList();
+    final parts = _splitColumnDefinitions(
+      clause,
+    ).map((item) => item.trim()).where((item) => item.isNotEmpty).toList();
     final explanations = <String>[];
     for (final part in parts) {
       final upper = part.toUpperCase();

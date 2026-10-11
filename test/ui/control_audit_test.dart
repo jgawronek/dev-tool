@@ -11,6 +11,8 @@ import 'package:dev_tool/state/tool_state.dart';
 import 'package:dev_tool/ui/widgets.dart';
 
 import 'functionality_audit_test.dart' as audit;
+import '../helpers/formatter_engine.dart';
+import 'package:dev_tool/services/javascript_code_service.dart';
 
 // These actions need a configured external target, model, or native process.
 // Record the gap rather than presenting an unexecuted action as a pass.
@@ -34,6 +36,10 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       SharedPreferences.setMockInitialValues({});
+      if ({'html_beautify_minify', 'css_beautify_minify', 'js_beautify_minify'}.contains(tool.id)) {
+        installFormatterChannel();
+        await tester.runAsync(() => JavascriptCodeService.process('const warm = 1;', 'Verify'));
+      }
       String clipboard = '';
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(SystemChannels.platform, (call) async {

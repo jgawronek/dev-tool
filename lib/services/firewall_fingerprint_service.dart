@@ -333,41 +333,21 @@ class FirewallFingerprintService {
     List<FirewallProbeResponse> attacks,
   ) {
     final reasons = <String>[];
-    if (normal.statusCode != 0 &&
-        noUserAgent.statusCode != 0 &&
-        normal.statusCode != noUserAgent.statusCode) {
+    final baselineAllowed = normal.statusCode >= 200 && normal.statusCode < 400;
+    if (baselineAllowed && _blockedStatusCodes.contains(noUserAgent.statusCode)) {
       reasons.add(
-        'Response changed without a User-Agent: normal ${normal.statusCode}, modified ${noUserAgent.statusCode}.',
+        'Request without a User-Agent was blocked: normal ${normal.statusCode}, modified ${noUserAgent.statusCode}.',
       );
     }
     for (final attack in attacks) {
-      if (normal.statusCode != 0 &&
-          attack.statusCode != 0 &&
-          attack.statusCode != normal.statusCode) {
+      if (baselineAllowed && _blockedStatusCodes.contains(attack.statusCode)) {
         reasons.add(
-          '${attack.name} changed the response code: normal ${normal.statusCode}, attack ${attack.statusCode}.',
-        );
-        break;
-      }
-      if (_blockedStatusCodes.contains(attack.statusCode)) {
-        reasons.add(
-          '${attack.name} returned blocking status ${attack.statusCode}.',
+          '${attack.name} returned blocking status ${attack.statusCode} after normal ${normal.statusCode}.',
         );
         break;
       }
       if (_blockBodyPattern.hasMatch(attack.bodySnippet)) {
         reasons.add('${attack.name} returned a block page pattern.');
-        break;
-      }
-    }
-
-    final normalServer = normal.header('server') ?? '';
-    for (final attack in attacks) {
-      final attackServer = attack.header('server') ?? '';
-      if (normalServer != attackServer && attackServer.isNotEmpty) {
-        reasons.add(
-          'Server header changed: normal "$normalServer", attack "$attackServer".',
-        );
         break;
       }
     }
@@ -721,15 +701,30 @@ abstract class _WafRule {
 class _HeaderRule extends _WafRule {
   _HeaderRule(this.header, String pattern, int weight)
     : _pattern = RegExp(pattern, caseSensitive: false),
-      super(weight, '$header matches /$pattern/');
+      super(
+        weight,
+        '${header == 'set-cookie' ? 'cookie name' : header} matches /$pattern/',
+      );
 
   final String header;
   final RegExp _pattern;
 
+  // HTTP clients can combine Set-Cookie fields. An Expires date also has a
+  // comma, so only accept a comma followed by a cookie name and equals sign.
+  static final _cookieNames = RegExp(
+    r"(?:^|,)\s*([!#$%&'*+.^_`|~0-9A-Za-z-]+)=",
+  );
+
   @override
   bool matches(FirewallProbeResponse probe) {
     final value = probe.header(header);
-    return value != null && _pattern.hasMatch(value);
+    if (value == null) return false;
+    if (header == 'set-cookie') {
+      return _cookieNames
+          .allMatches(value)
+          .any((match) => _pattern.matchAsPrefix(match.group(1)!) != null);
+    }
+    return _pattern.hasMatch(value);
   }
 }
 

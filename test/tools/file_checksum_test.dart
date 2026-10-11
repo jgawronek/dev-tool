@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:dev_tool/services/file_checksum_service.dart';
@@ -95,7 +97,10 @@ void main() {
       final outcome = await checksumFile(sample.path);
       final manifest = outcome.toManifest();
       expect(manifest.split('\n'), hasLength(4));
-      expect(manifest, contains('9e107d9d372bb6826bd81d3542a419d6  sample.txt'));
+      expect(
+        manifest,
+        contains('9e107d9d372bb6826bd81d3542a419d6  sample.txt'),
+      );
     });
 
     test('parses a standard manifest', () {
@@ -123,7 +128,9 @@ void main() {
 
     test('bareDigest only accepts hex of digest length', () {
       expect(
-        bareDigest('d7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592'),
+        bareDigest(
+          'd7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592',
+        ),
         isNotNull,
       );
       expect(bareDigest('9e107d9d372bb6826bd81d3542a419d6'), isNotNull);
@@ -145,7 +152,8 @@ void main() {
     test('a mismatched digest reports false rather than throwing', () async {
       final outcome = await checksumFile(
         sample.path,
-        expectedDigest: '0000000000000000000000000000000000000000000000000000000000000000',
+        expectedDigest:
+            '0000000000000000000000000000000000000000000000000000000000000000',
       );
       expect(outcome.match, isFalse);
       expect(outcome.checkedAlgorithm, isNull);
@@ -166,14 +174,17 @@ void main() {
       expect(outcome.checksums, isNotEmpty);
     });
 
-    test('a short MD5 digest still verifies against the right algorithm', () async {
-      final outcome = await checksumFile(
-        sample.path,
-        expectedDigest: '9e107d9d372bb6826bd81d3542a419d6',
-      );
-      expect(outcome.match, isTrue);
-      expect(outcome.checkedAlgorithm, ChecksumAlgorithm.md5);
-    });
+    test(
+      'a short MD5 digest still verifies against the right algorithm',
+      () async {
+        final outcome = await checksumFile(
+          sample.path,
+          expectedDigest: '9e107d9d372bb6826bd81d3542a419d6',
+        );
+        expect(outcome.match, isTrue);
+        expect(outcome.checkedAlgorithm, ChecksumAlgorithm.md5);
+      },
+    );
   });
   group('tool view', () {
     // Selecting a file goes through the native dialog, which returns null in
@@ -193,23 +204,83 @@ void main() {
       expect(find.text('Verify'), findsOneWidget);
     });
 
-    toolTest('tapping choose file without a plugin is harmless',
-        'file_checksum', (h) async {
+    toolTest(
+      'tapping choose file without a plugin is harmless',
+      'file_checksum',
+      (h) async {
+        await h.tap('Choose file...');
+        await h.settle();
+        expect(h.tester.takeException(), isNull);
+        expect(find.text('No file selected'), findsOneWidget);
+      },
+    );
+
+    toolTest('cancel keeps the expected digest', 'file_checksum', (h) async {
+      const digest =
+          'd7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592';
+      await setExpected(h, digest);
       await h.tap('Choose file...');
-      await h.settle();
+      expect(find.text('No file selected'), findsOneWidget);
+      final field = h.tester
+          .widgetList<TextField>(find.byType(TextField))
+          .firstWhere(
+            (f) => f.decoration?.hintText == 'Paste a checksum to verify',
+          );
+      expect(field.controller!.text, digest);
+    });
+
+    toolTest('picker failure shows a recoverable error', 'file_checksum', (
+      h,
+    ) async {
+      const channel = MethodChannel('devutils/file_dialogs');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (_) async {
+        throw PlatformException(code: 'picker_failed', message: 'Unavailable');
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      await h.tap('Choose file...');
+      expect(
+        find.text('Could not open the file picker. Please try again.'),
+        findsOneWidget,
+      );
       expect(h.tester.takeException(), isNull);
-      expect(find.text('No file selected'), findsOneWidget);
+      final button = h.tester
+          .widgetList<ToolButton>(find.byType(ToolButton))
+          .firstWhere((b) => b.label == 'Choose file...');
+      expect(button.onPressed, isNotNull);
     });
 
-    toolTest('clear resets the panel', 'file_checksum', (h) async {
-      await setExpected(h, 'd7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592');
-      await h.tap('Clear');
-      await h.settle();
-      expect(find.text('No file selected'), findsOneWidget);
-    });
+    toolTest(
+      'picker completion after leaving the tool is harmless',
+      'file_checksum',
+      (h) async {
+        const channel = MethodChannel('devutils/file_dialogs');
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        final picked = Completer<String?>();
+        var calls = 0;
+        messenger.setMockMethodCallHandler(channel, (_) {
+          calls++;
+          return picked.future;
+        });
+        addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+        await h.tap('Choose file...');
+        final button = h.tester
+            .widgetList<ToolButton>(find.byType(ToolButton))
+            .firstWhere((b) => b.label == 'Choose file...');
+        expect(button.onPressed, isNull);
+        expect(calls, 1);
+        await h.tester.pumpWidget(const SizedBox());
+        picked.complete('/tmp/example.txt');
+        await h.settle();
+        expect(h.tester.takeException(), isNull);
+      },
+    );
 
-    toolTest('verify stays disabled until a file is chosen', 'file_checksum',
-        (h) async {
+    toolTest('verify stays disabled until a file is chosen', 'file_checksum', (
+      h,
+    ) async {
       final button = h.tester
           .widgetList<ToolButton>(find.byType(ToolButton))
           .firstWhere((b) => b.label == 'Verify');
@@ -222,7 +293,9 @@ void main() {
 Future<void> setExpected(ToolHarness h, String value) async {
   final field = h.tester
       .widgetList<TextField>(find.byType(TextField))
-      .firstWhere((f) => f.decoration?.hintText == 'Paste a checksum to verify');
+      .firstWhere(
+        (f) => f.decoration?.hintText == 'Paste a checksum to verify',
+      );
   field.controller!.text = value;
   await h.settle();
 }
@@ -245,8 +318,11 @@ String _sha256Hex(List<int> bytes) {
   for (var chunk = 0; chunk < message.length; chunk += 64) {
     for (var i = 0; i < 16; i++) {
       final o = chunk + i * 4;
-      w[i] = (message[o] << 24) | (message[o + 1] << 16) |
-          (message[o + 2] << 8) | message[o + 3];
+      w[i] =
+          (message[o] << 24) |
+          (message[o + 1] << 16) |
+          (message[o + 2] << 8) |
+          message[o + 3];
     }
     for (var i = 16; i < 64; i++) {
       final s0 = _rotr(w[i - 15], 7) ^ _rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
@@ -261,33 +337,101 @@ String _sha256Hex(List<int> bytes) {
       final s0 = _rotr(a, 2) ^ _rotr(a, 13) ^ _rotr(a, 22);
       final maj = (a & b) ^ (a & c) ^ (b & c);
       final temp2 = (s0 + maj) & 0xffffffff;
-      h = g; g = f; f = e;
+      h = g;
+      g = f;
+      f = e;
       e = (d + temp1) & 0xffffffff;
-      d = c; c = b; b = a;
+      d = c;
+      c = b;
+      b = a;
       a = (temp1 + temp2) & 0xffffffff;
     }
-    h0 = (h0 + a) & 0xffffffff; h1 = (h1 + b) & 0xffffffff;
-    h2 = (h2 + c) & 0xffffffff; h3 = (h3 + d) & 0xffffffff;
-    h4 = (h4 + e) & 0xffffffff; h5 = (h5 + f) & 0xffffffff;
-    h6 = (h6 + g) & 0xffffffff; h7 = (h7 + h) & 0xffffffff;
+    h0 = (h0 + a) & 0xffffffff;
+    h1 = (h1 + b) & 0xffffffff;
+    h2 = (h2 + c) & 0xffffffff;
+    h3 = (h3 + d) & 0xffffffff;
+    h4 = (h4 + e) & 0xffffffff;
+    h5 = (h5 + f) & 0xffffffff;
+    h6 = (h6 + g) & 0xffffffff;
+    h7 = (h7 + h) & 0xffffffff;
   }
-  return [h0, h1, h2, h3, h4, h5, h6, h7]
-      .map((v) => v.toRadixString(16).padLeft(8, '0'))
-      .join();
+  return [
+    h0,
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    h7,
+  ].map((v) => v.toRadixString(16).padLeft(8, '0')).join();
 }
 
 int _rotr(int x, int n) => ((x >> n) | (x << (32 - n))) & 0xffffffff;
 
 const _k256 = [
-  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
-  0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
-  0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
-  0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
-  0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
-  0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-  0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
-  0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
-  0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  0x428a2f98,
+  0x71374491,
+  0xb5c0fbcf,
+  0xe9b5dba5,
+  0x3956c25b,
+  0x59f111f1,
+  0x923f82a4,
+  0xab1c5ed5,
+  0xd807aa98,
+  0x12835b01,
+  0x243185be,
+  0x550c7dc3,
+  0x72be5d74,
+  0x80deb1fe,
+  0x9bdc06a7,
+  0xc19bf174,
+  0xe49b69c1,
+  0xefbe4786,
+  0x0fc19dc6,
+  0x240ca1cc,
+  0x2de92c6f,
+  0x4a7484aa,
+  0x5cb0a9dc,
+  0x76f988da,
+  0x983e5152,
+  0xa831c66d,
+  0xb00327c8,
+  0xbf597fc7,
+  0xc6e00bf3,
+  0xd5a79147,
+  0x06ca6351,
+  0x14292967,
+  0x27b70a85,
+  0x2e1b2138,
+  0x4d2c6dfc,
+  0x53380d13,
+  0x650a7354,
+  0x766a0abb,
+  0x81c2c92e,
+  0x92722c85,
+  0xa2bfe8a1,
+  0xa81a664b,
+  0xc24b8b70,
+  0xc76c51a3,
+  0xd192e819,
+  0xd6990624,
+  0xf40e3585,
+  0x106aa070,
+  0x19a4c116,
+  0x1e376c08,
+  0x2748774c,
+  0x34b0bcb5,
+  0x391c0cb3,
+  0x4ed8aa4a,
+  0x5b9cca4f,
+  0x682e6ff3,
+  0x748f82ee,
+  0x78a5636f,
+  0x84c87814,
+  0x8cc70208,
+  0x90befffa,
+  0xa4506ceb,
+  0xbef9a3f7,
+  0xc67178f2,
 ];

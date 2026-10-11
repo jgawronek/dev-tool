@@ -1,9 +1,7 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:dev_tool/services/password_hash_service.dart';
-import 'package:dev_tool/ui/widgets.dart';
 
 import '../helpers/tool_harness.dart';
 
@@ -77,7 +75,11 @@ void main() {
           PasswordHashAlgorithm.pbkdf2Sha256,
           params: PasswordHashParams(iterations: iterations, salt: 'c2FsdA'),
         );
-        expect(result.encoded.split(r'$').last, expected, reason: '$iterations');
+        expect(
+          result.encoded.split(r'$').last,
+          expected,
+          reason: '$iterations',
+        );
       });
     });
 
@@ -126,7 +128,11 @@ void main() {
   group('round trips', () {
     test('every algorithm verifies its own output and rejects others', () {
       for (final algorithm in PasswordHashAlgorithm.values) {
-        final result = _hash('swordfish', algorithm, params: _paramsFor(algorithm));
+        final result = _hash(
+          'swordfish',
+          algorithm,
+          params: _paramsFor(algorithm),
+        );
         expect(result.error, isNull, reason: '$algorithm: ${result.error}');
         expect(result.encoded, startsWith(r'$'), reason: algorithm.label);
         expect(
@@ -156,14 +162,30 @@ void main() {
 
     test('an explicit salt makes hashing reproducible', () {
       const params = PasswordHashParams(iterations: 1000, salt: 'c2FsdHNhbHQ');
-      final first = _hash('abc', PasswordHashAlgorithm.pbkdf2Sha256, params: params);
-      final second = _hash('abc', PasswordHashAlgorithm.pbkdf2Sha256, params: params);
+      final first = _hash(
+        'abc',
+        PasswordHashAlgorithm.pbkdf2Sha256,
+        params: params,
+      );
+      final second = _hash(
+        'abc',
+        PasswordHashAlgorithm.pbkdf2Sha256,
+        params: params,
+      );
       expect(first.encoded, second.encoded);
     });
 
     test('an omitted salt produces a different hash each time', () {
-      final first = _hash('abc', PasswordHashAlgorithm.pbkdf2Sha256, params: const PasswordHashParams(iterations: 1000));
-      final second = _hash('abc', PasswordHashAlgorithm.pbkdf2Sha256, params: const PasswordHashParams(iterations: 1000));
+      final first = _hash(
+        'abc',
+        PasswordHashAlgorithm.pbkdf2Sha256,
+        params: const PasswordHashParams(iterations: 1000),
+      );
+      final second = _hash(
+        'abc',
+        PasswordHashAlgorithm.pbkdf2Sha256,
+        params: const PasswordHashParams(iterations: 1000),
+      );
       expect(first.encoded, isNot(second.encoded));
       expect(verifyPasswordSync('abc', first.encoded).matched, isTrue);
       expect(verifyPasswordSync('abc', second.encoded).matched, isTrue);
@@ -172,7 +194,10 @@ void main() {
 
   group('input handling', () {
     test('empty inputs are rejected with guidance', () {
-      expect(_hash('', PasswordHashAlgorithm.bcrypt).error, contains('Enter a password'));
+      expect(
+        _hash('', PasswordHashAlgorithm.bcrypt).error,
+        contains('Enter a password'),
+      );
       expect(verifyPasswordSync('x', '').message, contains('Paste a hash'));
       expect(verifyPasswordSync('', 'anything').message, contains('password'));
     });
@@ -188,51 +213,75 @@ void main() {
         isNotNull,
       );
       expect(
-        verifyPasswordSync('x', r'$argon2id$v=18$m=1024,t=2,p=1$c2FsdA$aGFzaA').message,
+        verifyPasswordSync(
+          'x',
+          r'$argon2id$v=18$m=1024,t=2,p=1$c2FsdA$aGFzaA',
+        ).message,
         isNotNull,
       );
     });
 
     test('invalid cost parameters report the constraint', () {
       expect(
-        _hash('x', PasswordHashAlgorithm.bcrypt,
-            params: const PasswordHashParams(rounds: 2)).error,
+        _hash(
+          'x',
+          PasswordHashAlgorithm.bcrypt,
+          params: const PasswordHashParams(rounds: 2),
+        ).error,
         contains('cost'),
       );
       expect(
-        _hash('x', PasswordHashAlgorithm.scrypt,
-            params: const PasswordHashParams(scryptN: 1000)).error,
+        _hash(
+          'x',
+          PasswordHashAlgorithm.scrypt,
+          params: const PasswordHashParams(scryptN: 1000),
+        ).error,
         contains('power of 2'),
       );
       expect(
-        _hash('x', PasswordHashAlgorithm.argon2id,
-            params: const PasswordHashParams(memoryKiB: 1)).error,
+        _hash(
+          'x',
+          PasswordHashAlgorithm.argon2id,
+          params: const PasswordHashParams(memoryKiB: 1),
+        ).error,
         contains('memory'),
       );
     });
 
     test('weak cost factors warn without failing', () {
       expect(
-        _hash('x', PasswordHashAlgorithm.bcrypt,
-            params: const PasswordHashParams(rounds: 4)).warning,
+        _hash(
+          'x',
+          PasswordHashAlgorithm.bcrypt,
+          params: const PasswordHashParams(rounds: 4),
+        ).warning,
         contains('below'),
       );
       expect(
-        _hash('x', PasswordHashAlgorithm.argon2id,
-            params: const PasswordHashParams(iterations: 2, memoryKiB: 1024)).warning,
+        _hash(
+          'x',
+          PasswordHashAlgorithm.argon2id,
+          params: const PasswordHashParams(iterations: 2, memoryKiB: 1024),
+        ).warning,
         contains('below'),
       );
       expect(
-        _hash('x', PasswordHashAlgorithm.pbkdf2Sha256,
-            params: const PasswordHashParams(iterations: 1000)).warning,
+        _hash(
+          'x',
+          PasswordHashAlgorithm.pbkdf2Sha256,
+          params: const PasswordHashParams(iterations: 1000),
+        ).warning,
         contains('below'),
       );
     });
 
     test('strong parameters raise no warning', () {
       expect(
-        _hash('x', PasswordHashAlgorithm.bcrypt,
-            params: const PasswordHashParams(rounds: 10)).warning,
+        _hash(
+          'x',
+          PasswordHashAlgorithm.bcrypt,
+          params: const PasswordHashParams(rounds: 10),
+        ).warning,
         isNull,
       );
     });
@@ -242,14 +291,11 @@ void main() {
     /// Opens the editor context menu with bounded pumps; `pumpAndSettle`
     /// never returns here because the hashing spinner animates continuously.
     Future<void> editorMenu(ToolHarness h, String item) async {
-      final pane = find.byType(EditorPane).first;
-      await h.tester.tapAt(
-        h.tester.getCenter(pane),
-        buttons: kSecondaryMouseButton,
-      );
-      await h.settle();
-      await h.tap(item);
-      await h.settle();
+      if (item == 'Example') {
+        await h.tap('Load sample');
+      } else {
+        await h.enter(null, text: '');
+      }
     }
 
     /// Drives the "Hash to check" TextField, which is a plain TextField
@@ -275,17 +321,21 @@ void main() {
       await h.tester.pump();
     }
 
-    toolTest('hashes an entered password to a bcrypt string', 'password_hashing',
-        (h) async {
-      await h.enter('Enter a password...', text: 'swordfish');
-      await settleAsync(h);
-      final output = h.text('Generated hash...');
-      expect(output, startsWith(r'$2a$'));
-      expect(verifyPasswordSync('swordfish', output).matched, isTrue);
-    });
+    toolTest(
+      'hashes an entered password to a bcrypt string',
+      'password_hashing',
+      (h) async {
+        await h.enter('Enter a password...', text: 'swordfish');
+        await settleAsync(h);
+        final output = h.text('Generated hash...');
+        expect(output, startsWith(r'$2a$'));
+        expect(verifyPasswordSync('swordfish', output).matched, isTrue);
+      },
+    );
 
     toolTest('verify mode reports a match', 'password_hashing', (h) async {
-      const hash = r'$2a$06$RzKlsrXtOCkfiDgiI.obXePDzAqZ5Xwx41U/.JhTqI6bXNRlH/P9y';
+      const hash =
+          r'$2a$06$RzKlsrXtOCkfiDgiI.obXePDzAqZ5Xwx41U/.JhTqI6bXNRlH/P9y';
       await h.tap('Verify');
       await setVerifyHash(h, hash);
       await h.enter('Enter a password...', text: 'swordfish');
@@ -295,7 +345,8 @@ void main() {
     });
 
     toolTest('verify mode reports a mismatch', 'password_hashing', (h) async {
-      const hash = r'$2a$06$RzKlsrXtOCkfiDgiI.obXePDzAqZ5Xwx41U/.JhTqI6bXNRlH/P9y';
+      const hash =
+          r'$2a$06$RzKlsrXtOCkfiDgiI.obXePDzAqZ5Xwx41U/.JhTqI6bXNRlH/P9y';
       await h.tap('Verify');
       await setVerifyHash(h, hash);
       await h.enter('Enter a password...', text: 'not the password');
@@ -303,8 +354,9 @@ void main() {
       expect(h.text('Verification result...'), contains('does not match'));
     });
 
-    toolTest('verify mode prompts when no hash is pasted', 'password_hashing',
-        (h) async {
+    toolTest('verify mode prompts when no hash is pasted', 'password_hashing', (
+      h,
+    ) async {
       await h.tap('Verify');
       await h.enter('Enter a password...', text: 'swordfish');
       await h.settle();

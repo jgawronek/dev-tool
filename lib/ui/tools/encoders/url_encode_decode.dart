@@ -44,6 +44,7 @@ class _UrlEncodeDecodeViewState extends State<_UrlEncodeDecodeView> {
           : Uri.decodeComponent(text);
       setState(() => _error = null);
     } catch (e) {
+      _output.clear();
       setState(() => _error = e.toString());
     }
   }
@@ -54,6 +55,7 @@ class _UrlEncodeDecodeViewState extends State<_UrlEncodeDecodeView> {
           ? r'abc 0123 !@#$'
           : 'abc%200123%20%21%40%23%24',
     );
+    _run();
   }
 
   Future<void> _copyOutput() async {
@@ -62,6 +64,7 @@ class _UrlEncodeDecodeViewState extends State<_UrlEncodeDecodeView> {
 
   void _useAsInput() {
     setState(() => _input.text = _output.text);
+    _run();
   }
 
   @override
@@ -75,7 +78,6 @@ class _UrlEncodeDecodeViewState extends State<_UrlEncodeDecodeView> {
               inputActions: [
                 ToolButton(label: 'Go', onPressed: _run),
 
-                const ToolIconButton(icon: Icons.settings),
                 SegmentedToggle(
                   options: const ['Encode', 'Decode'],
                   initialIndex: _encode ? 0 : 1,

@@ -12,7 +12,9 @@ import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 
 class _OfflineLlmView extends StatefulWidget {
-  const _OfflineLlmView();
+  const _OfflineLlmView({this.service});
+
+  final LocalLLMService? service;
 
   @override
   State<_OfflineLlmView> createState() => _OfflineLlmViewState();
@@ -91,7 +93,7 @@ class _ChatInputFieldState extends State<_ChatInputField> {
 }
 
 class _OfflineLlmViewState extends State<_OfflineLlmView> {
-  final LocalLLMService _service = LocalLLMService();
+  late final LocalLLMService _service = widget.service ?? LocalLLMService();
   final TextEditingController _prompt = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
@@ -392,6 +394,9 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
                                 const SizedBox(width: 8),
                                 ToolButton(
                                   label: isActive ? 'Stop' : 'Start',
+                                  tooltip: isActive
+                                      ? 'Stop model server'
+                                      : 'Load model and start server',
                                   onPressed: isActive || _startingServer
                                       ? (isActive ? _stopServer : null)
                                       : () => _startServer(model),
@@ -631,7 +636,7 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
                   padding: const EdgeInsets.only(right: 8, bottom: 4),
                   child: IconButton(
                     icon: Icon(Icons.stop, color: appColors.error),
-                    tooltip: 'Stop',
+                    tooltip: 'Stop response',
                     onPressed: _stopGeneration,
                   ),
                 )
@@ -656,6 +661,6 @@ class _OfflineLlmViewState extends State<_OfflineLlmView> {
   }
 }
 
-Widget buildOfflineLlm() {
-  return const _OfflineLlmView();
+Widget buildOfflineLlm({LocalLLMService? service}) {
+  return _OfflineLlmView(service: service);
 }

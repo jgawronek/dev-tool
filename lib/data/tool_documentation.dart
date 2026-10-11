@@ -70,13 +70,13 @@ Make sure you copied the whole value. Text decoding expects text bytes; Base64 f
   'base64_image_encode_decode':
       r'''Write an image as Base64 text and preview an image stored in Base64.
 ## How to use
-1. Use the image/file loading control to choose an image, or paste its Base64 text into String.
+1. Choose image… or drop a supported image file into String to encode it, or paste Base64 text to decode it.
 2. Look at the Image preview to check the result.
 3. Copy the text, or use Copy image to copy the picture.
 ## What the text means
 An image data URL may start with data:image/png;base64,. That prefix tells an app the image type and encoding. The long text after it holds the picture's bytes.
 ## If there is no preview
-Check that the value contains a complete supported image. A Base64 string holding ordinary words is not an image.''',
+Choose PNG, JPEG, GIF, WebP, or BMP files under 20 MB. Check that pasted Base64 contains a complete supported image; ordinary encoded words are not an image.''',
   'compression_codecs':
       r'''Make text smaller, or unpack compressed text. The packed result is shown as Base64 so you can copy it.
 ## How to use
@@ -227,9 +227,9 @@ The port may already be in use. Choose another port and check folder permissions
 1. Enter a target URL in Probe options.
 2. Set Timeout. Choose Find all to look beyond the first match, and Redirects if you want redirects followed.
 3. Press Fingerprint.
-4. Select a result to read Details and Probes, or copy the JSON/Text Report.
+4. Open a probe in Details to read its full request URL, response headers, and saved body snippet. Select text to copy it, or copy the JSON/Text Report.
 ## Understand results
-Signatures and unusual replies can suggest a firewall product. Confidence is a strength of evidence, not a promise. Generic behavior means the site acted like a firewall without a clear product match. No detected WAF means no tested signature matched.
+Signatures and unusual replies can suggest a firewall product. Confidence is a strength of evidence, not a promise. Generic behavior means the site acted like a firewall without a clear product match. No detected WAF means no tested signature matched. HTTP 200 means the server replied successfully; it does not prove an attack worked. HTTP 403 means the request was refused. The body is a saved snippet, not the entire page.
 ## If probes fail
 Check the URL, network, and timeout. Servers may block or rate-limit these checks. Use targets you own or have permission to test.''',
   'html_entity_encode_decode':
@@ -278,7 +278,7 @@ Paste <h1>Hello</h1><p>This is a paragraph.</p> and compare the tags with the vi
 2. Choose Characters, Words, or Lines to decide how changes are grouped.
 3. Read Differences and copy the result if needed.
 ## Options
-Formatted Text makes changes easier to see. Plain Text gives a text report. Swap Inputs reverses the comparison, so additions become removals and removals become additions.
+Comparison preserves order and duplicate occurrences. Swap Inputs reverses the comparison. Very large changed spans are reported in full rather than minimized, to keep the app responsive.
 ## Try it
 Compare Hello Alex with Hello Sam using Words.
 ## If there are unexpected changes
@@ -312,7 +312,7 @@ Check that every digit belongs to the selected base. A fixed width can only hold
 2. Select Beautify, Minify, or Preview.
 3. Read the result and any message, then copy it.
 ## Options
-Beautify adds readable line breaks and indentation. Minify removes unnecessary spacing. Preview shows the supported rendered elements instead of source output. Choose 2 spaces, 4 spaces, or Tabs for indentation in Beautify. Preview is not a full browser.
+Beautify adds readable line breaks and indentation. Minify removes unnecessary spacing. Preview renders HTML in the built-in web view with JavaScript turned off. Choose 2 spaces, 4 spaces, or Tabs for indentation in Beautify. Preview does not run scripts. HTML minification keeps spacing between inline words and preserves preformatted text, script contents, and style contents.
 ## If output is unexpected
 Review it before replacing a real file. HTML can contain scripts and styles whose whitespace has special meaning. Use HTML Preview for a quick visual check.''',
   'css_beautify_minify': r'''Make CSS styles easier to read or smaller to copy.
@@ -330,10 +330,10 @@ Check braces and semicolons. Review complicated or newer CSS syntax in your norm
       r'''Change the layout of JavaScript or TypeScript source.
 ## How to use
 1. Paste code or choose a source file.
-2. Choose Beautify, Minify, Wrap, or Verify.
+2. Choose Beautify, Minify, Obfuscate, or Verify.
 3. Inspect and copy Output.
 ## Options
-Beautify adds spacing and indentation; Minify removes unnecessary spacing. Wrap adjusts line layout. Verify checks supported structure. Select 2 spaces, 4 spaces, or Tabs for indentation. This does not run the code or prove it is safe.
+Beautify formats the syntax tree with consistent spacing and your chosen indentation. It keeps loop headers together and preserves comments and literal text. Minify removes comments and unnecessary spaces and line breaks, while keeping strings and required word separators intact. Long output may still wrap visually in the editor. Obfuscate creates a reversible Base64 wrapper for standalone scripts; it is not encryption. TypeScript type annotations are removed first. Bundle imports/exports and compile JSX before using this option. Verify reports syntax errors with line and column numbers using an offline JavaScript/TypeScript parser; it does not check types or whether the program gives the right answer. Select 2 spaces, 4 spaces, or Tabs for indentation. This does not run the code or prove it is safe.
 ## If code behaves differently
 Keep a copy of your original and review complex strings, comments, or language features. A formatting tool is not a complete compiler or test runner.''',
   'rb_beautify_minify': r'''Adjust the layout of Ruby source code.
@@ -342,7 +342,7 @@ Keep a copy of your original and review complex strings, comments, or language f
 2. Select Beautify or Minify.
 3. Read and copy the result.
 ## Options
-Beautify adds readable spacing; Minify removes extra spacing. The indentation choices are 2 spaces, 4 spaces, and Tabs. The tool does not execute Ruby.
+Beautify re-indents ordinary Ruby blocks. Minify removes indentation and blank lines outside strings; Ruby still needs its line breaks. Both preserve multiline strings, heredocs, and data after __END__. Minify lets you keep or strip comments. Special lines that tell Ruby how to run, such as #! and frozen_string_literal, are kept. The indentation choices are 2 spaces, 4 spaces, and Tabs. The tool does not execute Ruby.
 ## If output is unexpected
 Ruby has syntax where spacing matters. Review the output before using it, especially strings, blocks, and uncommon syntax. Keep the original file.''',
   'xml_beautify_minify':
@@ -564,7 +564,7 @@ The preview supports the app's built-in Markdown rendering. It may not match eve
 2. Choose Format or SQL to English.
 3. Read and copy Output.
 ## Options
-The dialect menu currently shows General SQL. Uppercase or Lowercase changes keyword case. Choose 2 spaces, 4 spaces, or Tabs for indentation. SQL to English describes supported structure in words.
+Formatting uses General SQL rules. Uppercase or Lowercase changes keyword case while preserving quoted values, quoted names, and comments. Choose 2 spaces, 4 spaces, or Tabs for indentation. SQL to English describes supported structure in words.
 ## Try it
 Use SELECT name FROM people WHERE age > 12;.
 ## Limits
@@ -621,15 +621,16 @@ A serialized string's length markers must match its contents. Copy the original 
   'random_string_generator':
       r'''Make batches of strings using characters or words you choose.
 ## How to use
-1. Choose a preset such as Password, API key, PIN, Token, or Slug. This fills character counts and generates output.
-2. Set Uppercased Characters, Lowercased Characters, Symbols, and Digits to the number of each you want. Choose x10 or x20 for the batch size.
-3. Press Load sample to generate again with your edited counts, then copy Generated strings.
+1. Choose a preset, then adjust uppercase, lowercase, symbol, digit, and word counts.
+2. Choose x10 or x20 and press Generate. Load sample also generates from the current options.
+3. Copy Generated strings.
 ## Options
-Each string is built from the requested uppercase letters, then lowercase letters, then symbols, then digits. Seed, Words, Separator, Separating Group Size, and Custom Character Set are visible fields but are not connected to generation yet. Colors is a disabled display control. Changing x10/x20 takes effect the next time you generate.
+Character categories are shuffled within each string. A Custom Character Set replaces the character alphabet while retaining the total requested character count. Separator joins character groups and words; Separating Group Size of 0 leaves characters ungrouped. An empty separator uses spaces between words.
+Seed is optional: leave it empty for secure randomness, or enter an integer for repeatable output. Changing batch size generates immediately.
 ## Limits
-These are example strings made with the app's ordinary random generator. Use Password Generator for security-focused secrets. An API key preset does not create a working key for a service.
-## If output is empty
-Set at least one of the four working character counts above zero, then press Load sample to generate.''',
+Each item supports up to 4096 characters and 100 words. Seeded strings are predictable; use Password Generator for security-focused secrets. An API key preset does not create a working service key.
+## If generation fails
+Use whole-number counts within the displayed limits and request at least one character or word. Correct the options and press Generate.''',
   'svg_to_css': r'''Put SVG image source into CSS as an embedded image value.
 ## How to use
 1. Paste SVG into Source or choose/drop an .svg file.
@@ -710,10 +711,10 @@ This is text ordering, not a spreadsheet's number sorting. Spaces and letter cas
       r'''Create a diagram from supported PlantUML text and edit its layout visually.
 ## How to use
 1. Paste PlantUML, load the sample, or drop a .puml file into PlantUML.
-2. Read Diagram. Drag nodes to arrange them.
+2. Read Diagram. Select a node, then drag it to arrange it. Nodes can move in any direction, including left or above the starting position. Drag empty space to pan, or use Fit to bring the whole diagram into view.
 3. Tidy arranges the diagram; Snap aligns dragging to a grid. Zoom controls and Fit help you see it all.
 ## Diagram controls
-Choose a visual theme and layout/style from the menus. Use the add-element palette for classes, interfaces, rectangles, components, servers, databases, queues, clouds, actors, notes, and supported related shapes. Select and edit element labels. Right-click a node to rename, change background color, wrap/move it into a package, remove it from a package, or delete it. Package menus rename or color the package or move its contents out.
+The first menu chooses how the diagram is drawn: App, Sketch, Digital, or Chalkboard. The second menu chooses node colors. Sketch uses handwriting-style text and rough outlines. Digital uses a dark canvas, thin colored outlines, and code-style text. Chalkboard has rough chalk outlines on a board surface. Use the add-element palette for classes, interfaces, rectangles, components, servers, databases, queues, clouds, actors, notes, and supported related shapes. Select and edit element labels. Right-click a node to rename, change background color, wrap/move it into a package, remove it from a package, or delete it. Package menus rename or color the package or move its contents out.
 ## Save and share
 Export opens Save .puml, Export PNG, Export PDF, and Print. Source saves editable text; PNG/PDF save a picture of the diagram. Packages group related nodes.
 ## Limits

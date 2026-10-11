@@ -3,7 +3,11 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:re_editor/re_editor.dart';
+import 'package:re_highlight/languages/diff.dart';
+import '../../app_colors.dart';
 import '../../../ui/widgets.dart';
+import '../../../services/text_diff_service.dart';
 import '../common/editors.dart';
 import '../../tool_sample_action.dart';
 
@@ -19,6 +23,7 @@ class _TextDiffViewState extends State<_TextDiffView> {
   final TextEditingController _right = TextEditingController();
   final TextEditingController _output = TextEditingController();
   String _mode = 'Characters';
+  String _outputMode = 'Formatted Text';
 
   @override
   void dispose() {
@@ -34,29 +39,21 @@ class _TextDiffViewState extends State<_TextDiffView> {
     List<String> leftParts;
     List<String> rightParts;
     if (_mode == 'Words') {
-      leftParts = left.split(RegExp(r'\s+'));
-      rightParts = right.split(RegExp(r'\s+'));
+      leftParts = RegExp(r'\S+').allMatches(left).map((match) => match.group(0)!).toList();
+      rightParts = RegExp(r'\S+').allMatches(right).map((match) => match.group(0)!).toList();
     } else if (_mode == 'Lines') {
-      leftParts = left.split('\n');
-      rightParts = right.split('\n');
+      leftParts = left.isEmpty ? [] : left.split('\n');
+      rightParts = right.isEmpty ? [] : right.split('\n');
     } else {
-      leftParts = left.split('');
-      rightParts = right.split('');
+      leftParts = left.characters.toList();
+      rightParts = right.characters.toList();
     }
-    final removed = leftParts
-        .where((item) => !rightParts.contains(item))
-        .toList();
-    final added = rightParts
-        .where((item) => !leftParts.contains(item))
-        .toList();
     final buffer = StringBuffer();
-    for (final item in removed) {
-      buffer.writeln('- $item');
+    for (final change in sequenceChanges(leftParts, rightParts)) {
+      buffer.writeln('${change.added ? '+' : '-'} ${change.value}');
     }
-    for (final item in added) {
-      buffer.writeln('+ $item');
-    }
-    setState(() => _output.text = buffer.toString().trimRight());
+    // Remove the formatting newline, preserving whitespace in the changed token.
+    setState(() => _output.text = buffer.toString().replaceFirst(RegExp(r'\n$'), ''));
   }
 
   void _swap() {
@@ -109,9 +106,10 @@ class _TextDiffViewState extends State<_TextDiffView> {
               'Output:',
               style: TextStyle(fontWeight: FontWeight.w600),
             ),
-            const SmallDropdown(
-              items: ['Formatted Text', 'Plain Text'],
-              initialValue: 'Formatted Text',
+            SmallDropdown(
+              items: const ['Formatted Text', 'Plain Text'],
+              initialValue: _outputMode,
+              onChanged: (value) => setState(() => _outputMode = value),
             ),
             const Icon(Icons.chevron_left, size: 16),
             Text(
@@ -134,6 +132,16 @@ class _TextDiffViewState extends State<_TextDiffView> {
             controller: _output,
             readOnly: true,
             placeholder: 'Diff output...',
+            highlightTheme: _outputMode == 'Plain Text'
+                ? null
+                : CodeHighlightTheme(
+                    languages: {'diff': CodeHighlightThemeMode(mode: langDiff)},
+                    theme: {
+                      'root': TextStyle(color: context.appColors.editorText),
+                      'addition': TextStyle(color: context.appColors.success),
+                      'deletion': TextStyle(color: context.appColors.error),
+                    },
+                  ),
           ),
         ),
       ],

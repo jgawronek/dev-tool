@@ -142,6 +142,13 @@ class _JsonFormatValidateViewState extends State<_JsonFormatValidateView> {
               showOutputHeader: true,
               outputOverlay: _JsonFormatOutputOverlay(
                 indent: _session.indent,
+                showIndent: switch (_session.operation) {
+                  JsonOperation.prettify ||
+                  JsonOperation.xml ||
+                  JsonOperation.sortKeys ||
+                  JsonOperation.sortArrays => true,
+                  _ => false,
+                },
                 wrap: _wrap,
                 onIndentChanged: _setIndent,
                 onWrapChanged: (value) => setState(() => _wrap = value),
@@ -158,12 +165,14 @@ class _JsonFormatOutputOverlay extends StatelessWidget {
   const _JsonFormatOutputOverlay({
     required this.indent,
     required this.wrap,
+    required this.showIndent,
     required this.onIndentChanged,
     required this.onWrapChanged,
   });
 
   final String indent;
   final bool wrap;
+  final bool showIndent;
   final ValueChanged<String> onIndentChanged;
   final ValueChanged<bool> onWrapChanged;
 
@@ -177,12 +186,14 @@ class _JsonFormatOutputOverlay extends StatelessWidget {
           initialValue: wrap ? 'Wrap' : 'No wrap',
           onChanged: (value) => onWrapChanged(value == 'Wrap'),
         ),
-        const SizedBox(width: 8),
-        SmallDropdown(
-          items: const ['2 spaces', '4 spaces', 'Tabs'],
-          initialValue: indent,
-          onChanged: onIndentChanged,
-        ),
+        if (showIndent) ...[
+          const SizedBox(width: 8),
+          SmallDropdown(
+            items: const ['2 spaces', '4 spaces', 'Tabs'],
+            initialValue: indent,
+            onChanged: onIndentChanged,
+          ),
+        ],
       ],
     );
   }

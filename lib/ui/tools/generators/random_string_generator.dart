@@ -5,7 +5,9 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../../services/password_generator_service.dart';
 import '../../../ui/widgets.dart';
+import '../common/shared.dart';
 import '../common/editors.dart';
 import '../../tool_sample_action.dart';
 
@@ -19,15 +21,17 @@ class _RandomStringGeneratorView extends StatefulWidget {
 
 class _RandomStringGeneratorViewState
     extends State<_RandomStringGeneratorView> {
-  final TextEditingController _seed = TextEditingController(
-    text: '904731371168665084',
-  );
+  final TextEditingController _seed = TextEditingController();
   final TextEditingController _upper = TextEditingController(text: '18');
   final TextEditingController _lower = TextEditingController(text: '18');
   final TextEditingController _symbols = TextEditingController(text: '2');
   final TextEditingController _digits = TextEditingController(text: '8');
   final TextEditingController _words = TextEditingController(text: '0');
   final TextEditingController _output = TextEditingController();
+  final _separator = TextEditingController();
+  final _groupSize = TextEditingController(text: '0');
+  final _custom = TextEditingController();
+  String? _error;
   String _preset = 'Password';
   String _count = 'x10';
 
@@ -39,40 +43,102 @@ class _RandomStringGeneratorViewState
     _symbols.dispose();
     _digits.dispose();
     _words.dispose();
+    _separator.dispose();
+    _groupSize.dispose();
+    _custom.dispose();
     _output.dispose();
     super.dispose();
   }
 
   void _generate() {
-    final rand = Random();
-    final uppers = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    final lowers = 'abcdefghijklmnopqrstuvwxyz';
-    final symbols = '!@#\$%^&*';
-    final digits = '0123456789';
-    final upCount = int.tryParse(_upper.text) ?? 0;
-    final lowCount = int.tryParse(_lower.text) ?? 0;
-    final symCount = int.tryParse(_symbols.text) ?? 0;
-    final digCount = int.tryParse(_digits.text) ?? 0;
-    final totalCount = (int.tryParse(_count.replaceAll('x', '')) ?? 10);
-    final lines = <String>[];
-    for (var i = 0; i < totalCount; i++) {
-      final buffer = StringBuffer();
-      for (var j = 0; j < upCount; j++) {
-        buffer.write(uppers[rand.nextInt(uppers.length)]);
+    try {
+      int count(TextEditingController field, String name, int maximum) {
+        final value = int.tryParse(field.text);
+        if (value == null || value < 0 || value > maximum) {
+          throw FormatException('$name must be a number from 0 to $maximum.');
+        }
+        return value;
       }
-      for (var j = 0; j < lowCount; j++) {
-        buffer.write(lowers[rand.nextInt(lowers.length)]);
+
+      final counts = [
+        count(_upper, 'Uppercase count', 4096),
+        count(_lower, 'Lowercase count', 4096),
+        count(_symbols, 'Symbol count', 4096),
+        count(_digits, 'Digit count', 4096),
+      ];
+      final wordCount = count(_words, 'Word count', 100);
+      final groupSize = count(_groupSize, 'Group size', 4096);
+      final length = counts.reduce((a, b) => a + b);
+      if (length > 4096 || length + wordCount == 0) {
+        throw const FormatException(
+          'Choose at least one character or word, with no more than 4096 characters.',
+        );
       }
-      for (var j = 0; j < symCount; j++) {
-        buffer.write(symbols[rand.nextInt(symbols.length)]);
+      final seed = _seed.text.trim();
+      final seedValue = int.tryParse(seed);
+      if (seed.isNotEmpty && seedValue == null) {
+        throw const FormatException(
+          'Seed must be a whole number, or leave it empty.',
+        );
       }
-      for (var j = 0; j < digCount; j++) {
-        buffer.write(digits[rand.nextInt(digits.length)]);
+      final rand = seedValue == null ? Random.secure() : Random(seedValue);
+      const alphabets = [
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+        'abcdefghijklmnopqrstuvwxyz',
+        '!@#\$%^&*',
+        '0123456789',
+      ];
+      final custom = _custom.text.runes.toList();
+      final totalCount = int.parse(_count.substring(1));
+      final lines = <String>[];
+      for (var i = 0; i < totalCount; i++) {
+        final chars = <int>[];
+        for (var category = 0; category < counts.length; category++) {
+          final alphabet = custom.isEmpty
+              ? alphabets[category].runes.toList()
+              : custom;
+          for (var j = 0; j < counts[category]; j++) {
+            chars.add(alphabet[rand.nextInt(alphabet.length)]);
+          }
+        }
+        chars.shuffle(rand);
+        final separator = _separator.text;
+        final groups = <String>[];
+        if (chars.isNotEmpty) {
+          if (groupSize > 0) {
+            for (var j = 0; j < chars.length; j += groupSize) {
+              groups.add(
+                String.fromCharCodes(
+                  chars.sublist(j, min(j + groupSize, chars.length)),
+                ),
+              );
+            }
+          } else {
+            groups.add(String.fromCharCodes(chars));
+          }
+        }
+        for (var j = 0; j < wordCount; j++) {
+          groups.add(
+            generateSecret(
+              const PasswordOptions(style: PasswordStyle.passphrase, words: 1),
+              random: rand,
+            ).value,
+          );
+        }
+        lines.add(
+          groups.join(separator.isEmpty && wordCount > 0 ? ' ' : separator),
+        );
       }
-      lines.add(buffer.toString());
+      setState(() {
+        _output.text = lines.join('\n');
+        _error = null;
+      });
+    } on FormatException catch (error) {
+      setState(() {
+        _output.clear();
+        _error = error.message;
+      });
     }
-    _output.text = lines.join('\n');
-    setState(() {});
   }
 
   Future<void> _copyOutput() async {
@@ -93,6 +159,9 @@ class _RandomStringGeneratorViewState
       _lower.text = values.$2;
       _symbols.text = values.$3;
       _digits.text = values.$4;
+      _words.text = '0';
+      _custom.clear();
+      _groupSize.text = '0';
     });
     _generate();
   }
@@ -136,7 +205,11 @@ class _RandomStringGeneratorViewState
                     ],
                   ),
                   const SizedBox(height: 12),
-                  LabeledField(label: 'Seed', controller: _seed),
+                  LabeledField(
+                    label: 'Seed (optional)',
+                    controller: _seed,
+                    hintText: 'Empty = random',
+                  ),
                   LabeledField(
                     label: 'Uppercased Characters',
                     controller: _upper,
@@ -148,9 +221,15 @@ class _RandomStringGeneratorViewState
                   LabeledField(label: 'Symbols', controller: _symbols),
                   LabeledField(label: 'Digits', controller: _digits),
                   LabeledField(label: 'Words', controller: _words),
-                  const LabeledField(label: 'Separator'),
-                  const LabeledField(label: 'Separating Group Size'),
-                  const LabeledField(label: 'Custom Character Set'),
+                  LabeledField(label: 'Separator', controller: _separator),
+                  LabeledField(
+                    label: 'Separating Group Size',
+                    controller: _groupSize,
+                  ),
+                  LabeledField(
+                    label: 'Custom Character Set',
+                    controller: _custom,
+                  ),
                 ],
               ),
             ),
@@ -161,17 +240,21 @@ class _RandomStringGeneratorViewState
           children: [
             Row(
               children: [
-                const Checkbox(value: true, onChanged: null),
-                const Text('Colors'),
+                ToolButton(label: 'Generate', onPressed: _generate),
                 const Spacer(),
                 SmallDropdown(
                   items: const ['x10', 'x20'],
                   initialValue: _count,
-                  onChanged: (value) => setState(() => _count = value),
+                  onChanged: (value) {
+                    setState(() => _count = value);
+                    _generate();
+                  },
                 ),
               ],
             ),
             const SizedBox(height: 8),
+            if (_error != null)
+              Text(_error!, style: errorToolTextStyle(context)),
             Expanded(
               child: EditorPane(
                 label: 'Generated strings',

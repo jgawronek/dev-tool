@@ -49,6 +49,7 @@ class _Base64StringViewState extends State<_Base64StringView> {
       }
       setState(() => _error = null);
     } catch (e) {
+      _output.clear();
       setState(() => _error = e.toString());
     }
   }
@@ -78,6 +79,7 @@ class _Base64StringViewState extends State<_Base64StringView> {
           ? 'Hello from DevUtils'
           : 'SGVsbG8gZnJvbSBEZXZVdGlscw==',
     );
+    _run();
   }
 
   Future<void> _copyOutput() async {
@@ -86,6 +88,7 @@ class _Base64StringViewState extends State<_Base64StringView> {
 
   void _useAsInput() {
     setState(() => _input.text = _output.text);
+    _run();
   }
 
   @override
@@ -99,7 +102,6 @@ class _Base64StringViewState extends State<_Base64StringView> {
               inputActions: [
                 ToolButton(label: 'Go', onPressed: _run),
 
-                const ToolIconButton(icon: Icons.settings),
                 SegmentedToggle(
                   options: const ['Encode', 'Decode'],
                   initialIndex: _encode ? 0 : 1,

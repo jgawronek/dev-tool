@@ -13,7 +13,7 @@ import 'package:pointycastle/block/modes/cfb.dart';
 import 'package:pointycastle/block/modes/ofb.dart';
 import 'package:pointycastle/stream/ctr.dart';
 import 'package:pointycastle/stream/salsa20.dart';
-import 'package:pointycastle/stream/chacha20.dart';
+import 'package:pointycastle/stream/chacha7539.dart';
 import 'package:pointycastle/stream/rc4_engine.dart';
 import 'package:pointycastle/block/desede_engine.dart';
 import 'package:pointycastle/block/rc2_engine.dart';
@@ -231,7 +231,7 @@ class _TextEncryptionViewState extends State<_TextEncryptionView> {
     final key = Uint8List.fromList(keyHash.sublist(0, 32));
     final nonce = _generateIV(12);
 
-    final cipher = ChaCha20Engine()
+    final cipher = ChaCha7539Engine()
       ..init(true, pc.ParametersWithIV(pc.KeyParameter(key), nonce));
     final ciphertext = cipher.process(plaintext);
 
@@ -430,7 +430,7 @@ class _TextEncryptionViewState extends State<_TextEncryptionView> {
     final nonce = Uint8List.fromList(combined.sublist(0, 12));
     final ciphertext = Uint8List.fromList(combined.sublist(12));
 
-    final cipher = ChaCha20Engine()
+    final cipher = ChaCha7539Engine()
       ..init(false, pc.ParametersWithIV(pc.KeyParameter(key), nonce));
     return cipher.process(ciphertext);
   }
@@ -585,28 +585,34 @@ class _TextEncryptionViewState extends State<_TextEncryptionView> {
     return _processBlocks(cipher, ciphertext, 16);
   }
 
+  Uint8List _processPartialBlock(pc.BlockCipher cipher, Uint8List input) {
+    final padded = Uint8List(((input.length + 15) ~/ 16) * 16)
+      ..setRange(0, input.length, input);
+    return Uint8List.fromList(_processBlocks(cipher, padded, 16).sublist(0, input.length));
+  }
+
   Uint8List _aesCfbEncrypt(Uint8List plaintext, Uint8List key, Uint8List iv) {
-    final cipher = CFBBlockCipher(AESEngine(), 128)
+    final cipher = CFBBlockCipher(AESEngine(), 16)
       ..init(true, pc.ParametersWithIV(pc.KeyParameter(key), iv));
-    return cipher.process(plaintext);
+    return _processPartialBlock(cipher, plaintext);
   }
 
   Uint8List _aesCfbDecrypt(Uint8List ciphertext, Uint8List key, Uint8List iv) {
-    final cipher = CFBBlockCipher(AESEngine(), 128)
+    final cipher = CFBBlockCipher(AESEngine(), 16)
       ..init(false, pc.ParametersWithIV(pc.KeyParameter(key), iv));
-    return cipher.process(ciphertext);
+    return _processPartialBlock(cipher, ciphertext);
   }
 
   Uint8List _aesOfbEncrypt(Uint8List plaintext, Uint8List key, Uint8List iv) {
-    final cipher = OFBBlockCipher(AESEngine(), 128)
+    final cipher = OFBBlockCipher(AESEngine(), 16)
       ..init(true, pc.ParametersWithIV(pc.KeyParameter(key), iv));
-    return cipher.process(plaintext);
+    return _processPartialBlock(cipher, plaintext);
   }
 
   Uint8List _aesOfbDecrypt(Uint8List ciphertext, Uint8List key, Uint8List iv) {
-    final cipher = OFBBlockCipher(AESEngine(), 128)
+    final cipher = OFBBlockCipher(AESEngine(), 16)
       ..init(false, pc.ParametersWithIV(pc.KeyParameter(key), iv));
-    return cipher.process(ciphertext);
+    return _processPartialBlock(cipher, ciphertext);
   }
 
   Uint8List _aesCtrEncrypt(Uint8List plaintext, Uint8List key, Uint8List iv) {

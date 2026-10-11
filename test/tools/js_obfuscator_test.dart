@@ -1,11 +1,9 @@
 import 'dart:io';
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' show Size;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:dev_tool/services/js_obfuscator_service.dart';
-import 'package:dev_tool/ui/widgets.dart';
 
 import '../helpers/tool_harness.dart';
 
@@ -24,12 +22,11 @@ void toolTest(
 /// EditorPane moves Sample and Clear into a right-click menu as 'Example'
 /// and 'Clear'.
 Future<void> editorMenu(ToolHarness h, String item) async {
-  await h.tester.tapAt(
-    h.tester.getCenter(find.byType(EditorPane).first),
-    buttons: kSecondaryMouseButton,
-  );
-  await h.settle();
-  await h.tap(item);
+  if (item == 'Example') {
+    await h.tap('Load sample');
+  } else {
+    await h.enter(null, text: '');
+  }
   await h.settle();
 }
 
@@ -83,8 +80,12 @@ void main() {
     });
 
     test('treats single and double quoted strings as one token', () {
-      final tokens = _significant('''var a = "he said \\"hi\\""; var b = 'x';''');
-      final strings = tokens.where((t) => t.type == JsTokenType.string).toList();
+      final tokens = _significant(
+        '''var a = "he said \\"hi\\""; var b = 'x';''',
+      );
+      final strings = tokens
+          .where((t) => t.type == JsTokenType.string)
+          .toList();
       expect(strings, hasLength(2));
       expect(strings.first.text, '"he said \\"hi\\""');
     });
@@ -127,25 +128,31 @@ void main() {
     });
 
     test('does not split a regex containing a slash in a class', () {
-      final regex = _significant('var re = /[/]/;')
-          .firstWhere((t) => t.type == JsTokenType.regex);
+      final regex = _significant(
+        'var re = /[/]/;',
+      ).firstWhere((t) => t.type == JsTokenType.regex);
       expect(regex.text, '/[/]/');
     });
 
     test('records template substitutions as code ranges', () {
-      final template = _significant(r'var t = `a ${b.c} d`;')
-          .firstWhere((t) => t.type == JsTokenType.templateString);
+      final template = _significant(
+        r'var t = `a ${b.c} d`;',
+      ).firstWhere((t) => t.type == JsTokenType.templateString);
       expect(template.text, r'`a ${b.c} d`');
       expect(template.codeRanges, hasLength(1));
-      expect(template.text.substring(
-            template.codeRanges.first.start,
-            template.codeRanges.first.end,
-          ), 'b.c');
+      expect(
+        template.text.substring(
+          template.codeRanges.first.start,
+          template.codeRanges.first.end,
+        ),
+        'b.c',
+      );
     });
 
     test('handles nested braces inside a template substitution', () {
-      final template = _significant(r'var t = `${ {a: 1}.a } end`;')
-          .firstWhere((t) => t.type == JsTokenType.templateString);
+      final template = _significant(
+        r'var t = `${ {a: 1}.a } end`;',
+      ).firstWhere((t) => t.type == JsTokenType.templateString);
       expect(template.codeRanges, hasLength(1));
       expect(
         template.text
@@ -160,7 +167,9 @@ void main() {
 
     test('round-trips source exactly', () {
       const source =
-          r'const a = /re/g; // c' '\n' r'var s = "x"; /* d */ `t${u}`;';
+          r'const a = /re/g; // c'
+          '\n'
+          r'var s = "x"; /* d */ `t${u}`;';
       expect(tokenizeJs(source).map((t) => t.text).join(), source);
     });
   });
@@ -192,9 +201,7 @@ void main() {
     });
 
     test('keeps class method names intact', () {
-      final report = obfuscateJs(
-        'class Widget { render() { return 1; } }',
-      );
+      final report = obfuscateJs('class Widget { render() { return 1; } }');
       expect(report.output, contains('render()'));
     });
 
@@ -228,9 +235,9 @@ void main() {
           'function alpha(){ var beta = 1; var gamma = 2; return beta+gamma; }',
           options: ObfuscatorOptions(style: style, hoistStrings: false),
         );
-        final identifiers = _significant(report.output)
-            .where((t) => t.type == JsTokenType.identifier)
-            .map((t) => t.text);
+        final identifiers = _significant(
+          report.output,
+        ).where((t) => t.type == JsTokenType.identifier).map((t) => t.text);
         for (final name in identifiers) {
           expect(
             RegExp(r'^[0-9]').hasMatch(name),
@@ -411,50 +418,36 @@ void main() {
       });
     }
 
-    behavesIdentically(
-      'functions, loops and string concatenation',
-      '''
+    behavesIdentically('functions, loops and string concatenation', '''
 function greet(name, times) {
   var out = [];
   for (var i = 0; i < times; i++) { out.push("Hello, " + name + "!"); }
   return out.join(", ");
 }
 console.log(greet("Ada", 2));
-''',
-    );
+''');
 
-    behavesIdentically(
-      'object literals, nesting and destructuring',
-      '''
+    behavesIdentically('object literals, nesting and destructuring', '''
 const user = { name: "Ada", age: 36, nested: { deep: true } };
 const { age } = user;
 console.log(age, user.nested.deep, user.name.length);
-''',
-    );
+''');
 
-    behavesIdentically(
-      'regex literals and division',
-      r'''
+    behavesIdentically('regex literals and division', r'''
 const re = /ab+c/gi;
 const half = 100 / 4 / 2;
 console.log(re.test("xxABBBCyy"), half, "a/b".split("/").length);
-''',
-    );
+''');
 
-    behavesIdentically(
-      'template literals with substitutions',
-      r'''
+    behavesIdentically('template literals with substitutions', r'''
 
 const firstName = "Ada";
 const lastName = "Lovelace";
 const full = `${firstName} ${lastName}`;
 console.log(full, `${firstName.length}:${lastName.length}`);
-''',
-    );
+''');
 
-    behavesIdentically(
-      'classes, getters and methods',
-      '''
+    behavesIdentically('classes, getters and methods', '''
 class Store {
   constructor(items) { this.items = items; }
   get first() { return this.items[0]; }
@@ -462,12 +455,9 @@ class Store {
 }
 const s = new Store([1, 2, 3]);
 console.log(s.first, s.describe("n="), typeof Store);
-''',
-    );
+''');
 
-    behavesIdentically(
-      'arrow functions and closures',
-      '''
+    behavesIdentically('arrow functions and closures', '''
 const makeCounter = (start) => {
   let value = start;
   return { inc: () => ++value, read: () => value };
@@ -475,71 +465,49 @@ const makeCounter = (start) => {
 const counter = makeCounter(10);
 counter.inc(); counter.inc();
 console.log(counter.read());
-''',
-    );
+''');
 
-    behavesIdentically(
-      'try/catch and error types',
-      '''
+    behavesIdentically('try/catch and error types', '''
 try { null.boom; } catch (err) { console.log(err instanceof TypeError); }
 try { JSON.parse("{"); } catch (err) { console.log(err instanceof SyntaxError); }
-''',
-    );
+''');
 
-    behavesIdentically(
-      'labels, switch and fallthrough',
-      '''
+    behavesIdentically('labels, switch and fallthrough', '''
 outer: for (let i = 0; i < 3; i++) {
   for (let j = 0; j < 3; j++) { if (j === 1) continue outer; }
 }
 let n = 0;
 switch (2) { case 1: n += 1; case 2: n += 10; case 3: n += 100; break; default: n = -1; }
 console.log(n);
-''',
-    );
+''');
 
-    behavesIdentically(
-      'a "use strict" directive prologue',
-      r'''
+    behavesIdentically('a "use strict" directive prologue', r'''
 "use strict";
 const value = 1;
 console.log(value, (function(){ return this === undefined; })());
-''',
-    );
+''');
 
-    behavesIdentically(
-      'dead code injection leaves behaviour unchanged',
-      '''
+    behavesIdentically('dead code injection leaves behaviour unchanged', '''
 function total(items) {
   var sum = 0;
   for (var i = 0; i < items.length; i++) { sum += items[i]; }
   return sum;
 }
 console.log(total([1, 2, 3, 4]));
-''',
-      options: const ObfuscatorOptions(deadCodeInjection: true),
-    );
+''', options: const ObfuscatorOptions(deadCodeInjection: true));
 
-    behavesIdentically(
-      'self-defending leaves behaviour unchanged',
-      '''
+    behavesIdentically('self-defending leaves behaviour unchanged', '''
 var greeting = "hello";
 console.log(greeting + " world");
-''',
-      options: const ObfuscatorOptions(selfDefending: true),
-    );
+''', options: const ObfuscatorOptions(selfDefending: true));
 
     for (final style in ManglerStyle.values) {
-      behavesIdentically(
-        'the ${style.label} name style runs the same',
-        '''
+      behavesIdentically('the ${style.label} name style runs the same', '''
 var firstName = "Grace";
 var lastName = "Hopper";
 function label() { return lastName + ", " + firstName; }
 console.log(label());
-''',
-        options: ObfuscatorOptions(style: style, hoistStrings: false),
-      );
+''', options: ObfuscatorOptions(style: style, hoistStrings: false));
     }
 
     test('the integrity check trips when the string table is edited', () {
@@ -553,10 +521,7 @@ console.log(label());
         (match) => 'var __strs=[]',
       );
       expect(tampered, isNot(report.output));
-      expect(
-        () => _runNode(tampered),
-        throwsA(isA<StateError>()),
-      );
+      expect(() => _runNode(tampered), throwsA(isA<StateError>()));
     });
 
     test('disabling console silences output', () {
@@ -587,13 +552,18 @@ console.log(label());
       expect(find.textContaining('Strings hoisted'), findsOneWidget);
     });
 
-    toolTest('toggling identifier renaming off leaves names alone',
-        'js_obfuscator', (h) async {
-      await h.enter('Paste JavaScript or TypeScript',
-          text: 'var keepMe = 1; console.log(keepMe);');
-      await h.tap('Rename identifiers');
-      expect(h.text('Obfuscated source'), contains('keepMe'));
-    });
+    toolTest(
+      'toggling identifier renaming off leaves names alone',
+      'js_obfuscator',
+      (h) async {
+        await h.enter(
+          'Paste JavaScript or TypeScript',
+          text: 'var keepMe = 1; console.log(keepMe);',
+        );
+        await h.tap('Rename identifiers');
+        expect(h.text('Obfuscated source'), contains('keepMe'));
+      },
+    );
 
     toolTest('clearing empties both panes', 'js_obfuscator', (h) async {
       await loadSample(h);

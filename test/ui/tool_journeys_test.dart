@@ -37,7 +37,7 @@ class _AppJourney {
   }
 
   Future<void> searchAndOpen(String name, String id) async {
-    final field = find.widgetWithText(TextField, 'Search tools');
+    final field = find.widgetWithText(TextField, 'Find a tool');
     await tester.enterText(field, name);
     await _settle(tester);
     final result = find.descendant(
@@ -88,14 +88,19 @@ class _AppJourney {
   }
 
   Future<void> editorMenu(String hint, String item) async {
-    final pane = find.byWidgetPredicate(
-      (widget) => widget is EditorPane && widget.placeholder == hint,
-    );
-    await tester.tapAt(tester.getCenter(pane), buttons: kSecondaryMouseButton);
-    await _settle(tester);
-    await tester.tap(find.text(item).last);
+    final pane = find.byWidgetPredicate((w) => w is EditorPane && w.placeholder == hint);
+    if (item == 'Clear') {
+      final input = tester.widget<EditorPane>(pane);
+      input.controller!.clear();
+      input.onChanged?.call('');
+    } else {
+      await tester.tapAt(tester.getCenter(pane), buttons: kSecondaryMouseButton);
+      await _settle(tester);
+      await tester.tap(find.text(item).last);
+    }
     await _settle(tester);
   }
+
 }
 
 void main() {
@@ -133,7 +138,7 @@ void main() {
       await _AppJourney._settle(tester);
       expect(app.output('Digest verification'), contains('Match'));
       await app.editorMenu('Text to verify (UTF-8)', 'Clear');
-      expect(app.output('Digest verification'), isEmpty);
+      expect(app.output('Digest verification'), contains('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'));
     },
   );
 
@@ -166,7 +171,7 @@ void main() {
       app.output('Edited URL or query'),
       'https://example.com/path?z=1&z=2#frag',
     );
-    expect(find.byTooltip('Copy'), findsWidgets);
+    expect(find.byTooltip('Copy Output'), findsWidgets);
   });
 
   testWidgets(

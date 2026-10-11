@@ -207,15 +207,17 @@ class _JwtDebuggerViewState extends State<_JwtDebuggerView> {
             children: [
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: Row(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Expanded(
-                      child: Text(
-                        'Algorithm',
-                        style: TextStyle(color: colors.mutedText),
-                      ),
+                    Text(
+                      'Algorithm',
+                      style: TextStyle(color: colors.mutedText),
                     ),
                     Container(
+                      width: 180,
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       decoration: toolSurfaceDecoration(context),
                       child: Semantics(
@@ -227,6 +229,7 @@ class _JwtDebuggerViewState extends State<_JwtDebuggerView> {
                                 : null,
                             hint: Text('$_alg (unsupported)'),
                             isDense: true,
+                            isExpanded: true,
                             items: [
                               for (final algorithm in _supportedAlgorithms)
                                 DropdownMenuItem(

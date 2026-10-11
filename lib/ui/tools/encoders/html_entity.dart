@@ -36,6 +36,7 @@ class _HtmlEntityViewState extends State<_HtmlEntityView> {
 
   void _setSample() {
     setState(() => _input.text = '<h1>Hello</h1>');
+    _run();
   }
 
   Future<void> _copyOutput() async {
@@ -50,7 +51,6 @@ class _HtmlEntityViewState extends State<_HtmlEntityView> {
         inputActions: [
           ToolButton(label: 'Go', onPressed: _run),
 
-          const ToolIconButton(icon: Icons.settings),
           SegmentedToggle(
             options: const ['Encode', 'Decode'],
             initialIndex: _encode ? 0 : 1,
@@ -62,7 +62,13 @@ class _HtmlEntityViewState extends State<_HtmlEntityView> {
         ],
         outputActions: [
           ToolButton(label: 'Copy', onPressed: _copyOutput),
-          const ToolButton(label: 'Use as input'),
+          ToolButton(
+            label: 'Use as input',
+            onPressed: () {
+              _input.text = _output.text;
+              _run();
+            },
+          ),
         ],
         inputPlaceholder: '<h1>Hello</h1>',
         outputPlaceholder: '&lt;h1&gt;Hello&lt;/h1&gt;',

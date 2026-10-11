@@ -220,12 +220,8 @@ class UmlNoteCell {
 }
 
 class UmlNoteBlock {
-  UmlNoteBlock.text(this.text)
-    : kind = UmlNoteBlockKind.text,
-      rows = const [];
-  UmlNoteBlock.table(this.rows)
-    : kind = UmlNoteBlockKind.table,
-      text = '';
+  UmlNoteBlock.text(this.text) : kind = UmlNoteBlockKind.text, rows = const [];
+  UmlNoteBlock.table(this.rows) : kind = UmlNoteBlockKind.table, text = '';
   UmlNoteBlock.divider()
     : kind = UmlNoteBlockKind.divider,
       text = '',
@@ -348,7 +344,8 @@ class UmlDiagram {
     groups: groups.map((g) => g.copy()).toList(),
     styleLines: List.of(styleLines),
     stereotypeStyles: {
-      for (final entry in stereotypeStyles.entries) entry.key: entry.value.copy(),
+      for (final entry in stereotypeStyles.entries)
+        entry.key: entry.value.copy(),
     },
     name: name,
     title: title,
@@ -836,22 +833,22 @@ class PlantUmlService {
     // Apply round-tripped / carried-over size overrides before layout so group
     // bounds account for resized boxes.
     for (final type in diagram.types) {
-      final size = sizes[type.name] ?? () {
-        final prev = previous?.typeByName(type.name);
-        return prev?.w != null && prev?.h != null
-            ? (w: prev!.w!, h: prev.h!)
-            : null;
-      }();
+      final size =
+          sizes[type.name] ??
+          () {
+            final prev = previous?.typeByName(type.name);
+            return prev?.w != null && prev?.h != null
+                ? (w: prev!.w!, h: prev.h!)
+                : null;
+          }();
       if (size != null) {
         type.w = size.w;
         type.h = size.h;
       }
-      type.color =
-          colors[type.name] ?? previous?.typeByName(type.name)?.color;
+      type.color = colors[type.name] ?? previous?.typeByName(type.name)?.color;
     }
     for (final group in diagram.groups) {
-      group.color =
-          colors[group.id] ?? previous?.groupById(group.id)?.color;
+      group.color = colors[group.id] ?? previous?.groupById(group.id)?.color;
     }
 
     _applyLayout(diagram, positions, previous);
@@ -1036,10 +1033,12 @@ class PlantUmlService {
     var minX = 0.0, minY = 0.0, maxX = hw, maxY = hh;
 
     List<UmlType> onSide(String side) => diagram.types
-        .where((n) =>
-            n.isNote &&
-            n.attachedTo == host.name &&
-            (n.attachedSide ?? 'bottom') == side)
+        .where(
+          (n) =>
+              n.isNote &&
+              n.attachedTo == host.name &&
+              (n.attachedSide ?? 'bottom') == side,
+        )
         .toList();
 
     // Vertical sides: notes stack away from the host, centered on its x-axis.
@@ -1067,7 +1066,8 @@ class PlantUmlService {
     // Horizontal sides: notes form a vertical block centered on the host.
     void layoutHorizontal(List<UmlType> notes, bool left) {
       if (notes.isEmpty) return;
-      final blockH = notes.fold(0.0, (a, n) => a + effectiveHeight(n)) +
+      final blockH =
+          notes.fold(0.0, (a, n) => a + effectiveHeight(n)) +
           (notes.length - 1) * _noteGap;
       var cy = (hh - blockH) / 2;
       for (final n in notes) {
@@ -1108,22 +1108,20 @@ class PlantUmlService {
         if (placed.contains(noteName)) return;
         final note = diagram.typeByName(noteName);
         if (note == null) return;
-        note.x = math.max(0, host.x + off.$1);
-        note.y = math.max(0, host.y + off.$2);
+        note.x = host.x + off.$1;
+        note.y = host.y + off.$2;
       });
     }
   }
 
   static void _autoLayoutGrid(UmlDiagram diagram) {
-    final leaves =
-        diagram.types.where((t) => t.attachedTo == null).toList();
+    final leaves = diagram.types.where((t) => t.attachedTo == null).toList();
     // Top-level boxes get a wider gap so relationship arrows are visible.
     _layoutLeafGrid(diagram, leaves, _layoutGap, _layoutGap, gap: _topLevelGap);
   }
 
   static void _autoLayoutGrouped(UmlDiagram diagram) {
-    final roots =
-        diagram.groups.where((g) => g.parentId == null).toList();
+    final roots = diagram.groups.where((g) => g.parentId == null).toList();
 
     // Measure each root by laying it out at the origin; its descendants are
     // positioned absolutely, so we translate the whole subtree into place next.
@@ -1160,8 +1158,13 @@ class PlantUmlService {
         .where((t) => t.groupId == null && t.attachedTo == null)
         .toList();
     if (loose.isNotEmpty) {
-      _layoutLeafGrid(diagram, loose, _layoutGap, bottom + _bandGap,
-          gap: _topLevelGap);
+      _layoutLeafGrid(
+        diagram,
+        loose,
+        _layoutGap,
+        bottom + _bandGap,
+        gap: _topLevelGap,
+      );
     }
   }
 
@@ -1291,7 +1294,8 @@ class PlantUmlService {
 
   /// Recomputes every group's bounding box from its current node positions.
   /// Call after a node moves so containers track their contents.
-  static void relayoutGroups(UmlDiagram diagram) => _computeGroupBounds(diagram);
+  static void relayoutGroups(UmlDiagram diagram) =>
+      _computeGroupBounds(diagram);
 
   /// Recomputes every group's bounding box from its (already-positioned)
   /// descendants — works whether positions came from layout or @pos.
@@ -1431,11 +1435,15 @@ class PlantUmlService {
     int indent,
   ) {
     final pad = '  ' * indent;
-    final stereotype = group.stereotype != null ? ' <<${group.stereotype}>>' : '';
+    final stereotype = group.stereotype != null
+        ? ' <<${group.stereotype}>>'
+        : '';
     final aliasPart = group.keyword == 'package' && group.id == group.label
         ? ''
         : ' as ${group.id}';
-    buffer.writeln('$pad${group.keyword} "${group.label}"$aliasPart$stereotype {');
+    buffer.writeln(
+      '$pad${group.keyword} "${group.label}"$aliasPart$stereotype {',
+    );
     for (final sub in diagram.groups.where((g) => g.parentId == group.id)) {
       _writeGroup(buffer, diagram, sub, indent + 1);
     }
@@ -1462,8 +1470,9 @@ class PlantUmlService {
     }
     if (type.kind == UmlTypeKind.node) {
       final keyword = type.nodeKeyword ?? 'rectangle';
-      final stereotype =
-          type.stereotype != null ? ' <<${type.stereotype}>>' : '';
+      final stereotype = type.stereotype != null
+          ? ' <<${type.stereotype}>>'
+          : '';
       final aliasPart = type.name == type.label ? '' : ' as ${type.name}';
       buffer.writeln('$pad$keyword "${type.label}"$aliasPart$stereotype');
       return;

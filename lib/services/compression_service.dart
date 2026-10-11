@@ -85,11 +85,10 @@ CompressionOutcome decompressWorker((String, int) args) {
 /// Base64 rather than raw bytes because the output pane is a text editor and
 /// compressed payloads are not valid UTF-8.
 CompressionOutcome compressSync(String text, CompressionCodec codec) {
-  final trimmed = text.trim();
-  if (trimmed.isEmpty) {
+  if (text.isEmpty) {
     return const CompressionOutcome.failure('Enter data to compress.');
   }
-  final input = Uint8List.fromList(utf8.encode(trimmed));
+  final input = Uint8List.fromList(utf8.encode(text));
   try {
     final encoded = _encodeBytes(input, codec);
     final summary =

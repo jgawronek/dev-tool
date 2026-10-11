@@ -41,7 +41,13 @@ void main() {
         tester,
         actions: [ToolButton(label: 'Copy', onPressed: () {})],
       );
-      expect(find.byIcon(Icons.copy), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Icon && {Icons.copy, Icons.copy_outlined}.contains(w.icon),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('tapping it invokes the callback', (tester) async {
@@ -50,7 +56,12 @@ void main() {
         tester,
         actions: [ToolButton(label: 'Copy', onPressed: () => taps++)],
       );
-      await tester.tap(find.byIcon(Icons.copy));
+      await tester.tap(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Icon && {Icons.copy, Icons.copy_outlined}.contains(w.icon),
+        ),
+      );
       await tester.pump();
       expect(taps, 1);
     });
@@ -63,7 +74,13 @@ void main() {
           ToolButton(label: 'Use as input', onPressed: () {}),
         ],
       );
-      expect(find.byIcon(Icons.copy), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Icon && {Icons.copy, Icons.copy_outlined}.contains(w.icon),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Use as input'), findsOneWidget);
     });
 
@@ -77,7 +94,12 @@ void main() {
         actions: [ToolButton(label: 'Copy', onPressed: () => fromButton++)],
         copyAction: () => explicit++,
       );
-      await tester.tap(find.byIcon(Icons.copy));
+      await tester.tap(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Icon && {Icons.copy, Icons.copy_outlined}.contains(w.icon),
+        ),
+      );
       await tester.pump();
       expect(explicit, 1);
       expect(fromButton, 0);
@@ -89,7 +111,13 @@ void main() {
         actions: [ToolButton(label: 'Copy', onPressed: () {})],
         showHeader: true,
       );
-      expect(find.byIcon(Icons.copy), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Icon && {Icons.copy, Icons.copy_outlined}.contains(w.icon),
+        ),
+        findsOneWidget,
+      );
     });
   });
 
@@ -114,8 +142,19 @@ void main() {
         overlay: const Text('custom overlay'),
       );
       expect(find.text('custom overlay'), findsOneWidget);
-      expect(find.byIcon(Icons.copy), findsOneWidget);
-      await tester.tap(find.byIcon(Icons.copy));
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Icon && {Icons.copy, Icons.copy_outlined}.contains(w.icon),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Icon && {Icons.copy, Icons.copy_outlined}.contains(w.icon),
+        ),
+      );
       await tester.pump();
       expect(taps, 1);
     });
@@ -127,11 +166,17 @@ void main() {
         overlay: const Text('custom overlay'),
       );
       expect(find.text('custom overlay'), findsOneWidget);
-      expect(find.byIcon(Icons.copy), findsNothing);
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Icon && {Icons.copy, Icons.copy_outlined}.contains(w.icon),
+        ),
+        findsNothing,
+      );
     });
   });
 
-  group('Sample and Clear keep their context-menu behaviour', () {
+  group('Legacy Sample and Clear actions are hidden', () {
     testWidgets('they do not appear in the action strip', (tester) async {
       await pumpPane(
         tester,
@@ -140,9 +185,15 @@ void main() {
           ToolButton(label: 'Clear', onPressed: () {}),
         ],
       );
-      // They are reachable from the editor's right-click menu instead.
-      expect(find.byType(ToolButton), findsNothing);
-      expect(find.byIcon(Icons.copy), findsNothing);
+      // Samples are offered by the tool heading; editors have no Clear button.
+      expect(find.text('Clear'), findsNothing);
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Icon && {Icons.copy, Icons.copy_outlined}.contains(w.icon),
+        ),
+        findsNothing,
+      );
     });
   });
 }

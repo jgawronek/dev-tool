@@ -175,12 +175,14 @@ class SmallDropdown extends StatefulWidget {
     required this.items,
     required this.initialValue,
     this.width,
+    this.compact = false,
     this.onChanged,
   });
 
   final List<String> items;
   final String initialValue;
   final double? width;
+  final bool compact;
   final ValueChanged<String>? onChanged;
 
   @override
@@ -217,7 +219,7 @@ class _SmallDropdownState extends State<SmallDropdown> {
     return ConstrainedBox(
       constraints: BoxConstraints.tightFor(width: width),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: EdgeInsets.symmetric(horizontal: widget.compact ? 6 : 8),
         decoration: BoxDecoration(
           color: appColors.panelElevated,
           borderRadius: BorderRadius.circular(6),
@@ -242,11 +244,17 @@ class _SmallDropdownState extends State<SmallDropdown> {
                 .map(
                   (item) => Align(
                     alignment: Alignment.centerLeft,
-                    child: Text(
-                      item,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    child: widget.compact
+                        ? FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(item, maxLines: 1),
+                          )
+                        : Text(
+                            item,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                   ),
                 )
                 .toList(),
@@ -259,8 +267,12 @@ class _SmallDropdownState extends State<SmallDropdown> {
             underline: const SizedBox.shrink(),
             isDense: true,
             isExpanded: true,
+            iconSize: widget.compact ? 16 : 24,
             dropdownColor: appColors.panelElevated,
-            style: TextStyle(color: appColors.editorText, fontSize: 12),
+            style: TextStyle(
+              color: appColors.editorText,
+              fontSize: widget.compact ? 11 : 12,
+            ),
             iconEnabledColor: appColors.mutedText,
           ),
         ),
@@ -498,6 +510,9 @@ class EditorPane extends StatelessWidget {
     VoidCallback? promotedCopyAction;
     for (final action in actions) {
       if (action is ToolButton) {
+        if (action.label == 'Clear' || action.label == 'Sample') {
+          continue;
+        }
         if (action.label == 'Copy') {
           // A Copy ToolButton is how callers ask for the floating copy
           // affordance. Dropping it (as the hidden-label filter used to) left

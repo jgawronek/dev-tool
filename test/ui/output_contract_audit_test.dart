@@ -68,11 +68,7 @@ void main() {
       tester,
     ) async {
       await harness.open(tester, 'jwt_debugger');
-      // The separate all-tool audit reports this known layout defect.
-      final layout = tester.takeException();
-      if (layout != null) {
-        expect(layout.toString(), contains('RenderFlex overflowed'));
-      }
+      expect(tester.takeException(), isNull);
       String part(Object value) =>
           base64Url.encode(utf8.encode(jsonEncode(value))).replaceAll('=', '');
       final header = part({'alg': spec.$1, 'typ': 'JWT'});

@@ -97,16 +97,45 @@ Size _umlBoxSize(UmlType type) {
   return Size(type.w ?? defaultW, isNode ? (type.h ?? defaultH) : defaultH);
 }
 
-// Canvas background presets selectable from the toolbar.
-const List<String> _umlCanvasStyles = ['App', 'Paper', 'Dark', 'Sketch'];
+// Diagram drawing styles; node colors are chosen independently below.
+const List<String> _umlCanvasStyles = [
+  'App',
+  'Sketch',
+  'Digital',
+  'Chalkboard',
+];
 
 Color _umlCanvasBackground(String style, AppColors appColors) =>
-    switch (style) {
-      'Paper' => const Color(0xFFF6F5EF),
-      'Dark' => const Color(0xFF12151A),
-      'Sketch' => const Color(0xFF1E2024),
-      _ => appColors.canvas,
-    };
+    _umlDrawingColors(style, appColors).canvas;
+
+String? _umlFontFamily(String style) => switch (style) {
+  'Sketch' => 'PatrickHand',
+  'Digital' || 'Chalkboard' => 'Menlo',
+  _ => null,
+};
+
+AppColors _umlDrawingColors(String style, AppColors appColors) =>
+    style == 'Chalkboard'
+    ? appColors.copyWith(
+        canvas: const Color(0xFF203831),
+        panel: const Color(0xFF203831),
+        panelHeader: const Color(0xFF284239),
+        border: const Color(0xFFB7C9BD),
+        editorText: const Color(0xFFF1F3DF),
+        mutedText: const Color(0xFFD0DACE),
+        shadow: Colors.transparent,
+      )
+    : style == 'Digital'
+    ? appColors.copyWith(
+        canvas: const Color(0xFF222A30),
+        panel: const Color(0xFF222A30),
+        panelHeader: const Color(0xFF222A30),
+        border: const Color(0xFFBDD0D9),
+        editorText: const Color(0xFFD5DEE3),
+        mutedText: const Color(0xFFB0C0C8),
+        shadow: Colors.transparent,
+      )
+    : appColors;
 
 // Node color skins selectable from the toolbar. `Auto`/`ArchiMate`/`Monochrome`
 // are semantic; the rest are qualitative palettes cycled across the diagram.
@@ -655,8 +684,8 @@ User --> Role : has
               _scale;
     final type = UmlType(
       name: _uniqueName('NewClass'),
-      x: _maybeSnap((center.dx - _umlBoxWidth / 2).clamp(0, double.infinity)),
-      y: _maybeSnap((center.dy - 40).clamp(0, double.infinity)),
+      x: _maybeSnap(center.dx - _umlBoxWidth / 2),
+      y: _maybeSnap(center.dy - 40),
       members: [
         UmlMember(visibility: UmlVisibility.public, text: 'field: Type'),
       ],
@@ -747,8 +776,8 @@ User --> Role : has
       members: kind == UmlTypeKind.node
           ? <UmlMember>[]
           : [UmlMember(visibility: UmlVisibility.public, text: 'field: Type')],
-      x: _maybeSnap((at.dx - boxWidth / 2).clamp(0, double.infinity)),
-      y: _maybeSnap((at.dy - 40).clamp(0, double.infinity)),
+      x: _maybeSnap(at.dx - boxWidth / 2),
+      y: _maybeSnap(at.dy - 40),
     );
     setState(() {
       _diagram.types.add(type);
@@ -1367,11 +1396,11 @@ User --> Role : has
       final dy = delta.dy / _scale;
       if (_snapToGrid) {
         _dragRaw = (_dragRaw ?? Offset(type.x, type.y)) + Offset(dx, dy);
-        type.x = max(0, _snapVal(_dragRaw!.dx));
-        type.y = max(0, _snapVal(_dragRaw!.dy));
+        type.x = _snapVal(_dragRaw!.dx);
+        type.y = _snapVal(_dragRaw!.dy);
       } else {
-        type.x = max(0, type.x + dx);
-        type.y = max(0, type.y + dy);
+        type.x = type.x + dx;
+        type.y = type.y + dy;
       }
       // Keep package/composite containers wrapped around their contents.
       if (_diagram.hasGroups) PlantUmlService.relayoutGroups(_diagram);
@@ -1762,19 +1791,25 @@ class _UmlCanvasPane extends StatelessWidget {
   final VoidCallback onGroupDragEnd;
   final void Function(String id, Offset globalPos) onGroupMenu;
 
-  Size _canvasExtent(Size viewport) {
+  Rect _canvasBounds(Size viewport) {
+    var minLeft = 0.0;
+    var minTop = 0.0;
     var maxRight = viewport.width;
     var maxBottom = viewport.height;
     for (final t in diagram.types) {
       final size = _umlBoxSize(t);
+      minLeft = min(minLeft, t.x - 80);
+      minTop = min(minTop, t.y - 80);
       maxRight = max(maxRight, t.x + size.width + 80);
       maxBottom = max(maxBottom, t.y + size.height + 80);
     }
     for (final g in diagram.groups) {
+      minLeft = min(minLeft, g.x - 80);
+      minTop = min(minTop, g.y - 80);
       maxRight = max(maxRight, g.x + g.w + 80);
       maxBottom = max(maxBottom, g.y + g.h + 80);
     }
-    return Size(maxRight, maxBottom);
+    return Rect.fromLTRB(minLeft, minTop, maxRight, maxBottom);
   }
 
   /// Groups ordered parents-first so nested containers paint on top.
@@ -1814,22 +1849,39 @@ class _UmlCanvasPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appColors = context.appColors;
+    final drawingColors = _umlDrawingColors(bgStyle, appColors);
     return ToolPanel(
       title: 'Diagram',
       actions: [
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SmallDropdown(
-              items: _umlCanvasStyles,
-              initialValue: bgStyle,
-              onChanged: onBgStyle,
+            Tooltip(
+              message: 'Diagram style',
+              child: Semantics(
+                label: 'Diagram style',
+                child: SmallDropdown(
+                  items: _umlCanvasStyles,
+                  initialValue: bgStyle,
+                  width: 70.4,
+                  compact: true,
+                  onChanged: onBgStyle,
+                ),
+              ),
             ),
             const SizedBox(width: 6),
-            SmallDropdown(
-              items: _umlNodeSkins,
-              initialValue: nodeSkin,
-              onChanged: onNodeSkin,
+            Tooltip(
+              message: 'Node colors',
+              child: Semantics(
+                label: 'Node colors',
+                child: SmallDropdown(
+                  items: _umlNodeSkins,
+                  initialValue: nodeSkin,
+                  width: 78.4,
+                  compact: true,
+                  onChanged: onNodeSkin,
+                ),
+              ),
             ),
             const SizedBox(width: 6),
             ToolButton(label: 'Tidy', icon: Icons.grid_view, onPressed: onTidy),
@@ -1840,16 +1892,6 @@ class _UmlCanvasPane extends StatelessWidget {
               onPressed: onToggleSnap,
             ),
             const SizedBox(width: 6),
-            ToolIconButton(
-              icon: Icons.zoom_out,
-              tooltip: 'Zoom out',
-              onPressed: onZoomOut,
-            ),
-            ToolIconButton(
-              icon: Icons.zoom_in,
-              tooltip: 'Zoom in',
-              onPressed: onZoomIn,
-            ),
             ToolButton(label: 'Fit', icon: Icons.fit_screen, onPressed: onFit),
             const SizedBox(width: 6),
             PopupMenuButton<String>(
@@ -1925,7 +1967,7 @@ class _UmlCanvasPane extends StatelessWidget {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 onViewport(constraints.biggest);
-                final extent = _canvasExtent(constraints.biggest);
+                final bounds = _canvasBounds(constraints.biggest);
                 return Listener(
                   // Mouse wheel / two-finger scroll zooms toward the cursor.
                   onPointerSignal: (event) {
@@ -1978,15 +2020,15 @@ class _UmlCanvasPane extends StatelessWidget {
                         left: 0,
                         top: 0,
                         child: Transform.translate(
-                          offset: pan,
+                          offset: pan + bounds.topLeft * scale,
                           child: Transform.scale(
                             scale: scale,
                             alignment: Alignment.topLeft,
                             child: RepaintBoundary(
                               key: captureKey,
                               child: SizedBox(
-                                width: extent.width,
-                                height: extent.height,
+                                width: bounds.width,
+                                height: bounds.height,
                                 child: Stack(
                                   clipBehavior: Clip.none,
                                   children: [
@@ -2010,7 +2052,8 @@ class _UmlCanvasPane extends StatelessWidget {
                                           child: CustomPaint(
                                             painter: _GridPainter(
                                               step: gridStep,
-                                              color: appColors.border,
+                                              color: drawingColors.border,
+                                              origin: bounds.topLeft,
                                             ),
                                           ),
                                         ),
@@ -2018,15 +2061,16 @@ class _UmlCanvasPane extends StatelessWidget {
                                     // Group containers (parents first, behind nodes).
                                     for (final group in _groupsByDepth)
                                       Positioned(
-                                        left: group.x,
-                                        top: group.y,
+                                        left: group.x - bounds.left,
+                                        top: group.y - bounds.top,
                                         child: _UmlGroupBox(
                                           group: group,
+                                          style: bgStyle,
                                           selected: group.id == selectedGroup,
                                           stereo: _stereotypeColors(
                                             diagram,
                                             group.stereotype,
-                                            appColors,
+                                            drawingColors,
                                             nodeSkin,
                                             identity: group.id,
                                           ),
@@ -2045,7 +2089,9 @@ class _UmlCanvasPane extends StatelessWidget {
                                         child: CustomPaint(
                                           painter: _UmlDiagramPainter(
                                             diagram: diagram,
-                                            colors: appColors,
+                                            colors: drawingColors,
+                                            style: bgStyle,
+                                            origin: bounds.topLeft,
                                           ),
                                         ),
                                       ),
@@ -2056,22 +2102,25 @@ class _UmlCanvasPane extends StatelessWidget {
                                         // back so the box stays put visually.
                                         left:
                                             type.x -
+                                            bounds.left -
                                             (type.name == selected
                                                 ? _umlHandleInset
                                                 : 0),
                                         top:
                                             type.y -
+                                            bounds.top -
                                             (type.name == selected
                                                 ? _umlHandleInset
                                                 : 0),
                                         child: _UmlTypeBox(
                                           type: type,
                                           selected: type.name == selected,
-                                          sketch: bgStyle == 'Sketch',
+                                          style: bgStyle,
+                                          nodeSkin: nodeSkin,
                                           stereo: _stereotypeColors(
                                             diagram,
                                             type.stereotype,
-                                            appColors,
+                                            drawingColors,
                                             nodeSkin,
                                             identity: type.name,
                                           ),
@@ -2111,10 +2160,12 @@ class _UmlCanvasPane extends StatelessWidget {
                           ),
                         ),
                       Positioned(
-                        right: 8,
+                        left: 8,
                         bottom: 8,
-                        child: IgnorePointer(
-                          child: _UmlZoomBadge(scale: scale),
+                        child: _UmlZoomBadge(
+                          scale: scale,
+                          onZoomOut: onZoomOut,
+                          onZoomIn: onZoomIn,
                         ),
                       ),
                     ],
@@ -2145,7 +2196,8 @@ class _UmlTypeBox extends StatelessWidget {
   const _UmlTypeBox({
     required this.type,
     required this.selected,
-    required this.sketch,
+    required this.style,
+    required this.nodeSkin,
     required this.stereo,
     required this.editing,
     required this.onSelect,
@@ -2161,7 +2213,10 @@ class _UmlTypeBox extends StatelessWidget {
 
   final UmlType type;
   final bool selected;
-  final bool sketch;
+  final String style;
+  final String nodeSkin;
+  bool get sketch => style == 'Sketch' || style == 'Chalkboard';
+  bool get digital => style == 'Digital';
   final ({Color background, Color border, Color font}) stereo;
   final bool editing;
   final VoidCallback onSelect;
@@ -2191,7 +2246,36 @@ class _UmlTypeBox extends StatelessWidget {
   // stereotype/theme colors, with a derived border and contrasting text.
   ({Color background, Color border, Color font}) _colors(AppColors appColors) {
     final custom = _parseUmlColor(type.color);
-    if (custom == null) return stereo;
+    if (digital) {
+      const outlines = [
+        Color(0xFFE4DF45),
+        Color(0xFFE14E45),
+        Color(0xFF72CCD6),
+        Color(0xFFB5D278),
+      ];
+      final index = type.name.codeUnits.fold<int>(0, (sum, c) => sum + c);
+      final outline =
+          custom ??
+          (nodeSkin == 'Monochrome'
+              ? appColors.border
+              : stereo.background == appColors.panel
+              ? outlines[index % outlines.length]
+              : Color.lerp(stereo.background, Colors.white, 0.25)!);
+      return (
+        background: appColors.panel,
+        border: outline,
+        font: appColors.editorText,
+      );
+    }
+    if (custom == null) {
+      if (style == 'Chalkboard') {
+        final chalk = stereo.background == appColors.panel
+            ? appColors.editorText
+            : Color.lerp(stereo.background, Colors.white, 0.65)!;
+        return (background: appColors.panel, border: chalk, font: chalk);
+      }
+      return stereo;
+    }
     return (
       background: custom,
       border: Color.alphaBlend(const Color(0x40000000), custom),
@@ -2203,7 +2287,7 @@ class _UmlTypeBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final appColors = context.appColors;
+    final appColors = _umlDrawingColors(style, context.appColors);
     final size = _umlBoxSize(type);
 
     // Nodes are fixed-size and centered; class boxes size to their content
@@ -2227,7 +2311,8 @@ class _UmlTypeBox extends StatelessWidget {
     if (sketch && !type.isNote) {
       body = CustomPaint(
         foregroundPainter: _SketchBorderPainter(
-          color: selected ? appColors.accent : appColors.mutedText,
+          color: selected ? appColors.accent : _colors(appColors).border,
+          chalk: style == 'Chalkboard',
           seed: type.name.hashCode,
           strokeWidth: selected ? 2.2 : 1.6,
         ),
@@ -2304,20 +2389,22 @@ class _UmlTypeBox extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: c.background,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(digital || sketch ? 0 : 6),
         border: Border.all(
           color: sketch
               ? Colors.transparent
               : (selected ? appColors.accent : c.border),
           width: selected ? 2 : 1.2,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: appColors.shadow,
-            blurRadius: selected ? 10 : 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        boxShadow: digital || sketch
+            ? const []
+            : [
+                BoxShadow(
+                  color: appColors.shadow,
+                  blurRadius: selected ? 10 : 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       child: Stack(
         children: [
@@ -2351,7 +2438,8 @@ class _UmlTypeBox extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  fontSize: 9.5,
+                                  fontSize: style == 'Sketch' ? 11 : 9.5,
+                                  fontFamily: _umlFontFamily(style),
                                   color: c.font.withAlpha(190),
                                 ),
                               ),
@@ -2361,7 +2449,8 @@ class _UmlTypeBox extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.center,
                               style: TextStyle(
-                                fontSize: 12.5,
+                                fontSize: style == 'Sketch' ? 15 : 12.5,
+                                fontFamily: _umlFontFamily(style),
                                 fontWeight: FontWeight.w600,
                                 color: c.font,
                               ),
@@ -2406,6 +2495,7 @@ class _UmlTypeBox extends StatelessWidget {
                 child: _NoteBody(
                   body: _umlDisplayText(type.label),
                   color: font,
+                  fontFamily: _umlFontFamily(style),
                 ),
               ),
       ),
@@ -2417,7 +2507,10 @@ class _UmlTypeBox extends StatelessWidget {
     final isEnum = type.kind == UmlTypeKind.enumType;
     final fields = isEnum ? type.members : type.fields;
     final methods = isEnum ? const <UmlMember>[] : type.methods;
-    const memberStyle = TextStyle(fontFamily: 'Menlo', fontSize: 11);
+    final memberStyle = TextStyle(
+      fontFamily: style == 'Sketch' ? 'PatrickHand' : 'Menlo',
+      fontSize: style == 'Sketch' ? 14 : 11,
+    );
 
     // Base colors come from the node skin / stereotype / right-click override
     // (via [_colors]); when that resolves to the plain panel (the `Auto` skin
@@ -2450,7 +2543,11 @@ class _UmlTypeBox extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
           border: topBorder
-              ? Border(top: BorderSide(color: appColors.border))
+              ? Border(
+                  top: BorderSide(
+                    color: digital ? c.border.withAlpha(120) : appColors.border,
+                  ),
+                )
               : null,
         ),
         child: Column(
@@ -2464,22 +2561,24 @@ class _UmlTypeBox extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: bodyColor,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(digital || sketch ? 0 : 6),
         border: Border.all(
           color: sketch
               ? Colors.transparent
               : (selected
                     ? appColors.accent
-                    : (tinted ? c.border : appColors.border)),
+                    : (digital || tinted ? c.border : appColors.border)),
           width: selected ? 2 : 1,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: appColors.shadow,
-            blurRadius: selected ? 10 : 5,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        boxShadow: digital || sketch
+            ? const []
+            : [
+                BoxShadow(
+                  color: appColors.shadow,
+                  blurRadius: selected ? 10 : 5,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -2491,7 +2590,11 @@ class _UmlTypeBox extends StatelessWidget {
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: headerColor,
-              border: Border(bottom: BorderSide(color: appColors.border)),
+              border: Border(
+                bottom: BorderSide(
+                  color: digital ? c.border.withAlpha(120) : appColors.border,
+                ),
+              ),
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -2501,7 +2604,9 @@ class _UmlTypeBox extends StatelessWidget {
                   Text(
                     stereotypeLabel,
                     style: TextStyle(
-                      fontSize: 9.5,
+                      fontSize: style == 'Sketch' ? 11 : 9.5,
+                      fontFamily: _umlFontFamily(style),
+                      height: 1,
                       color: tinted
                           ? textColor.withAlpha(180)
                           : appColors.mutedText,
@@ -2518,7 +2623,9 @@ class _UmlTypeBox extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 12.5,
+                      fontSize: style == 'Sketch' ? 15 : 12.5,
+                      fontFamily: _umlFontFamily(style),
+                      height: 1,
                       fontWeight: FontWeight.w700,
                       fontStyle: type.kind == UmlTypeKind.abstractType
                           ? FontStyle.italic
@@ -2570,8 +2677,10 @@ class _SketchBorderPainter extends CustomPainter {
     required this.color,
     required this.seed,
     required this.strokeWidth,
+    this.chalk = false,
   });
 
+  final bool chalk;
   final Color color;
   final int seed;
   final double strokeWidth;
@@ -2614,11 +2723,23 @@ class _SketchBorderPainter extends CustomPainter {
     _edge(canvas, tr, br, paint, 2);
     _edge(canvas, br, bl, paint, 3);
     _edge(canvas, bl, tl, paint, 4);
+    if (chalk) {
+      paint
+        ..color = color.withAlpha(95)
+        ..strokeWidth = 0.7;
+      _edge(canvas, tl + const Offset(1, 1), tr, paint, 11);
+      _edge(canvas, tr, br + const Offset(-1, -1), paint, 12);
+      _edge(canvas, br, bl, paint, 13);
+      _edge(canvas, bl, tl, paint, 14);
+    }
   }
 
   @override
   bool shouldRepaint(covariant _SketchBorderPainter old) =>
-      old.color != color || old.seed != seed || old.strokeWidth != strokeWidth;
+      old.color != color ||
+      old.seed != seed ||
+      old.strokeWidth != strokeWidth ||
+      old.chalk != chalk;
 }
 
 /// Paints a sticky-note shape (rectangle with a folded top-right corner).
@@ -2626,14 +2747,16 @@ class _SketchBorderPainter extends CustomPainter {
 /// headers), `--` dividers, and `**bold**` text. Column widths size to content,
 /// matching `PlantUmlService.noteContentSize` so the note box never clips.
 class _NoteBody extends StatelessWidget {
-  const _NoteBody({required this.body, required this.color});
+  const _NoteBody({required this.body, required this.color, this.fontFamily});
 
   final String body;
   final Color color;
+  final String? fontFamily;
 
   TextSpan _creole(String text, {required bool bold}) {
     final base = TextStyle(
-      fontSize: 12,
+      fontFamily: fontFamily,
+      fontSize: fontFamily == 'PatrickHand' ? 14 : 12,
       height: 1.25,
       color: color,
       fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
@@ -2720,27 +2843,32 @@ class _NoteBody extends StatelessWidget {
 
 /// A faint alignment grid drawn behind the diagram when snap-to-grid is on.
 class _GridPainter extends CustomPainter {
-  _GridPainter({required this.step, required this.color});
+  _GridPainter({
+    required this.step,
+    required this.color,
+    this.origin = Offset.zero,
+  });
 
   final double step;
   final Color color;
+  final Offset origin;
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = color.withAlpha(40)
       ..strokeWidth = 1;
-    for (var x = 0.0; x <= size.width; x += step) {
+    for (var x = (-origin.dx) % step; x <= size.width; x += step) {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
     }
-    for (var y = 0.0; y <= size.height; y += step) {
+    for (var y = (-origin.dy) % step; y <= size.height; y += step) {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
     }
   }
 
   @override
   bool shouldRepaint(covariant _GridPainter old) =>
-      old.step != step || old.color != color;
+      old.step != step || old.color != color || old.origin != origin;
 }
 
 class _NoteShapePainter extends CustomPainter {
@@ -2975,6 +3103,7 @@ class _UmlNameEditorState extends State<_UmlNameEditor> {
 class _UmlGroupBox extends StatelessWidget {
   const _UmlGroupBox({
     required this.group,
+    required this.style,
     required this.selected,
     required this.stereo,
     required this.onSelect,
@@ -2985,6 +3114,7 @@ class _UmlGroupBox extends StatelessWidget {
   });
 
   final UmlGroup group;
+  final String style;
   final bool selected;
   final ({Color background, Color border, Color font}) stereo;
   final VoidCallback onSelect;
@@ -2995,7 +3125,7 @@ class _UmlGroupBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final appColors = context.appColors;
+    final appColors = _umlDrawingColors(style, context.appColors);
     final hasStereotype = group.stereotype != null;
     // A user-set background (right-click → Background color) wins over the
     // stereotype/theme color. Group fills stay translucent so overlapping
@@ -3028,7 +3158,9 @@ class _UmlGroupBox extends StatelessWidget {
               child: Container(
                 decoration: BoxDecoration(
                   color: fill,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(
+                    style == 'Digital' ? 0 : 8,
+                  ),
                   border: Border.all(
                     color: border.withAlpha(selected ? 230 : 180),
                     width: selected ? 1.6 : 1,
@@ -3064,7 +3196,8 @@ class _UmlGroupBox extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 11.5,
+                        fontSize: style == 'Sketch' ? 14 : 11.5,
+                        fontFamily: _umlFontFamily(style),
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0,
                         color: selected
@@ -3115,11 +3248,17 @@ class _UmlTitleChip extends StatelessWidget {
   }
 }
 
-/// Small zoom-percentage readout in the canvas corner.
+/// Fixed zoom controls and percentage readout in the canvas corner.
 class _UmlZoomBadge extends StatelessWidget {
-  const _UmlZoomBadge({required this.scale});
+  const _UmlZoomBadge({
+    required this.scale,
+    required this.onZoomOut,
+    required this.onZoomIn,
+  });
 
   final double scale;
+  final VoidCallback onZoomOut;
+  final VoidCallback onZoomIn;
 
   @override
   Widget build(BuildContext context) {
@@ -3131,14 +3270,32 @@ class _UmlZoomBadge extends StatelessWidget {
         border: Border.all(color: appColors.border),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-        child: Text(
-          '${(scale * 100).round()}%',
-          style: TextStyle(
-            fontSize: 10.5,
-            fontWeight: FontWeight.w600,
-            color: appColors.mutedText,
-          ),
+        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ToolIconButton(
+              icon: Icons.zoom_out,
+              tooltip: 'Zoom out',
+              onPressed: onZoomOut,
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 7),
+              child: Text(
+                '${(scale * 100).round()}%',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                  color: appColors.mutedText,
+                ),
+              ),
+            ),
+            ToolIconButton(
+              icon: Icons.zoom_in,
+              tooltip: 'Zoom in',
+              onPressed: onZoomIn,
+            ),
+          ],
         ),
       ),
     );
@@ -3146,10 +3303,17 @@ class _UmlZoomBadge extends StatelessWidget {
 }
 
 class _UmlDiagramPainter extends CustomPainter {
-  _UmlDiagramPainter({required this.diagram, required this.colors});
+  _UmlDiagramPainter({
+    required this.diagram,
+    required this.colors,
+    required this.style,
+    required this.origin,
+  });
 
   final UmlDiagram diagram;
   final AppColors colors;
+  final String style;
+  final Offset origin;
 
   Rect _rectFor(UmlType type) {
     final size = _umlBoxSize(type);
@@ -3242,7 +3406,11 @@ class _UmlDiagramPainter extends CustomPainter {
     final painter = TextPainter(
       text: TextSpan(
         text: text,
-        style: TextStyle(color: colors.editorText, fontSize: 10.5),
+        style: TextStyle(
+          color: colors.editorText,
+          fontSize: style == 'Sketch' ? 14 : 10.5,
+          fontFamily: _umlFontFamily(style),
+        ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
@@ -3263,6 +3431,7 @@ class _UmlDiagramPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    canvas.translate(-origin.dx, -origin.dy);
     final stroke = Paint()
       ..color = colors.mutedText
       ..strokeWidth = 1.4

@@ -1,11 +1,9 @@
 import 'dart:math';
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' show Size;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:dev_tool/services/cipher_service.dart';
-import 'package:dev_tool/ui/widgets.dart';
 
 import '../helpers/tool_harness.dart';
 
@@ -49,18 +47,28 @@ void main() {
         CipherKind.reverse,
       ]) {
         final encoded = encodeCipher(_plain, kind, const CipherOptions());
-        expect(decodeCipher(encoded, kind, const CipherOptions()), _plain,
-            reason: kind.label);
+        expect(
+          decodeCipher(encoded, kind, const CipherOptions()),
+          _plain,
+          reason: kind.label,
+        );
       }
     });
 
     test('caesar encode and decode mirror each other', () {
-      final encoded = encodeCipher(_plain, CipherKind.caesar,
-          const CipherOptions(shift: 7));
+      final encoded = encodeCipher(
+        _plain,
+        CipherKind.caesar,
+        const CipherOptions(shift: 7),
+      );
       expect(encoded, isNot(_plain));
       // Decoding reverses the shift, so +7 is undone by a shift of 19.
       expect(
-        decodeCipher(encoded, CipherKind.caesar, const CipherOptions(shift: 19)),
+        decodeCipher(
+          encoded,
+          CipherKind.caesar,
+          const CipherOptions(shift: 19),
+        ),
         _plain,
       );
       expect(
@@ -71,8 +79,11 @@ void main() {
 
     test('vigenere round trips with multi-letter and single-letter keys', () {
       for (final key in ['LEMON', 'LE', 'K', 'secretkey']) {
-        final encoded =
-            encodeCipher(_pangram, CipherKind.vigenere, CipherOptions(key: key));
+        final encoded = encodeCipher(
+          _pangram,
+          CipherKind.vigenere,
+          CipherOptions(key: key),
+        );
         expect(encoded, isNot(_pangram), reason: key);
         expect(
           decodeCipher(encoded, CipherKind.vigenere, CipherOptions(key: key)),
@@ -84,7 +95,11 @@ void main() {
 
     test('xor round trips with a repeating key', () {
       for (final key in ['K', 'secret']) {
-        final encoded = encodeCipher(_plain, CipherKind.xor, CipherOptions(key: key));
+        final encoded = encodeCipher(
+          _plain,
+          CipherKind.xor,
+          CipherOptions(key: key),
+        );
         expect(
           decodeCipher(encoded, CipherKind.xor, CipherOptions(key: key)),
           _plain,
@@ -96,17 +111,30 @@ void main() {
 
   group('individual ciphers', () {
     test('rot13 matches the known value', () {
-      expect(decodeCipher('uryyb', CipherKind.rot13, const CipherOptions()), 'hello');
+      expect(
+        decodeCipher('uryyb', CipherKind.rot13, const CipherOptions()),
+        'hello',
+      );
     });
 
     test('rot47 reaches digits and punctuation', () {
-      final encoded = decodeCipher('Hello, World!', CipherKind.rot47, const CipherOptions());
+      final encoded = decodeCipher(
+        'Hello, World!',
+        CipherKind.rot47,
+        const CipherOptions(),
+      );
       expect(encoded, isNot('Hello, World!'));
-      expect(decodeCipher(encoded, CipherKind.rot47, const CipherOptions()), 'Hello, World!');
+      expect(
+        decodeCipher(encoded, CipherKind.rot47, const CipherOptions()),
+        'Hello, World!',
+      );
     });
 
     test('atbash maps a to z', () {
-      expect(decodeCipher('gsv', CipherKind.atbash, const CipherOptions()), 'the');
+      expect(
+        decodeCipher('gsv', CipherKind.atbash, const CipherOptions()),
+        'the',
+      );
     });
 
     test('rail fence decrypts a known ciphertext', () {
@@ -122,32 +150,49 @@ void main() {
 
     test('bacon decodes the classic 24-letter table', () {
       expect(
-        decodeCipher('BAABABABABAA', CipherKind.bacon,
-            const CipherOptions(baconVariant: 'Classic 24')),
+        decodeCipher(
+          'BAABABABABAA',
+          CipherKind.bacon,
+          const CipherOptions(baconVariant: 'Classic 24'),
+        ),
         'SV',
       );
       expect(
-        decodeCipher('AAAAABAAAAABAAAAABAAAAAB', CipherKind.bacon,
-            const CipherOptions(baconVariant: 'Classic 24')),
+        decodeCipher(
+          'AAAAABAAAAABAAAAABAAAAAB',
+          CipherKind.bacon,
+          const CipherOptions(baconVariant: 'Classic 24'),
+        ),
         isNotEmpty,
       );
     });
 
     test('bacon rejects letters outside the selected variant', () {
       expect(
-        () => decodeCipher('ABCDC', CipherKind.bacon,
-            const CipherOptions(baconVariant: '26-letter')),
+        () => decodeCipher(
+          'ABCDC',
+          CipherKind.bacon,
+          const CipherOptions(baconVariant: '26-letter'),
+        ),
         throwsA(isA<FormatException>()),
       );
     });
 
     test('morse decodes letters, digits, and punctuation', () {
       expect(
-        decodeCipher('.... . .-.. .-.. ---', CipherKind.morse, const CipherOptions()),
+        decodeCipher(
+          '.... . .-.. .-.. ---',
+          CipherKind.morse,
+          const CipherOptions(),
+        ),
         'HELLO',
       );
       expect(
-        decodeCipher('.---- ..--- ...-- ....-', CipherKind.morse, const CipherOptions()),
+        decodeCipher(
+          '.---- ..--- ...-- ....-',
+          CipherKind.morse,
+          const CipherOptions(),
+        ),
         '1234',
       );
       expect(
@@ -158,15 +203,22 @@ void main() {
 
     test('morse supports word separators', () {
       expect(
-        decodeCipher('.... . / -... . .-.. .-.. ---', CipherKind.morse,
-            const CipherOptions()),
+        decodeCipher(
+          '.... . / -... . .-.. .-.. ---',
+          CipherKind.morse,
+          const CipherOptions(),
+        ),
         'HE BELLO',
       );
     });
 
     test('morse reports an unknown sequence', () {
       expect(
-        () => decodeCipher('......--..--..', CipherKind.morse, const CipherOptions()),
+        () => decodeCipher(
+          '......--..--..',
+          CipherKind.morse,
+          const CipherOptions(),
+        ),
         throwsA(isA<FormatException>()),
       );
     });
@@ -209,20 +261,22 @@ void main() {
       final hits = identifyCipher(_caesar(_plain, 13));
       expect(hits, isNotEmpty);
       expect(hits.first.output, _plain);
-      expect(
-        hits.map((c) => c.cipher),
-        contains('ROT13'),
-      );
+      expect(hits.map((c) => c.cipher), contains('ROT13'));
     });
 
     test('recognises Atbash', () {
-      final hits = identifyCipher(encodeCipher(_pangram, CipherKind.atbash, const CipherOptions()));
+      final hits = identifyCipher(
+        encodeCipher(_pangram, CipherKind.atbash, const CipherOptions()),
+      );
       expect(hits.first.cipher, 'Atbash');
       expect(hits.first.output, _pangram);
     });
 
     test('finds nothing for noise', () {
-      expect(identifyCipher('deadbeef0123456789abcdef0123456789abcdef'), isEmpty);
+      expect(
+        identifyCipher('deadbeef0123456789abcdef0123456789abcdef'),
+        isEmpty,
+      );
     });
 
     test('empty input yields no candidates', () {
@@ -246,7 +300,11 @@ void main() {
     });
 
     test('finds a repeating XOR key', () {
-      final encoded = encodeCipher(_pangram, CipherKind.xor, const CipherOptions(key: 'K'));
+      final encoded = encodeCipher(
+        _pangram,
+        CipherKind.xor,
+        const CipherOptions(key: 'K'),
+      );
       final hits = bruteForceCipher(encoded);
       expect(hits.first.output, _pangram);
       expect(hits.first.cipher, contains('XOR'));
@@ -278,13 +336,11 @@ void main() {
     }
 
     Future<void> editorMenu(ToolHarness h, String item) async {
-      await h.tester.tapAt(
-        h.tester.getCenter(find.byType(EditorPane).first),
-        buttons: kSecondaryMouseButton,
-      );
-      await h.settle();
-      await h.tap(item);
-      await h.settle();
+      if (item == 'Example') {
+        await h.tap('Load sample');
+      } else {
+        await h.enter(null, text: '');
+      }
     }
 
     toolTest('decodes with the selected cipher', 'cipher_decoder', (h) async {
@@ -294,8 +350,9 @@ void main() {
       expect(h.text('Plaintext...'), 'hello');
     });
 
-    toolTest('brute force surfaces ranked candidates', 'cipher_decoder',
-        (h) async {
+    toolTest('brute force surfaces ranked candidates', 'cipher_decoder', (
+      h,
+    ) async {
       await h.tap('Brute force');
       await h.enter('Ciphertext...', text: _caesar(_plain, 13));
       await settleAsync(h);

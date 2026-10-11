@@ -47,6 +47,7 @@ class _YamlToJsonViewState extends State<_YamlToJsonView> {
       _output.text = encoder.convert(normalized);
       setState(() => _error = null);
     } catch (e) {
+      _output.clear();
       setState(() => _error = e.toString());
     }
   }
@@ -55,6 +56,7 @@ class _YamlToJsonViewState extends State<_YamlToJsonView> {
     const sample =
         '- item: Super Hoop\n  quantity: 1\n- item: Basketball\n  quantity: 4';
     setState(() => _input.text = sample);
+    _run();
   }
 
   Future<void> _copyOutput() async {
@@ -154,6 +156,7 @@ class _YamlJsonConverterViewState extends State<_YamlJsonConverterView> {
       }
       setState(() => _error = null);
     } catch (e) {
+      _output.clear();
       setState(() => _error = e.toString());
     }
   }
@@ -164,6 +167,7 @@ class _YamlJsonConverterViewState extends State<_YamlJsonConverterView> {
           ? '- item: Super Hoop\n  quantity: 1\n- item: Basketball\n  quantity: 4'
           : '{"store":{"book":[{"category":"reference","title":"Sayings"}]}}';
     });
+    _run();
   }
 
   Future<void> _copyOutput() async {
@@ -256,6 +260,7 @@ class _JsonToYamlViewState extends State<_JsonToYamlView> {
       _output.text = _toYamlString(jsonData);
       setState(() => _error = null);
     } catch (e) {
+      _output.clear();
       setState(() => _error = e.toString());
     }
   }
@@ -264,6 +269,7 @@ class _JsonToYamlViewState extends State<_JsonToYamlView> {
     const sample =
         '{"store":{"book":[{"category":"reference","title":"Sayings"}]}}';
     setState(() => _input.text = sample);
+    _run();
   }
 
   Future<void> _copyOutput() async {

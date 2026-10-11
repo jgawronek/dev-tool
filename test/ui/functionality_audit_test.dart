@@ -6,6 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:dev_tool/app.dart';
+import 'package:dev_tool/services/javascript_code_service.dart';
+
+import '../helpers/formatter_engine.dart';
 import 'package:dev_tool/registry/tool_registry.dart';
 import 'package:dev_tool/state/tool_state.dart';
 import 'package:dev_tool/ui/widgets.dart';
@@ -49,7 +52,9 @@ Future<void> settle(WidgetTester tester) async {
   }
 }
 
-void main() {
+void main() => sampleAuditTests();
+
+void sampleAuditTests({bool native = false}) {
   for (final tool in ToolRegistry.tools) {
     testWidgets('sample audit: ${tool.id}', (tester) async {
       tester.view.physicalSize = const Size(2560, 1640);
@@ -57,15 +62,36 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       SharedPreferences.setMockInitialValues({});
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-            SystemChannels.platform,
-            (call) async => null,
-          );
+      void stage(String value) {
+        if (native && tool.id == 'uml_class_diagram') {
+          // ignore: avoid_print
+          print('NATIVE_DIAGRAM_STAGE $value');
+        }
+      }
+
+      if (native) {
+        await const MethodChannel(
+          'devutils/testing',
+        ).invokeMethod<void>('activate');
+      }
+      stage('warm');
+      if (!native) installFormatterChannel();
+      await tester.runAsync(
+        () => JavascriptCodeService.process('const warm = 1;', 'Verify'),
+      );
+      if (!native) {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(
+              SystemChannels.platform,
+              (call) async => null,
+            );
+      }
       final state = ToolState.inMemory();
       state.sidebarWidth.value = 250;
       state.workspace.openTool(tool.id);
+      stage('pumpWidget');
       await tester.pumpWidget(DevToolApp(state: state));
+      stage('initial settle');
       await settle(tester);
       final errors = <String>[];
       void drain() {
@@ -91,6 +117,7 @@ void main() {
         final button = tester.widget<OutlinedButton>(sample.first);
         result['sampleEnabled'] = button.onPressed != null;
         if (button.onPressed != null) {
+          stage('sample tap');
           await tester.tap(sample.first);
           await settle(tester);
           drain();
@@ -145,6 +172,7 @@ void main() {
             errors.add('Load sample left all output editors empty.');
           }
           // Repeat the sample to catch one-shot or stale callback registration.
+          stage('sample tap');
           await tester.tap(sample.first);
           await settle(tester);
           drain();
@@ -224,6 +252,7 @@ void main() {
       // Machine-readable evidence remains available even when the assertion fails.
       // ignore: avoid_print
       print('FUNCTIONALITY_AUDIT ${jsonEncode(result)}');
+      stage('unmount');
       await tester.pumpWidget(const SizedBox.shrink());
       await settle(tester);
       drain();

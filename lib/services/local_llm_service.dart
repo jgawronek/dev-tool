@@ -7,6 +7,16 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 class LocalLLMService {
+  LocalLLMService({
+    Directory? modelDirectory,
+    http.Client Function()? clientFactory,
+  }) : _modelDirectory = modelDirectory,
+       _clientFactory = clientFactory ?? http.Client.new;
+
+  final Directory? _modelDirectory;
+  final http.Client Function() _clientFactory;
+  final Set<String> _downloads = {};
+
   Process? _serverProcess;
   final int _port = 8847;
   String? _currentModel;
@@ -19,6 +29,7 @@ class LocalLLMService {
 
   // Paths
   Future<String> get _modelsDir async {
+    if (_modelDirectory != null) return _modelDirectory.path;
     final appSupport = await getApplicationSupportDirectory();
     return path.join(appSupport.path, 'models');
   }
@@ -46,38 +57,89 @@ class LocalLLMService {
 
     return dir
         .listSync()
+        .whereType<File>()
         .where((f) => f.path.endsWith('.gguf'))
-        .map((f) => ModelInfo(
-              name: path.basenameWithoutExtension(f.path),
-              path: f.path,
-              size: File(f.path).lengthSync(),
-            ))
+        .map(
+          (f) => ModelInfo(
+            name: path.basenameWithoutExtension(f.path),
+            path: f.path,
+            size: File(f.path).lengthSync(),
+          ),
+        )
         .toList();
   }
 
-  Future<void> downloadModel(ModelPreset preset, Function(double) onProgress) async {
-    final dir = Directory(await _modelsDir);
-    if (!await dir.exists()) await dir.create(recursive: true);
-
-    final outputPath = path.join(dir.path, preset.filename);
-    final request = http.Request('GET', Uri.parse(preset.url));
-    final client = http.Client();
-    final response = await client.send(request);
-
-    final totalBytes = response.contentLength ?? 0;
-    var receivedBytes = 0;
-
-    final file = File(outputPath).openWrite();
-
-    await for (final chunk in response.stream) {
-      file.add(chunk);
-      receivedBytes += chunk.length;
-      final ratio = totalBytes == 0 ? 0.0 : receivedBytes / totalBytes;
-      onProgress(ratio.toDouble());
+  Future<void> downloadModel(
+    ModelPreset preset,
+    Function(double) onProgress,
+  ) async {
+    if (path.basename(preset.filename) != preset.filename ||
+        !preset.filename.endsWith('.gguf')) {
+      throw const FormatException('Choose a valid model filename.');
     }
-
-    await file.close();
-    client.close();
+    if (!_downloads.add(preset.filename)) {
+      throw StateError('This model is already downloading.');
+    }
+    http.Client? client;
+    IOSink? sink;
+    File? temporary;
+    try {
+      final dir = Directory(await _modelsDir);
+      await dir.create(recursive: true);
+      final output = File(path.join(dir.path, preset.filename));
+      temporary = File(
+        '${output.path}.${DateTime.now().microsecondsSinceEpoch}.part',
+      );
+      client = _clientFactory();
+      final response = await client.send(
+        http.Request('GET', Uri.parse(preset.url)),
+      );
+      if (response.statusCode != 200) {
+        throw HttpException(
+          'Model download failed (HTTP ${response.statusCode}).',
+        );
+      }
+      sink = temporary.openWrite();
+      final header = <int>[];
+      var received = 0;
+      final total = response.contentLength;
+      await for (final chunk in response.stream) {
+        for (final byte in chunk) {
+          if (header.length == 4) break;
+          header.add(byte);
+        }
+        sink.add(chunk);
+        received += chunk.length;
+        onProgress(
+          total == null || total == 0 ? 0 : (received / total).clamp(0, 1),
+        );
+      }
+      await sink.close();
+      sink = null;
+      if (header.length != 4 ||
+          ascii.decode(header, allowInvalid: true) != 'GGUF' ||
+          (total != null && received != total)) {
+        throw const FormatException(
+          'The downloaded model is incomplete or is not a GGUF file.',
+        );
+      }
+      await temporary.rename(output.path);
+      temporary = null;
+      onProgress(1);
+    } finally {
+      try {
+        await sink?.close();
+      } finally {
+        try {
+          client?.close();
+          if (temporary != null && await temporary.exists()) {
+            await temporary.delete();
+          }
+        } finally {
+          _downloads.remove(preset.filename);
+        }
+      }
+    }
   }
 
   Future<void> deleteModel(String modelPath) async {
@@ -94,16 +156,24 @@ class LocalLLMService {
     _currentModel = modelPath;
 
     final workingDir = path.dirname(_serverBinary);
-    _serverProcess = await Process.start(_serverBinary, [
-      '-m', modelPath,
-      '--port', '$_port',
-      '--host', '127.0.0.1',
-      '-c', '2048',
-      '-ngl', '999',
-      '--log-disable',
-    ], workingDirectory: workingDir, environment: {
-      'DYLD_LIBRARY_PATH': workingDir,
-    });
+    _serverProcess = await Process.start(
+      _serverBinary,
+      [
+        '-m',
+        modelPath,
+        '--port',
+        '$_port',
+        '--host',
+        '127.0.0.1',
+        '-c',
+        '2048',
+        '-ngl',
+        '999',
+        '--log-disable',
+      ],
+      workingDirectory: workingDir,
+      environment: {'DYLD_LIBRARY_PATH': workingDir},
+    );
 
     await _waitForServer();
     _isReady = true;
@@ -112,7 +182,9 @@ class LocalLLMService {
   Future<void> _waitForServer() async {
     for (var i = 0; i < 30; i++) {
       try {
-        final response = await http.get(Uri.parse('http://127.0.0.1:$_port/health'));
+        final response = await http.get(
+          Uri.parse('http://127.0.0.1:$_port/health'),
+        );
         if (response.statusCode == 200) return;
       } catch (_) {}
       await Future.delayed(const Duration(milliseconds: 500));
@@ -130,7 +202,8 @@ class LocalLLMService {
 
   /// Generate a response from a list of messages (chat history).
   /// Each message should have 'role' ('user' or 'assistant') and 'content'.
-  Stream<String> generateChat(List<Map<String, String>> messages, {
+  Stream<String> generateChat(
+    List<Map<String, String>> messages, {
     int maxTokens = 512,
     double temperature = 0.7,
   }) async* {
@@ -149,42 +222,55 @@ class LocalLLMService {
       'stream': true,
     });
 
-    final client = http.Client();
+    final client = _clientFactory();
     try {
       final response = await client.send(request);
-      await for (final chunk in response.stream.transform(utf8.decoder)) {
-        for (final line in chunk.split('\n')) {
-          if (line.startsWith('data: ') && line.trim() != 'data: [DONE]') {
-            try {
-              final json = jsonDecode(line.substring(6));
-              final choices = json['choices'] as List?;
-              if (choices != null && choices.isNotEmpty) {
-                final delta = choices[0]['delta'] as Map?;
-                final content = delta?['content'] as String?;
-                if (content != null) {
-                  yield content;
-                }
-                final finishReason = choices[0]['finish_reason'];
-                if (finishReason != null) return;
-              }
-            } catch (_) {
-              // Skip malformed JSON lines
-            }
-          }
-        }
+      if (response.statusCode != 200) {
+        throw HttpException('Generation failed (HTTP ${response.statusCode}).');
       }
+      yield* decodeChatEvents(response.stream);
     } finally {
       client.close();
     }
   }
 
+  /// Network chunks do not align with SSE lines or UTF-8 character boundaries.
+  static Stream<String> decodeChatEvents(Stream<List<int>> bytes) async* {
+    await for (final line
+        in bytes.transform(utf8.decoder).transform(const LineSplitter())) {
+      if (!line.startsWith('data:')) continue;
+      final data = line.substring(5).trim();
+      if (data == '[DONE]') return;
+      Map<String, dynamic> event;
+      try {
+        event = jsonDecode(data) as Map<String, dynamic>;
+      } on FormatException {
+        continue;
+      } on TypeError {
+        continue;
+      }
+      final choices = event['choices'];
+      if (choices is! List || choices.isEmpty || choices.first is! Map) {
+        continue;
+      }
+      final choice = choices.first as Map;
+      final delta = choice['delta'];
+      final content = delta is Map ? delta['content'] : null;
+      if (content is String) yield content;
+      if (choice['finish_reason'] != null) return;
+    }
+  }
+
   /// Simple single-prompt generation (wraps generateChat)
-  Stream<String> generate(String prompt, {
+  Stream<String> generate(
+    String prompt, {
     int maxTokens = 512,
     double temperature = 0.7,
   }) {
     return generateChat(
-      [{'role': 'user', 'content': prompt}],
+      [
+        {'role': 'user', 'content': prompt},
+      ],
       maxTokens: maxTokens,
       temperature: temperature,
     );
@@ -232,28 +318,32 @@ const kModelPresets = [
   ModelPreset(
     name: 'SmolLM 360M',
     filename: 'smollm2-360m-instruct-q8_0.gguf',
-    url: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/resolve/main/smollm2-360m-instruct-q8_0.gguf',
+    url:
+        'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/resolve/main/smollm2-360m-instruct-q8_0.gguf',
     sizeBytes: 420 * 1024 * 1024,
     description: 'Tiny & fast. Good for simple tasks.',
   ),
   ModelPreset(
     name: 'Qwen2.5 0.5B',
     filename: 'qwen2.5-0.5b-q4.gguf',
-    url: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf',
+    url:
+        'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf',
     sizeBytes: 400 * 1024 * 1024,
     description: 'Great balance of size and capability.',
   ),
   ModelPreset(
     name: 'Qwen2.5 1.5B',
     filename: 'qwen2.5-1.5b-q4.gguf',
-    url: 'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf',
+    url:
+        'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf',
     sizeBytes: 900 * 1024 * 1024,
     description: 'Solid all-rounder for most tasks.',
   ),
   ModelPreset(
     name: 'Phi-3 Mini',
     filename: 'phi-3-mini-q4.gguf',
-    url: 'https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf',
+    url:
+        'https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf',
     sizeBytes: 2200 * 1024 * 1024,
     description: 'Most capable. Best for coding tasks.',
   ),

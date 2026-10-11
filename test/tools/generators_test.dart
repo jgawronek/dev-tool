@@ -83,8 +83,9 @@ void main() {
       final out = h.text(generatedHint);
       expect(out, out.toLowerCase());
       expect(
-        RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
-            .hasMatch(out),
+        RegExp(
+          r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+        ).hasMatch(out),
         isTrue,
         reason: out,
       );
@@ -118,11 +119,14 @@ void main() {
     const tool = 'random_string_generator';
 
     toolTest('generates with the default field recipe', tool, (h) async {
-      await h.tap('Sample');
+      await h.tap('Load sample');
       final out = h.text('Generated strings...').trim().split('\n');
       expect(out, hasLength(10), reason: out.join('|')); // count x10 default
       for (final line in out) {
-        expect(line, hasLength(46)); // 18 upper + 18 lower + 2 symbols + 8 digits
+        expect(
+          line,
+          hasLength(46),
+        ); // 18 upper + 18 lower + 2 symbols + 8 digits
         expect(line, contains(RegExp(r'[A-Z]')));
         expect(line, contains(RegExp(r'[a-z]')));
         expect(line, contains(RegExp(r'[0-9]')));
@@ -134,10 +138,12 @@ void main() {
       await setLabeledField(h.tester, 'Lowercased Characters', '3');
       await setLabeledField(h.tester, 'Symbols', '0');
       await setLabeledField(h.tester, 'Digits', '1');
-      await h.tap('Sample');
+      await h.tap('Load sample');
       final out = h.text('Generated strings...').trim().split('\n');
       expect(out.first, hasLength(6));
-      expect(out.first, contains(RegExp(r'^[A-Z]{2}[a-z]{3}\d$')));
+      expect(RegExp(r'[A-Z]').allMatches(out.first), hasLength(2));
+      expect(RegExp(r'[a-z]').allMatches(out.first), hasLength(3));
+      expect(RegExp(r'\d').allMatches(out.first), hasLength(1));
     });
   });
 

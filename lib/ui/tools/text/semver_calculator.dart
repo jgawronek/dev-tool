@@ -168,7 +168,10 @@ class _SemVerCalculatorViewState extends State<_SemVerCalculatorView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 SizedBox(
                   width: 132,
@@ -178,7 +181,6 @@ class _SemVerCalculatorViewState extends State<_SemVerCalculatorView> {
                     onChanged: (_) => _run(),
                   ),
                 ),
-                const SizedBox(width: 10),
                 SizedBox(
                   width: 132,
                   child: _Field(
@@ -187,9 +189,7 @@ class _SemVerCalculatorViewState extends State<_SemVerCalculatorView> {
                     onChanged: (_) => _run(),
                   ),
                 ),
-                const SizedBox(width: 10),
                 ToolButton(label: 'Swap', onPressed: _swap),
-                const SizedBox(width: 10),
                 SizedBox(
                   width: 132,
                   child: _Field(
@@ -198,7 +198,6 @@ class _SemVerCalculatorViewState extends State<_SemVerCalculatorView> {
                     onChanged: (_) => _run(),
                   ),
                 ),
-                const SizedBox(width: 8),
                 ToolButton(label: 'Copy', onPressed: _copyOutput),
               ],
             ),
@@ -217,7 +216,7 @@ class _SemVerCalculatorViewState extends State<_SemVerCalculatorView> {
   Widget _buildOutput(BuildContext context) {
     return ToolPanel(
       title: 'Comparison',
-      expand: false,
+      expand: true,
       child: Container(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
         child: SingleChildScrollView(

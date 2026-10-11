@@ -1,5 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -188,15 +191,38 @@ void main() {
   group('Base64 Image Encode/Decode', () {
     const tool = 'base64_image_encode_decode';
 
-    Uint8List minimalPng() => Uint8List.fromList([
-          0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00,
-          0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
-          0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00,
-        ]);
+    Uint8List minimalPng() => base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAQklEQVR4nGO48/o/VmRUfAkrIlU9w6gFoxYMAQuoZRAu9aMWjFowFCyglkG41I9aMGrBULCAWgbhUj9qwagFQ8ACACkLenlPAV28AAAAAElFTkSuQmCC',
+    );
 
-    toolTest('reports byte count for valid base64 image data', tool, (
+    toolTest('load sample decodes and renders a visible image', tool, (
       h,
     ) async {
+      await h.tap('Load sample');
+      final bytes = base64Decode(h.text('', label: 'String'));
+      await h.tester.runAsync(() async {
+        final codec = await ui.instantiateImageCodec(bytes);
+        try {
+          final frame = await codec.getNextFrame();
+          expect(frame.image.width, 32);
+          expect(frame.image.height, 32);
+          frame.image.dispose();
+        } finally {
+          codec.dispose();
+        }
+        // Allow Image.memory's asynchronous decode to finish too.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await h.settle();
+      expect(find.text('Could not render image'), findsNothing);
+      expect(find.text('123 bytes'), findsOneWidget);
+      final preview = h.tester.widget<RawImage>(find.byType(RawImage));
+      expect(preview.image, isNotNull);
+      expect(preview.image!.width, 32);
+      expect(h.tester.takeException(), isNull);
+    });
+
+    toolTest('reports byte count for valid base64 image data', tool, (h) async {
       final b64 = base64Encode(minimalPng());
       await h.enter('', label: 'String', text: b64);
       expect(find.text('${minimalPng().length} bytes'), findsOneWidget);

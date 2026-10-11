@@ -27,7 +27,7 @@ String transformJson(Object? value, JsonOperation operation, String indent) {
     case JsonOperation.stringify:
       return jsonEncode(jsonEncode(value));
     case JsonOperation.xml:
-      return _xmlDocument(value);
+      return _xmlDocument(value, indent);
     case JsonOperation.escape:
       final quoted = jsonEncode(jsonEncode(value));
       return quoted.substring(1, quoted.length - 1);
@@ -85,14 +85,20 @@ Object? _sortArrays(Object? value) {
   return items;
 }
 
-String _xmlDocument(Object? value) {
+String _xmlDocument(Object? value, String indent) {
   final buffer = StringBuffer('<?xml version="1.0" encoding="UTF-8"?>\n');
-  _xmlElement(buffer, 'root', value, 0);
+  _xmlElement(buffer, 'root', value, 0, indent);
   return buffer.toString().trimRight();
 }
 
-void _xmlElement(StringBuffer buffer, String name, Object? value, int depth) {
-  final pad = '  ' * depth;
+void _xmlElement(
+  StringBuffer buffer,
+  String name,
+  Object? value,
+  int depth,
+  String indent,
+) {
+  final pad = indent * depth;
   if (value == null) {
     buffer.writeln('$pad<$name/>');
     return;
@@ -106,19 +112,19 @@ void _xmlElement(StringBuffer buffer, String name, Object? value, int depth) {
             RegExp(r'^[A-Za-z_][A-Za-z0-9_.-]*$').hasMatch(key) &&
             !key.toLowerCase().startsWith('xml');
         if (validName) {
-          _xmlElement(buffer, key, entry.value, depth + 1);
+          _xmlElement(buffer, key, entry.value, depth + 1, indent);
         } else {
           // Keep the original key in data rather than generating invalid XML.
           buffer.writeln(
-            '${'  ' * (depth + 1)}<entry key="${_xmlEscape(key)}">',
+            '${indent * (depth + 1)}<entry key="${_xmlEscape(key)}">',
           );
-          _xmlElement(buffer, 'value', entry.value, depth + 2);
-          buffer.writeln('${'  ' * (depth + 1)}</entry>');
+          _xmlElement(buffer, 'value', entry.value, depth + 2, indent);
+          buffer.writeln('${indent * (depth + 1)}</entry>');
         }
       }
     } else {
       for (final item in value as List) {
-        _xmlElement(buffer, 'item', item, depth + 1);
+        _xmlElement(buffer, 'item', item, depth + 1, indent);
       }
     }
     buffer.writeln('$pad</$name>');

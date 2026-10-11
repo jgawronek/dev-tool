@@ -1,7 +1,16 @@
 import Cocoa
 import FlutterMacOS
+import JavaScriptCore
 
 class MainFlutterWindow: NSWindow, NSDraggingDestination {
+  #if DEBUG
+  private var testingChannel: FlutterMethodChannel?
+  #endif
+  private var clipboardChannel: FlutterMethodChannel?
+  private var codeChannel: FlutterMethodChannel?
+  private let codeQueue = DispatchQueue(label: "devutils.javascript-code", qos: .userInitiated)
+  // Created and accessed only on codeQueue, keeping JavaScriptCore thread-confined.
+  private var codeContext: JSContext?
   private var fileDropChannel: FlutterMethodChannel?
   private var documentationChannel: FlutterMethodChannel?
   private var statusItem: NSStatusItem?
@@ -22,6 +31,18 @@ class MainFlutterWindow: NSWindow, NSDraggingDestination {
     self.minSize = NSSize(width: 1040, height: 700)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    configureJavascriptCode(flutterViewController)
+    configureImageClipboard(flutterViewController)
+    #if DEBUG
+    testingChannel = FlutterMethodChannel(
+      name: "devutils/testing", binaryMessenger: flutterViewController.engine.binaryMessenger)
+    testingChannel?.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "activate" else { result(FlutterMethodNotImplemented); return }
+      self?.makeKeyAndOrderFront(nil)
+      NSApp.activate(ignoringOtherApps: true)
+      result(nil)
+    }
+    #endif
     configureFileDialogs(flutterViewController)
     configureFileDrop(flutterViewController)
     configureAppearance(flutterViewController)
@@ -38,6 +59,83 @@ class MainFlutterWindow: NSWindow, NSDraggingDestination {
     }
 
     super.awakeFromNib()
+  }
+
+  private func configureImageClipboard(_ controller: FlutterViewController) {
+    clipboardChannel = FlutterMethodChannel(
+      name: "devutils/clipboard", binaryMessenger: controller.engine.binaryMessenger)
+    clipboardChannel?.setMethodCallHandler { call, result in
+      guard call.method == "copyImage" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let bytes = call.arguments as? FlutterStandardTypedData,
+        let image = NSImage(data: bytes.data) else {
+        result(FlutterError(code: "invalid_image", message: "Could not read image data.", details: nil))
+        return
+      }
+      let pasteboard = NSPasteboard.general
+      pasteboard.clearContents()
+      let copied = pasteboard.writeObjects([image])
+      result(copied && pasteboard.canReadObject(forClasses: [NSImage.self], options: nil))
+    }
+  }
+
+  private func configureJavascriptCode(_ controller: FlutterViewController) {
+    codeChannel = FlutterMethodChannel(
+      name: "devutils/javascript_code", binaryMessenger: controller.engine.binaryMessenger)
+    codeChannel?.setMethodCallHandler { [weak self] call, result in
+      guard let args = call.arguments as? [String: String], let self else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      if call.method == "initialize", let compiler = args["compiler"], let engine = args["engine"] {
+        self.codeQueue.async {
+          let context = JSContext()
+          context?.evaluateScript(compiler)
+          if context?.exception == nil { context?.evaluateScript(engine) }
+          if let context, context.exception == nil {
+            self.codeContext = context
+            DispatchQueue.main.async { result(nil) }
+          } else {
+            DispatchQueue.main.async {
+              result(FlutterError(code: "parser_init", message: "Could not load the offline code parser.", details: nil))
+            }
+          }
+        }
+        return
+      }
+      guard call.method == "process", let source = args["source"], let operation = args["operation"] else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      self.codeQueue.async {
+        guard let context = self.codeContext, context.exception == nil,
+          let function = context.objectForKeyedSubscript("devutilsCodeOperation"),
+          !function.isUndefined else {
+          self.codeContext = nil
+          DispatchQueue.main.async {
+            result(FlutterError(code: "parser_init", message: "Could not load the offline code parser.", details: nil))
+          }
+          return
+        }
+        // Invoke a trusted parser function with source as data. Do not eval source.
+        let value = function.call(withArguments: [source, operation, args["indentation"] ?? "2 spaces"])
+        if let exception = context.exception {
+          let message = exception.toString() ?? "Could not parse the source."
+          context.exception = nil
+          DispatchQueue.main.async {
+            result(FlutterError(code: "parser_error", message: message, details: nil))
+          }
+        } else if let output = value?.toDictionary() {
+          DispatchQueue.main.async { result(output) }
+        } else {
+          DispatchQueue.main.async {
+            result(FlutterError(code: "parser_result", message: "The code parser returned no result.", details: nil))
+          }
+        }
+      }
+    }
   }
 
   func configureDocumentationMenu() {

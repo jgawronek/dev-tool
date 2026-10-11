@@ -30,6 +30,7 @@ class _FileChecksumViewState extends State<_FileChecksumView> {
   String _status = 'Choose a file or drop one onto the panel.';
   String? _error;
   var _running = false;
+  var _picking = false;
   int _token = 0;
 
   @override
@@ -41,9 +42,24 @@ class _FileChecksumViewState extends State<_FileChecksumView> {
   }
 
   Future<void> _pickFile() async {
-    final picked = await FileDialogService.openFile();
-    if (picked == null || picked.isEmpty) return;
-    await _run(picked);
+    if (_picking || _running) return;
+    setState(() {
+      _picking = true;
+      _error = null;
+    });
+    try {
+      final picked = await FileDialogService.openFile();
+      if (!mounted || picked == null || picked.isEmpty) return;
+      await _run(picked);
+    } catch (error) {
+      if (!mounted) return;
+      setState(
+        () => _error = 'Could not open the file picker. Please try again.',
+      );
+      debugPrint('File Checksum file picker failed: $error');
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
   }
 
   Future<void> _handleDrop(List<String> paths) async {
@@ -52,7 +68,7 @@ class _FileChecksumViewState extends State<_FileChecksumView> {
   }
 
   Future<void> _run(String filePath) async {
-    if (_running) return;
+    if (!mounted || _running) return;
     final token = ++_token;
     setState(() {
       _path.text = filePath;
@@ -167,7 +183,10 @@ class _FileChecksumViewState extends State<_FileChecksumView> {
     final appColors = context.appColors;
     return ToolToolbar(
       children: [
-        ToolButton(label: 'Choose file...', onPressed: _pickFile),
+        ToolButton(
+          label: 'Choose file...',
+          onPressed: _running || _picking ? null : _pickFile,
+        ),
         const SizedBox(width: 6),
 
         const SizedBox(width: 12),

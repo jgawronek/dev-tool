@@ -91,20 +91,20 @@ void main() {
     }
 
     toolTest('decodes header and payload', tool, (h) async {
-      await h.enter('Paste JWT here...', text: makeJwt('your-secret'));
-      expect(h.text('{ "typ": "JWT", "alg": "HS256" }'), contains('"HS256"'));
-      expect(h.text('{ "sub": "1234567890" }'), contains('"1234567890"'));
+      await h.enter('Paste a JWT to decode its header and payload…', text: makeJwt('your-secret'));
+      expect(h.text('Decoded header will appear here'), contains('"HS256"'));
+      expect(h.text('Decoded payload will appear here'), contains('"1234567890"'));
     }, surface: const Size(1500, 1600));
 
     toolTest('verifies a valid HS256 signature', tool, (h) async {
       await scrollTo(
         h.tester,
         find.byWidgetPredicate(
-          (w) => w is InlineTextField && w.hintText == 'your-secret',
+          (w) => w is TextField && w.decoration?.hintText == 'Enter secret key…',
         ),
       );
-      await setInlineField(h.tester, 'your-secret', 'your-secret');
-      await h.enter('Paste JWT here...', text: makeJwt('your-secret'));
+      await setPlainField(h.tester, 'Enter secret key…', 'your-secret');
+      await h.enter('Paste a JWT to decode its header and payload…', text: makeJwt('your-secret'));
       expect(find.text('Signature Verified'), findsOneWidget);
     }, surface: const Size(1500, 1600));
 
@@ -112,18 +112,18 @@ void main() {
       await scrollTo(
         h.tester,
         find.byWidgetPredicate(
-          (w) => w is InlineTextField && w.hintText == 'your-secret',
+          (w) => w is TextField && w.decoration?.hintText == 'Enter secret key…',
         ),
       );
-      await setInlineField(h.tester, 'your-secret', 'wrong-secret');
-      await h.enter('Paste JWT here...', text: makeJwt('your-secret'));
+      await setPlainField(h.tester, 'Enter secret key…', 'wrong-secret');
+      await h.enter('Paste a JWT to decode its header and payload…', text: makeJwt('your-secret'));
       expect(find.text('Signature Mismatch'), findsOneWidget);
     }, surface: const Size(1500, 1600));
 
     toolTest('malformed token surfaces an error', tool, (h) async {
-      await h.enter('Paste JWT here...', text: 'garbage');
+      await h.enter('Paste a JWT to decode its header and payload…', text: 'garbage');
       await scrollTo(h.tester, find.textContaining('Invalid JWT format'));
-      expect(find.text('Invalid JWT format.'), findsOneWidget);
+      expect(find.textContaining('Invalid JWT format.'), findsOneWidget);
     }, surface: const Size(1500, 1600));
   });
 
@@ -133,9 +133,13 @@ void main() {
     toolTest('adding a token shows two rotating 6-digit codes', tool, (
       h,
     ) async {
-      await h.tester.tap(find.byIcon(Icons.add).first);
+      await h.tester.tap(find.descendant(of: find.byWidgetPredicate((w) => w.runtimeType.toString() == '_TotpAddCard'), matching: find.byType(InkWell)));
       await h.settle();
-      await setInlineField(h.tester, 'Paste or enter secret', 'JBSWY3DPEHPK3PXP');
+      await setInlineField(
+        h.tester,
+        'Paste or enter secret',
+        'JBSWY3DPEHPK3PXP',
+      );
       await setInlineField(h.tester, 'Optional label', 'Test');
       await h.tap('Add');
       final codes = h.tester
@@ -149,7 +153,7 @@ void main() {
     }, surface: const Size(1500, 1600));
 
     toolTest('invalid base32 secret shows a placeholder code', tool, (h) async {
-      await h.tester.tap(find.byIcon(Icons.add).first);
+      await h.tester.tap(find.descendant(of: find.byWidgetPredicate((w) => w.runtimeType.toString() == '_TotpAddCard'), matching: find.byType(InkWell)));
       await h.settle();
       await setInlineField(h.tester, 'Paste or enter secret', '!!!!1!!!!');
       await h.tap('Add');
@@ -301,14 +305,12 @@ OPB4kKiuf2pbeafouebiHg==
     toolTest('renders the target field and results pane', tool, (h) async {
       expect(
         find.byWidgetPredicate(
-          (w) => w is TextField && w.decoration?.hintText == 'https://example.com',
+          (w) =>
+              w is TextField && w.decoration?.hintText == 'https://example.com',
         ),
         findsOneWidget,
       );
-      expect(
-        find.text('Detection results appear here...'),
-        findsOneWidget,
-      );
+      expect(find.text('Detection results appear here...'), findsOneWidget);
     });
   });
 }

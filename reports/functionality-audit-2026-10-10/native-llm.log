@@ -1,0 +1,13 @@
+00:00 +0: loading /Users/jaygawronek/Documents/Projects/dev-tool/integration_test/local_llm_test.dart
+The following plugins do not support Swift Package Manager for macos:
+  - printing
+This will become an error in a future version of Flutter. Please contact the plugin maintainers to request Swift Package Manager adoption.
+Building macOS application...                                   
+ld: warning: search path '/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.XOHrV4/Metal.xctoolchain/usr/lib/swift/macosx' not found
+ld: warning: search path '/var/run/com.apple.security.cryptexd/mnt/com.apple.MobileAsset.MetalToolchain-v17.3.7003.10.XOHrV4/Metal.xctoolchain/usr/lib/swift/macosx' not found
+warning: Run script build phase 'Copy llama-server' will be run during every build because it does not specify any outputs. To address this issue, either add output dependencies to the script phase, or configure it to run in every build by unchecking "Based on dependency analysis" in the script phase. (in target 'Runner' from project 'Runner')
+✓ Built build/macos/Build/Products/Debug/DevUtils.app
+Failed to foreground app; open returned 1
+00:00 +0: native model download, server startup, streamed inference and stop
+00:14 +1: (tearDownAll)
+00:14 +1: All tests passed!

@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:dev_tool/services/compression_service.dart';
@@ -39,7 +38,11 @@ void main() {
       for (final codec in CompressionCodec.values) {
         final payload = _compressed(codec);
         final outcome = decompressPayload(payload, codec);
-        expect(outcome.error, isNull, reason: 'decompress $codec: ${outcome.error}');
+        expect(
+          outcome.error,
+          isNull,
+          reason: 'decompress $codec: ${outcome.error}',
+        );
         // Container codecs wrap entries in a `--- name (size) ---` banner.
         expect(outcome.output, contains(_sample), reason: 'round-trip $codec');
       }
@@ -50,11 +53,15 @@ void main() {
     });
 
     test('gzip and bzip2 emit their documented magic bytes', () {
-      expect(_b64(_compressed(CompressionCodec.gzip)).take(2).toList(), [0x1f, 0x8b]);
-      expect(
-        _b64(_compressed(CompressionCodec.bzip2)).take(3).toList(),
-        [0x42, 0x5a, 0x68],
-      );
+      expect(_b64(_compressed(CompressionCodec.gzip)).take(2).toList(), [
+        0x1f,
+        0x8b,
+      ]);
+      expect(_b64(_compressed(CompressionCodec.bzip2)).take(3).toList(), [
+        0x42,
+        0x5a,
+        0x68,
+      ]);
     });
 
     test('compression shrinks repetitive input', () {
@@ -77,11 +84,16 @@ void main() {
     test('gzip bytes are rejected by every other strict codec', () {
       final gzip = _compressed(CompressionCodec.gzip);
       for (final codec in CompressionCodec.values) {
-        if (codec == CompressionCodec.gzip || codec == CompressionCodec.rawDeflate) {
+        if (codec == CompressionCodec.gzip ||
+            codec == CompressionCodec.rawDeflate) {
           continue;
         }
         final outcome = decompressPayload(gzip, codec);
-        expect(outcome.error, isNotNull, reason: '$codec should reject GZip input');
+        expect(
+          outcome.error,
+          isNotNull,
+          reason: '$codec should reject GZip input',
+        );
         expect(outcome.error, contains('expected'));
       }
     });
@@ -105,11 +117,20 @@ void main() {
       // check would reject our own output.
       final tar = _b64(_compressed(CompressionCodec.tar));
       expect(ascii.decode(tar, allowInvalid: true), isNot(contains('ustar')));
-      expect(decompressPayload(_compressed(CompressionCodec.tar), CompressionCodec.tar).error, isNull);
+      expect(
+        decompressPayload(
+          _compressed(CompressionCodec.tar),
+          CompressionCodec.tar,
+        ).error,
+        isNull,
+      );
 
       // 512-aligned garbage must not decode into fabricated files.
       final garbage = base64Encode(Uint8List(1024)..fillRange(0, 1024, 65));
-      expect(decompressPayload(garbage, CompressionCodec.tar).error, contains('Tar'));
+      expect(
+        decompressPayload(garbage, CompressionCodec.tar).error,
+        contains('Tar'),
+      );
     });
   });
 
@@ -117,24 +138,38 @@ void main() {
     test('hex input is accepted alongside base64', () {
       final base64Payload = _compressed(CompressionCodec.gzip);
       final hex = bytesToHexString(_b64(base64Payload));
-      expect(decompressPayload(hex, CompressionCodec.gzip).output.trim(), _sample);
+      expect(
+        decompressPayload(hex, CompressionCodec.gzip).output.trim(),
+        _sample,
+      );
     });
 
     test('whitespace in a pasted payload is ignored', () {
-      final wrapped = _compressed(CompressionCodec.gzip).replaceAllMapped(
-        RegExp(r'.{20}'),
-        (m) => '${m[0]}\n',
+      final wrapped = _compressed(
+        CompressionCodec.gzip,
+      ).replaceAllMapped(RegExp(r'.{20}'), (m) => '${m[0]}\n');
+      expect(
+        decompressPayload(wrapped, CompressionCodec.gzip).output.trim(),
+        _sample,
       );
-      expect(decompressPayload(wrapped, CompressionCodec.gzip).output.trim(), _sample);
     });
 
     test('empty input fails cleanly in both directions', () {
-      expect(compressSync('   ', CompressionCodec.gzip).error, 'Enter data to compress.');
-      expect(decompressPayload('', CompressionCodec.gzip).error, contains('Paste'));
+      expect(
+        compressSync('', CompressionCodec.gzip).error,
+        'Enter data to compress.',
+      );
+      expect(
+        decompressPayload('', CompressionCodec.gzip).error,
+        contains('Paste'),
+      );
     });
 
     test('undecodable input reports an error instead of throwing', () {
-      final outcome = decompressPayload('!!!! not valid !!!!', CompressionCodec.gzip);
+      final outcome = decompressPayload(
+        '!!!! not valid !!!!',
+        CompressionCodec.gzip,
+      );
       expect(outcome.error, isNotNull);
       expect(outcome.output, isEmpty);
     });
@@ -142,7 +177,9 @@ void main() {
 
   group('binary output', () {
     test('non-utf8 payload is flagged and rendered as hex', () {
-      final gzip = base64Encode(GZipEncoder().encodeBytes([0, 1, 2, 255, 254, 128, 104, 105]));
+      final gzip = base64Encode(
+        GZipEncoder().encodeBytes([0, 1, 2, 255, 254, 128, 104, 105]),
+      );
       final outcome = decompressPayload(gzip, CompressionCodec.gzip);
       expect(outcome.binary, isTrue);
       expect(outcome.output, '000102fffe806869');
@@ -180,75 +217,125 @@ void main() {
     });
   });
 
+  for (final codec in CompressionCodec.values) {
+    test('${codec.label} preserves whitespace and Unicode exactly', () {
+      for (final input in ['  hello\nworld\t  ', 'é漢字🙂\n', ' \t\n']) {
+        final compressed = compressSync(input, codec);
+        expect(compressed.error, isNull);
+        final decompressed = decompressPayload(compressed.output, codec);
+        expect(decompressed.error, isNull);
+        if (!codec.isContainer) {
+          expect(decompressed.output, input);
+        } else {
+          expect(utf8.decode(decompressed.entries.single.preview), input);
+        }
+      }
+    });
+  }
+
   group('tool view', () {
-    toolTest('compresses pasted text to Base64', 'compression_codecs', (h) async {
-      await h.enter('Text to compress...', text: _sample);
-      final output = h.text('Base64 encoded archive...');
+    toolTest('compresses pasted text to Base64', 'compression_codecs', (
+      h,
+    ) async {
+      await h.enter('Enter text to compress…', text: _sample);
+      final output = h.text('Compressed archive will appear here');
       expect(output, isNotEmpty);
-      expect(decompressPayload(output, CompressionCodec.gzip).output.trim(), _sample);
+      expect(
+        decompressPayload(output, CompressionCodec.gzip).output.trim(),
+        _sample,
+      );
     });
 
-    toolTest('decompresses when the mode is flipped', 'compression_codecs', (h) async {
+    toolTest('decompresses when the mode is flipped', 'compression_codecs', (
+      h,
+    ) async {
       final payload = _compressed(CompressionCodec.gzip);
       await h.tap('Decompress');
-      await h.enter('Paste Base64 or hex archive data...', text: payload);
-      expect(h.text('Decompressed output...').trim(), _sample);
+      await h.enter('Paste Base64 or hex archive data…', text: payload);
+      expect(h.text('Decompressed text will appear here').trim(), _sample);
     });
 
-    toolTest('switching to Decompress with empty input clears output',
-        'compression_codecs', (h) async {
-      await h.tap('Decompress');
-      expect(h.text('Decompressed output...'), isEmpty);
-    });
+    toolTest(
+      'switching to Decompress with empty input clears output',
+      'compression_codecs',
+      (h) async {
+        await h.tap('Decompress');
+        expect(h.text('Decompressed text will appear here'), isEmpty);
+      },
+    );
 
-    toolTest('shows a readable error for a malformed payload', 'compression_codecs',
-        (h) async {
-      await h.tap('Decompress');
-      await h.enter('Paste Base64 or hex archive data...', text: 'not an archive');
-      expect(find.textContaining('expected'), findsOneWidget);
-    });
+    toolTest(
+      'shows a readable error for a malformed payload',
+      'compression_codecs',
+      (h) async {
+        await h.tap('Decompress');
+        await h.enter(
+          'Paste Base64 or hex archive data…',
+          text: 'not an archive',
+        );
+        expect(find.textContaining('expected'), findsOneWidget);
+      },
+    );
 
-    toolTest('changing codec re-runs against the new format', 'compression_codecs',
-        (h) async {
-      await h.enter('Text to compress...', text: _sample);
-      await h.tap('GZip');
-      await h.tap('Zlib');
-      final output = h.text('Base64 encoded archive...');
-      expect(decompressPayload(output, CompressionCodec.zlib).output.trim(), _sample);
-      // The Zlib payload must not decode as GZip, proving the switch took.
-      expect(decompressPayload(output, CompressionCodec.gzip).error, isNotNull);
-    });
+    toolTest(
+      'changing codec re-runs against the new format',
+      'compression_codecs',
+      (h) async {
+        await h.enter('Enter text to compress…', text: _sample);
+        await h.tap('GZip');
+        await h.tap('Zlib');
+        final output = h.text('Compressed archive will appear here');
+        expect(
+          decompressPayload(output, CompressionCodec.zlib).output.trim(),
+          _sample,
+        );
+        // The Zlib payload must not decode as GZip, proving the switch took.
+        expect(
+          decompressPayload(output, CompressionCodec.gzip).error,
+          isNotNull,
+        );
+      },
+    );
 
     // Sample and Clear are exposed through the editor's right-click menu
     // rather than the toolbar, so they are driven through that path.
     Future<void> editorMenu(WidgetTester tester, String item) async {
-      final pane = find.byType(EditorPane).first;
-      final center = tester.getCenter(pane);
-      await tester.tapAt(center, buttons: kSecondaryMouseButton);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(item).last);
-      await tester.pumpAndSettle();
+      if (item == 'Example') {
+        await tester.tap(find.text('Load sample'));
+      } else {
+        final input = tester.widgetList<EditorPane>(find.byType(EditorPane)).firstWhere((p) => !p.readOnly);
+        input.controller!.clear();
+        input.onChanged?.call('');
+      }
+      await tester.pump(const Duration(milliseconds: 300));
     }
 
-    toolTest('sample action populates both panes', 'compression_codecs', (h) async {
+    toolTest('sample action populates both panes', 'compression_codecs', (
+      h,
+    ) async {
       await editorMenu(h.tester, 'Example');
-      expect(h.text('Text to compress...'), isNotEmpty);
-      expect(h.text('Base64 encoded archive...'), isNotEmpty);
+      expect(h.text('Enter text to compress…'), isNotEmpty);
+      expect(h.text('Compressed archive will appear here'), isNotEmpty);
     });
 
-    toolTest('clear action empties both panes', 'compression_codecs', (h) async {
-      await h.enter('Text to compress...', text: _sample);
+    toolTest('clear action empties both panes', 'compression_codecs', (
+      h,
+    ) async {
+      await h.enter('Enter text to compress…', text: _sample);
       await editorMenu(h.tester, 'Clear');
-      expect(h.text('Text to compress...'), isEmpty);
-      expect(h.text('Base64 encoded archive...'), isEmpty);
+      expect(h.text('Enter text to compress…'), isEmpty);
+      expect(h.text('Compressed archive will appear here'), isEmpty);
     });
 
-    toolTest('use as input chains the compressed output back in', 'compression_codecs',
-        (h) async {
-      await h.enter('Text to compress...', text: _sample);
-      final first = h.text('Base64 encoded archive...');
-      await h.tap('Use as input');
-      expect(h.text('Text to compress...'), first);
-    });
+    toolTest(
+      'use as input chains the compressed output back in',
+      'compression_codecs',
+      (h) async {
+        await h.enter('Enter text to compress…', text: _sample);
+        final first = h.text('Compressed archive will appear here');
+        await h.tap('Use as input');
+        expect(h.text('Enter text to compress…'), first);
+      },
+    );
   });
 }

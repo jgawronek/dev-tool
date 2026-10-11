@@ -40,6 +40,7 @@ class _BackslashEscapeViewState extends State<_BackslashEscapeView> {
     setState(
       () => _input.text = _escape ? 'Line 1\nLine 2' : 'Line 1\\nLine 2',
     );
+    _run();
   }
 
   Future<void> _copyOutput() async {
@@ -48,6 +49,7 @@ class _BackslashEscapeViewState extends State<_BackslashEscapeView> {
 
   void _useAsInput() {
     setState(() => _input.text = _output.text);
+    _run();
   }
 
   @override

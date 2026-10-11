@@ -545,7 +545,15 @@ class HtmlRenderedPreviewState extends State<HtmlRenderedPreview> {
   Future<void> _loadHtml() async {
     final controller = _controller;
     if (controller == null) return;
-    await controller.loadHtmlString(previewDocument(widget.html));
+    try {
+      await controller.loadHtmlString(previewDocument(widget.html));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _webViewError = error;
+        _controller = null;
+      });
+    }
   }
 
   @override
@@ -919,10 +927,14 @@ class MarkupBeautifyMinifyViewState extends State<MarkupBeautifyMinifyView> {
   }
 
   void _run() {
-    final text = _input.text;
-    _output.text = _format == 'Minify'
-        ? widget.minify(text, _keepComments)
-        : widget.beautify(text, indentFor(_indent));
+    try {
+      final text = _input.text;
+      _output.text = _format == 'Minify'
+          ? widget.minify(text, _keepComments)
+          : widget.beautify(text, indentFor(_indent));
+    } catch (error) {
+      _output.text = 'Could not format ${widget.language}: $error';
+    }
     setState(() {});
   }
 

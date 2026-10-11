@@ -4,13 +4,14 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:dev_tool/app.dart';
+import 'package:dev_tool/services/javascript_code_service.dart';
+import 'helpers/formatter_engine.dart';
 import 'package:dev_tool/registry/tool_registry.dart';
 import 'package:dev_tool/services/firewall_fingerprint_service.dart';
 import 'package:dev_tool/services/hash_lookup_service.dart';
@@ -445,7 +446,7 @@ void main() {
   testWidgets('App shell renders the workspace', (WidgetTester tester) async {
     await tester.pumpWidget(DevToolApp(state: ToolState.inMemory()));
 
-    expect(find.text('Search tools'), findsOneWidget);
+    expect(find.text('Find a tool'), findsOneWidget);
     expect(find.text('Open a tool from the sidebar'), findsOneWidget);
   });
 
@@ -587,7 +588,7 @@ void main() {
     state.sidebarWidth.value = 64;
     await tester.pumpWidget(DevToolApp(state: state));
 
-    expect(find.text('Search tools'), findsNothing);
+    expect(find.text('Find a tool'), findsNothing);
     expect(
       find.byWidgetPredicate(
         (widget) =>
@@ -605,8 +606,10 @@ void main() {
     workspace.openTool('regexp_tester');
 
     // Re-opening focuses the existing tab instead of adding a second one.
-    expect(workspace.openTool('jwt_debugger').instanceId,
-        workspace.panels.value[1].instanceId);
+    expect(
+      workspace.openTool('jwt_debugger').instanceId,
+      workspace.panels.value[1].instanceId,
+    );
     expect(workspace.panels.value, hasLength(3));
 
     workspace.openTool('json_format_validate', forceNew: true);
@@ -658,14 +661,14 @@ void main() {
     await tester.pumpAndSettle();
 
     // The most recently opened tab is active.
-    expect(find.text('RegExp:'), findsOneWidget);
+    expect(find.text('Expression'), findsOneWidget);
     expect(find.text('Header'), findsNothing);
 
     await tester.tap(find.text('JWT Debugger').first);
     await tester.pumpAndSettle();
 
     expect(find.text('Header'), findsOneWidget);
-    expect(find.text('RegExp:'), findsNothing);
+    expect(find.text('Expression'), findsNothing);
     expect(state.workspace.focusedPanelId.value, jwt.instanceId);
 
     await tester.tap(find.text('RegExp Tester').first);
@@ -721,29 +724,10 @@ void main() {
     expect(find.byIcon(Icons.clear), findsNothing);
     expect(find.byTooltip('Clear'), findsNothing);
 
-    final inputFinder = editorPaneWithHint('Paste JSON...');
-    await tester.tapAt(
-      tester.getCenter(inputFinder),
-      buttons: kSecondaryMouseButton,
-    );
+    await tester.tap(find.text('Load sample'));
     await tester.pumpAndSettle();
-
-    expect(find.text('Example'), findsOneWidget);
-    expect(find.text('Clear'), findsOneWidget);
-
-    await tester.tap(find.text('Example'));
-    await tester.pumpAndSettle();
-
-    expect(editorText(tester, 'Paste JSON...'), contains('"name":"DevUtils"'));
-
-    await tester.tapAt(
-      tester.getCenter(inputFinder),
-      buttons: kSecondaryMouseButton,
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Clear'));
-    await tester.pumpAndSettle();
-
+    expect(editorText(tester, 'Paste JSON...'), contains('DevUtils'));
+    await enterEditorText(tester, 'Paste JSON...', '');
     expect(editorText(tester, 'Paste JSON...'), isEmpty);
 
     await enterEditorText(tester, 'Paste JSON...', '{"name":"DevUtils"}');
@@ -852,7 +836,8 @@ void main() {
     await tester.pumpWidget(DevToolApp(state: state));
     await tester.pumpAndSettle();
 
-    expect(find.byTooltip('Load File...'), findsOneWidget);
+    expect(find.text('Load sample'), findsOneWidget);
+    expect(find.byTooltip('Copy image'), findsOneWidget);
     expect(find.byTooltip('Save'), findsNothing);
     expect(find.byIcon(Icons.save_alt), findsNothing);
   });
@@ -860,10 +845,13 @@ void main() {
   testWidgets('HTML beautify tool can render preview mode', (
     WidgetTester tester,
   ) async {
+    installFormatterChannel();
+    await tester.runAsync(() => JavascriptCodeService.process('const warm = 1;', 'Verify'));
     final state = ToolState.inMemory();
     state.workspace.openTool('html_beautify_minify');
     await tester.pumpWidget(DevToolApp(state: state));
-    await tester.pumpAndSettle();
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pump(const Duration(milliseconds: 400));
 
     await enterEditorText(
       tester,
@@ -872,9 +860,11 @@ void main() {
     );
 
     await tester.tap(find.byType(DropdownButton<String>).first);
-    await tester.pumpAndSettle();
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('Preview').last);
-    await tester.pumpAndSettle();
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.byKey(const ValueKey('html-rendered-preview')), findsOneWidget);
   });
@@ -882,15 +872,15 @@ void main() {
   testWidgets('CSS minify emits valid CSS without capture placeholders', (
     WidgetTester tester,
   ) async {
+    installFormatterChannel();
+    await tester.runAsync(() => JavascriptCodeService.process('const warm = 1;', 'Verify'));
     final state = ToolState.inMemory();
     state.workspace.openTool('css_beautify_minify');
     await tester.pumpWidget(DevToolApp(state: state));
-    await tester.pumpAndSettle();
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pump(const Duration(milliseconds: 400));
 
-    await enterEditorText(
-      tester,
-      'Drop a .css file here or paste CSS...',
-      '''
+    await enterEditorText(tester, 'Drop a .css file here or paste CSS...', '''
 html,
 body {
   margin: 0;
@@ -902,13 +892,14 @@ body {
 
 body {
   background-color: #2f3542;
-}''',
-    );
+}''');
 
     await tester.tap(find.byType(DropdownButton<String>).first);
-    await tester.pumpAndSettle();
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('Minify').last);
-    await tester.pumpAndSettle();
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pump(const Duration(milliseconds: 400));
 
     final output = editorText(tester, 'Output...');
     expect(
@@ -935,10 +926,7 @@ body {
     );
 
     final output = editorText(tester, 'Output...');
-    expect(
-      output,
-      startsWith("background-image: url('data:image/svg+xml,"),
-    );
+    expect(output, startsWith("background-image: url('data:image/svg+xml,"));
     expect(output, contains('%3Csvg'));
   });
 
@@ -1009,7 +997,7 @@ body {
     final element = tester.element(find.text('Color theme'));
     expect(
       Theme.of(element).extension<AppColors>()?.accent,
-      AppColors.darkForTheme('Emerald').accent,
+      (state.darkMode.value ? AppColors.darkForTheme('Emerald') : AppColors.lightForTheme('Emerald')).accent,
     );
   });
 
@@ -1045,19 +1033,15 @@ body {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final tempDir = await Directory.systemTemp.createTemp(
+    final tempDir = Directory.systemTemp.createTempSync(
       'devutils-payload-widget-',
     );
-    addTearDown(() async {
-      if (await tempDir.exists()) {
-        await tempDir.delete(recursive: true);
-      }
-    });
+    addTearDown(() => tempDir.deleteSync(recursive: true));
     final carrierFile = File('${tempDir.path}/carrier.png');
     final payloadFile = File('${tempDir.path}/secret.txt');
     final outputFile = File('${tempDir.path}/carrier.embedded.png');
-    await carrierFile.writeAsBytes(_minimalPng());
-    await payloadFile.writeAsString('secret payload');
+    carrierFile.writeAsBytesSync(_minimalPng());
+    payloadFile.writeAsStringSync('secret payload');
 
     final state = ToolState.inMemory();
     state.workspace.openTool('payload_embedder');
@@ -1109,8 +1093,8 @@ body {
       passphrase: 'correct horse battery staple',
       iterations: 1000,
     );
-    await outputFile.writeAsBytes(embedded.bytes);
-    expect(await outputFile.exists(), isTrue);
+    outputFile.writeAsBytesSync(embedded.bytes);
+    expect(outputFile.existsSync(), isTrue);
 
     // The check reads the file and decrypts asynchronously; let it complete in
     // the real async zone, then a single pump (not pumpAndSettle, which would
@@ -1127,11 +1111,7 @@ body {
     );
     expect(result, contains('Encrypted payload found.'));
     expect(result, contains('Checked: ${outputFile.path}'));
-    // skip: pre-existing hang — "Check embedded data" runs an async file decode
-    // behind a loading spinner; under flutter_test's fake-async the decode never
-    // completes, so the suite spins to the 10-min timeout. Needs a testable
-    // decode hook; tracked separately.
-  }, skip: true);
+  });
 
   testWidgets('HTML to JSX converts comments attributes styles and roots', (
     WidgetTester tester,
@@ -1449,7 +1429,7 @@ module.exports = greet;''',
       final helper = tester.widget<Text>(find.text(helperText));
       expect(
         helper.style?.color,
-        darkMode ? AppColors.dark.mutedText : AppColors.light.mutedText,
+        (darkMode ? AppColors.darkForTheme(state.colorTheme.value) : AppColors.lightForTheme(state.colorTheme.value)).mutedText,
       );
       expect(find.text(_testLocalTimezoneLabel()), findsOneWidget);
       expect(find.textContaining('Local timezone:'), findsNothing);
@@ -1523,7 +1503,6 @@ module.exports = greet;''',
     const verticalHandle = ValueKey('split-editor-vertical-resize-handle');
     const tools = <String, List<ValueKey<String>>>{
       'base64_image_encode_decode': [horizontalHandle],
-      'url_parser': [horizontalHandle],
       'uuid_ulid_generate_decode': [horizontalHandle],
       'html_preview': [horizontalHandle],
       'text_diff_checker': [horizontalHandle, verticalHandle],
@@ -1538,7 +1517,6 @@ module.exports = greet;''',
       'hash_generator': [horizontalHandle],
       'text_encryption': [horizontalHandle],
       'payload_embedder': [horizontalHandle],
-      'jwt_debugger': [horizontalHandle],
       'regexp_tester': [horizontalHandle],
       'port_scanner': [horizontalHandle],
       'network_scanner': [horizontalHandle],

@@ -163,7 +163,7 @@ class _DocumentationViewState extends State<DocumentationView> {
           ? 1
           : a.compareTo(b),
     );
-    return Container(
+    return Material(
       color: context.appColors.panelHeader,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

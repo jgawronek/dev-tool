@@ -3,12 +3,15 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'package:crypto/crypto.dart' as crypto;
+
 import 'package:flutter/material.dart';
-import '../../../ui/widgets.dart';
 import 'package:flutter/services.dart';
+
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../../ui/app_colors.dart';
+import '../../../ui/widgets.dart';
 import '../common/shared.dart';
 
 class _AuthTotpView extends StatefulWidget {
@@ -346,7 +349,13 @@ class _TotpAddDialogState extends State<_TotpAddDialog> {
   Widget build(BuildContext context) {
     final appColors = context.appColors;
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      backgroundColor: appColors.panel,
+      surfaceTintColor: Colors.transparent,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: appColors.border),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(0),
         child: SizedBox(
@@ -362,17 +371,16 @@ class _TotpAddDialogState extends State<_TotpAddDialog> {
                 ),
                 decoration: BoxDecoration(
                   color: appColors.panelHeader,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(16),
-                  ),
+                  border: Border(bottom: BorderSide(color: appColors.border)),
                 ),
                 child: Row(
                   children: [
                     Text(
                       widget.title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
+                        color: appColors.editorText,
                       ),
                     ),
                     const Spacer(),
@@ -453,20 +461,9 @@ class _TotpAddDialogState extends State<_TotpAddDialog> {
                     Row(
                       children: [
                         const Spacer(),
-                        ElevatedButton(
+                        ToolButton(
+                          label: widget.actionLabel,
                           onPressed: _submit,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: appColors.accent,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 14,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          child: Text(widget.actionLabel),
                         ),
                       ],
                     ),
